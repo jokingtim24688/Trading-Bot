@@ -3,7 +3,7 @@ import math
 from dataclasses import dataclass
 from datetime import datetime
 
-from .config import RiskConfig
+from .config import MoneyConfig, RiskConfig
 
 
 @dataclass
@@ -28,6 +28,47 @@ def lots_for_risk(equity: float, risk_pct: float, stop_distance: float, spec: Sy
         return 0.0
     decimals = max(0, -int(math.floor(math.log10(spec.volume_step)))) if spec.volume_step < 1 else 0
     return round(min(lots, spec.volume_max), decimals)
+
+
+def tp_pct_for_stake(stake: float, m: MoneyConfig, small: float, large: float) -> float:
+    """Take-profit % of stake: tp_pct_small_stake at small stakes, easing to tp_pct_large_stake as stakes grow."""
+    if stake <= small or large <= small:
+        return m.tp_pct_small_stake
+    if stake >= large:
+        return m.tp_pct_large_stake
+    f = (math.log(stake) - math.log(small)) / (math.log(large) - math.log(small))
+    return m.tp_pct_small_stake + f * (m.tp_pct_large_stake - m.tp_pct_small_stake)
+
+
+def stake_plan(balance: float, margin_per_lot: float, spec: SymbolSpec, m: MoneyConfig) -> dict | None:
+    """Lots, stake and exit distances for one trade under the stake rules. Price distances don't depend on side.
+
+    Returns None if the symbol data is unusable. `forced_min` means 0.1% of balance was below the minimum lot,
+    so the minimum lot is used and the stake is larger than the target.
+    """
+    if margin_per_lot <= 0 or spec.tick_size <= 0 or spec.tick_value <= 0:
+        return None
+    target = balance * m.stake_pct_of_balance / 100.0
+    lots = math.floor(target / margin_per_lot / spec.volume_step + 1e-9) * spec.volume_step
+    forced_min = lots < spec.volume_min
+    lots = min(max(lots, spec.volume_min), spec.volume_max)
+    decimals = max(0, -int(math.floor(math.log10(spec.volume_step)))) if spec.volume_step < 1 else 0
+    lots = round(lots, decimals)
+    stake = lots * margin_per_lot
+    min_stake = spec.volume_min * margin_per_lot
+    small = m.small_stake or min_stake
+    large = m.large_stake or 100 * min_stake
+    tp_pct = tp_pct_for_stake(stake, m, small, large)
+    money_per_price = lots * spec.tick_value / spec.tick_size        # P/L for a 1.0 move in price
+    sl_money = stake * m.sl_pct_of_stake / 100.0
+    tp_money = stake * tp_pct / 100.0
+    return {"lots": lots, "stake": round(stake, 2), "stake_target": round(target, 2), "forced_min": forced_min,
+            "sl_pct": m.sl_pct_of_stake, "tp_pct": round(tp_pct, 1),
+            "sl_money": round(sl_money, 2), "tp_money": round(tp_money, 2),
+            "sl_dist": sl_money / money_per_price, "tp_dist": tp_money / money_per_price,
+            "reward_risk": round(tp_money / sl_money, 2) if sl_money else None,
+            "tp_scale": [round(small, 2), round(large, 2)],
+            "worst_case_all_open": round(sl_money * m.max_open_trades, 2)}
 
 
 class RiskGate:

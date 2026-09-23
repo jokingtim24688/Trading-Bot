@@ -112,6 +112,15 @@ def lots_for_risk(symbol: str, entry: float, stop: float, risk_pct: float) -> di
     return {"equity": eq, "lots": round(lots, 8), "loss_per_lot": round(loss_per_lot, 2), "risk_money": round(loss_per_lot * lots, 2)}
 
 
+def model_meta(symbol: str) -> dict | None:
+    import json
+    p = Path(__file__).resolve().parent.parent / "models" / f"{symbol}_M1.meta.json"
+    try:
+        return json.loads(p.read_text())
+    except (OSError, ValueError):
+        return None
+
+
 def model_exists(symbol: str) -> bool:
     return (Path(__file__).resolve().parent.parent / "models" / f"{symbol}_M1.json").exists()
 
@@ -143,3 +152,37 @@ def floating_for(trades: list[dict]) -> dict:
                 tv = i.trade_tick_value_loss or i.trade_tick_value
                 out[t["id"]] = {"pnl": round(move / i.trade_tick_size * tv * t["lots"], 2), "price": px}
     return out
+
+
+def margin_per_lot(symbol: str, side: str = "buy") -> dict:
+    """Margin for 1.00 lot at the current price, plus the ratio the trainer needs (margin / value per 1.0 move / price)."""
+    with _lock:
+        _ensure()
+        mt5.symbol_select(symbol, True)
+        i, t = mt5.symbol_info(symbol), mt5.symbol_info_tick(symbol)
+        price = t.ask if side == "buy" else t.bid
+        m = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY if side == "buy" else mt5.ORDER_TYPE_SELL, symbol, 1.0, price) or 0.0
+        value_per_price = (i.trade_tick_value_loss or i.trade_tick_value) / i.trade_tick_size
+        return {"margin_per_lot": float(m), "price": price, "margin_rate": float(m) / value_per_price / price if price else 0.0}
+
+
+def trade_plan(symbol: str, mode: str, s: dict) -> dict:
+    """Preview what the bot will do per trade right now under the stake rules."""
+    from agent import ledger
+    from agent.config import MoneyConfig
+    from agent.risk import SymbolSpec, stake_plan
+    acct = account()
+    balance = s["paper_balance"] + ledger.realized_pnl("paper") if mode == "paper" else acct["balance"]
+    sp = symbol_spec(symbol)
+    mp = margin_per_lot(symbol)
+    spec = SymbolSpec(point=sp["point"], tick_size=sp["tick_size"], tick_value=sp["tick_value"], volume_min=sp["volume_min"],
+                      volume_step=sp["volume_step"], volume_max=sp["volume_max"], stops_level_points=sp["stops_level"])
+    money = MoneyConfig(stake_pct_of_balance=s["stake_pct"], sl_pct_of_stake=s["sl_pct_of_stake"],
+                        tp_pct_small_stake=s["tp_pct_small"], tp_pct_large_stake=s["tp_pct_large"],
+                        small_stake=s["small_stake"], large_stake=s["large_stake"], max_open_trades=int(s["max_open_trades"]))
+    plan = stake_plan(balance, mp["margin_per_lot"], spec, money) or {}
+    plan.update(balance=round(balance, 2), currency=acct["currency"], leverage=acct["leverage"], mode=mode, symbol=symbol,
+                margin_per_lot=round(mp["margin_per_lot"], 2), margin_rate=mp["margin_rate"], digits=sp["digits"],
+                spread_px=sp["spread"] * sp["point"], volume_min=sp["volume_min"],
+                worst_case_pct=round(100 * plan.get("worst_case_all_open", 0) / balance, 2) if balance else None)
+    return plan

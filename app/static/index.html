@@ -90,15 +90,18 @@
         <div class="seg" role="radiogroup" aria-label="Mode">
           <button class="seg-btn active" data-mode="paper">Paper<small>no orders</small></button>
           <button class="seg-btn" data-mode="demo">Demo<small>orders on demo</small></button>
-          <button class="seg-btn danger" data-mode="real" disabled title="Enable in Settings">Real<small>locked</small></button>
+          <button class="seg-btn danger" data-mode="real" disabled title="Unlock in Settings → Trading">Real<small>locked</small></button>
         </div>
-        <label class="slider-label">Confidence threshold <span id="thr-txt" class="num"></span><input id="thr" type="range" min="0.4" max="0.8" step="0.01"></label>
-        <label class="slider-label">Risk per trade <span id="risk-txt" class="num"></span><input id="risk" type="range" min="0.1" max="2" step="0.1"></label>
+        <p id="real-hint" class="muted small">Real money is locked so a stray click can't start it. Unlock it in Settings → Trading when you're ready.</p>
+        <label class="slider-label">Confidence threshold <span id="thr-txt" class="num"></span><input id="thr" type="range" min="0.05" max="0.8" step="0.01"></label>
+        <p id="thr-hint" class="muted small" style="margin:4px 0 0"></p>
+        <label class="slider-label">Stake per trade <span id="stake-txt" class="num"></span><input id="stake" type="range" min="0.01" max="1" step="0.01"></label>
         <div class="row gap">
           <button id="agent-start" class="btn primary">Start agent</button>
           <button id="agent-stop" class="btn">Stop</button>
         </div>
         <p id="agent-msg" class="note"></p>
+        <div class="plan" id="plan"><p class="empty">Open MT5 to see the per-trade plan.</p></div>
       </div>
       <div class="panel console-panel">
         <div class="panel-head"><h3>Live log</h3><span id="agent-state" class="muted small"></span></div>
@@ -126,7 +129,7 @@
         <ol class="steps">
           <li id="step-fetch"><div><strong>Download M1 history</strong><p class="muted small">Pulls <span id="days-txt"></span> days of 1-minute candles for <span class="sym-txt"></span> from MT5 into <code>data/</code>.</p></div><button id="btn-fetch" class="btn">Fetch data</button></li>
           <li id="step-train"><div><strong>Train on the RTX 4060</strong><p class="muted small">XGBoost learns from the history, then is tested on the most recent quarter it never saw. Takes about 1–3 minutes.</p></div><button id="btn-train" class="btn primary">Train</button></li>
-          <li id="step-run"><div><strong>Paper trade it</strong><p class="muted small">Pick a threshold from the results table where trades ≥ 100 and avg R &gt; 0.1, then start in Paper mode.</p></div><button class="btn" data-goto="agent">Open Agent</button></li>
+          <li id="step-run"><div><strong>Paper trade it</strong><p class="muted small">Training suggests a confidence threshold (the most profitable one with 100+ test trades). It appears on the Agent tab. Start in Paper mode.</p></div><button class="btn" data-goto="agent">Open Agent</button></li>
         </ol>
       </div>
       <div class="panel console-panel">
@@ -174,6 +177,18 @@
         <label>History to download (days)<input name="days_history" type="number"></label>
         <label class="check"><input type="checkbox" name="alert_sound"> Play a sound when the bot opens or closes a trade</label>
         <label class="check"><input type="checkbox" id="unlock-real"> Unlock Real mode on the Agent tab (this session only)</label>
+      </fieldset>
+      <fieldset><legend>Bot money rules</legend>
+        <label>Stake per trade (% of balance)<input name="stake_pct" type="number" step="0.01" min="0.01"></label>
+        <label>Max bot trades open at once<input name="max_open_trades" type="number" min="1" max="200"></label>
+        <label>Stop loss (% of stake lost)<input name="sl_pct_of_stake" type="number" step="1" min="1"></label>
+        <label>Paper account balance<input name="paper_balance" type="number" step="100"></label>
+        <label>Take profit on small stakes (% of stake)<input name="tp_pct_small" type="number" step="5"></label>
+        <label>Take profit on large stakes (% of stake)<input name="tp_pct_large" type="number" step="5"></label>
+        <label>"Small" stake is at or below (0 = minimum lot)<input name="small_stake" type="number" step="1" min="0"></label>
+        <label>"Large" stake is at or above (0 = 100× minimum)<input name="large_stake" type="number" step="1" min="0"></label>
+        <label>Training look-ahead (M1 bars)<input name="label_horizon" type="number" step="30" min="30"></label>
+        <p class="muted small span2">Stake is the margin the trade uses. If the stake is below the symbol's minimum lot, the minimum lot is used. Take profit eases from the small-stake % to the large-stake % as stakes grow. Retrain after changing the stop or take-profit rules so the model learns the new exits.</p>
       </fieldset>
       <fieldset><legend>Hermes</legend>
         <label>Assistant backend

@@ -24,7 +24,10 @@ def load_bars(path: str) -> pd.DataFrame:
     return df.sort_index()
 
 
-def evaluate(proba, r_long, r_short, thresholds=(0.45, 0.5, 0.55, 0.6, 0.65, 0.7)):
+THRESHOLDS = (0.08, 0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.7)
+
+
+def evaluate(proba, r_long, r_short, thresholds=THRESHOLDS):
     rows = []
     for t in thresholds:
         go_long = (proba[:, 2] >= t) & (proba[:, 2] > proba[:, 0])
@@ -46,13 +49,29 @@ def main():
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--point", type=float, default=0.01, help="symbol_info().point (0.01 for most XAUUSD feeds)")
     ap.add_argument("--test-frac", type=float, default=0.25)
+    ap.add_argument("--margin-rate", type=float, default=0.0,
+                    help="margin per lot / (price * value per 1.0 move per lot); >0 labels with the stake rules")
+    ap.add_argument("--sl-pct", type=float, default=25.0, help="stop = this %% of the stake lost")
+    ap.add_argument("--tp-pct", type=float, default=200.0, help="target = this %% of the stake gained")
+    ap.add_argument("--horizon", type=int, default=None, help="max bars a label may take (default from config)")
     args = ap.parse_args()
 
     cfg = AgentConfig(symbol=args.symbol)
     print("hardware plan:", PLAN)
     df = load_bars(args.bars)
+    if args.horizon:
+        cfg.labels.horizon_bars = args.horizon
     X = build_features(df, args.point)
-    y, r_long, r_short = triple_barrier(df, args.point, cfg.labels)
+    if args.margin_rate > 0:
+        # stake rules: distance = pct * margin_rate * price, independent of lot size (see agent/risk.stake_plan)
+        base = args.margin_rate * df["close"].to_numpy()
+        sl_d, tp_d = base * args.sl_pct / 100, base * args.tp_pct / 100
+        print(f"labels: stake rules, stop -{args.sl_pct}% / target +{args.tp_pct}% of stake "
+              f"(≈ {sl_d[-1]:.2f} / {tp_d[-1]:.2f} price at the last close), horizon {cfg.labels.horizon_bars} bars")
+        y, r_long, r_short = triple_barrier(df, args.point, cfg.labels, sl_d, tp_d)
+    else:
+        print("labels: ATR stop/target (pass --margin-rate to use the stake rules)")
+        y, r_long, r_short = triple_barrier(df, args.point, cfg.labels)
 
     ok = X.notna().all(axis=1).to_numpy() & ~np.isnan(r_long) & ~np.isnan(r_short)
     ok[:3000] = False                                   # EMA 3000 warm-up
@@ -70,10 +89,21 @@ def main():
     print(f"rows: train {len(X_tr)}, valid {len(X_va)}, test {len(X_te)}; class balance {np.bincount(y, minlength=3)}")
     model = SignalModel.train(X_tr, y_tr, X_va, y_va, use_gpu=PLAN["xgb_cuda"], hw=cfg.hardware)
     proba = model.predict_proba(X_te)
-    print("\nOut-of-sample (test) results, R after spread; commission not included:")
-    print(evaluate(proba, r_long[cut:], r_short[cut:]).to_string(index=False))
+    rr = args.tp_pct / args.sl_pct if args.margin_rate > 0 else cfg.labels.reward_risk
+    print(f"\nReward:risk {rr:.2f}:1, so the break-even win rate is {100 / (1 + rr):.1f}% (before commission).")
+    print("Out-of-sample (test) results, R after spread; commission not included:")
+    table = evaluate(proba, r_long[cut:], r_short[cut:])
+    print(table.to_string(index=False))
+    good = table[(table.trades >= 100) & (table.avg_R > 0)]
+    suggested = float(good.sort_values("total_R", ascending=False).threshold.iloc[0]) if len(good) else None
+    print(f"\nSuggested threshold: {suggested}" if suggested is not None else
+          "\nNo threshold made money on the test period with 100+ trades. Don't run this model beyond Paper mode.")
 
-    model.meta.update({"symbol": args.symbol, "point": args.point, "timeframe": "M1",
+    model.meta.update({"suggested_threshold": suggested, "breakeven_win_pct": round(100 / (1 + rr), 1),
+                       "test_table": table.to_dict(orient="records"),
+                       "exit_rule": {"margin_rate": args.margin_rate, "sl_pct": args.sl_pct, "tp_pct": args.tp_pct,
+                                      "horizon": cfg.labels.horizon_bars},
+                       "symbol": args.symbol, "point": args.point, "timeframe": "M1",
                        "train_end": str(X_tr.index[-1]), "test_start": str(X_te.index[0])})
     model.save(cfg.model_dir, args.symbol)
     print(f"\nsaved model to {cfg.model_dir}/{args.symbol}_M1.json")

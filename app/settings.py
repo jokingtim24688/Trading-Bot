@@ -11,8 +11,18 @@ DEFAULTS = {
     "symbol": "XAUUSD",
     "symbols_watch": ["XAUUSD", "EURUSD", "US500", "NAS100"],
     "terminal_path": "",
-    "threshold": 0.55,
-    "risk_pct": 0.5,
+    "threshold": 0.15,                     # model confidence needed to enter; pick from the Train results
+    "risk_pct": 0.5,                       # default risk for YOUR manual trades in the Market-tab sizer
+    # Bot money rules (all relative to each trade's stake = its margin)
+    "stake_pct": 0.1,                      # % of balance per trade; minimum lot if that's smaller
+    "sl_pct_of_stake": 25.0,               # stop when 25% of the stake is lost
+    "tp_pct_small": 200.0,                 # take profit at +200% of stake for small stakes...
+    "tp_pct_large": 50.0,                  # ...easing to +50% for large stakes
+    "small_stake": 0.0,                    # 0 = auto: the minimum lot's stake gets tp_pct_small
+    "large_stake": 0.0,                    # 0 = auto: 100x minimum (1.00 lot on XAUUSD) gets tp_pct_large
+    "max_open_trades": 25,
+    "paper_balance": 10000.0,
+    "label_horizon": 240,                  # bars a training label may take to hit its stop/target
     "days_history": 365,
     "alert_sound": True,                   # beep when the bot opens or closes a trade
     "point": 0.01,

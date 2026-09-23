@@ -22,7 +22,7 @@ function showTab(name) {
   $$(".tab").forEach(t => t.classList.toggle("active", t.id === `tab-${name}`));
   if (name === "dash" && state.chart) state.chart.timeScale().scrollToRealTime();
   if (name === "chat") { loadHistory(); loadFacts(); }
-  if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); }
+  if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); }
   if (name === "train") pollTrainLog();
 }
 $$(".rail-btn").forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -50,6 +50,10 @@ async function pollStatus() {
     $("#agent-state").textContent = a.running ? "running" : (a.exit_code != null ? `stopped (exit ${a.exit_code})` : "not started");
     $("#step-fetch").classList.toggle("done", s.data_ready);
     $("#step-train").classList.toggle("done", s.model_ready);
+    const md = s.model || {};
+    $("#thr-hint").textContent = !s.model_ready ? "Train a model first." :
+      md.suggested_threshold != null ? `Training suggests ${md.suggested_threshold}. Break-even win rate with these exits: ${md.breakeven_win_pct}%.`
+      : md.breakeven_win_pct != null ? `No profitable threshold in testing. Keep it on Paper. Break-even win rate: ${md.breakeven_win_pct}%.` : "";
     const tr = s.jobs.train, fe = s.jobs.fetch;
     $("#train-state").textContent = tr.running ? "training…" : fe.running ? "downloading…" : "";
     $("#btn-train").disabled = tr.running; $("#btn-fetch").disabled = fe.running;
@@ -292,7 +296,26 @@ $("#positions").addEventListener("click", async e => {
 })();
 
 /* ---------- agent ---------- */
-$$(".seg-btn").forEach(b => b.onclick = () => { if (b.disabled) return; state.mode = b.dataset.mode; $$(".seg-btn").forEach(x => x.classList.toggle("active", x === b)); });
+$$(".seg-btn").forEach(b => b.onclick = () => { if (b.disabled) return; state.mode = b.dataset.mode; $$(".seg-btn").forEach(x => x.classList.toggle("active", x === b)); loadPlan(); });
+
+async function loadPlan() {
+  const box = $("#plan");
+  let p;
+  try { p = await api(`/api/plan?mode=${state.mode === "paper" ? "paper" : state.mode}`); }
+  catch (e) { box.innerHTML = `<p class="empty">${e.status === 503 ? "Open MT5 to see the per-trade plan." : e.message}</p>`; return; }
+  const c = p.currency || "", d = p.digits ?? 2, money = v => `${fmt(v)} ${c}`;
+  const cell = (label, val, wide) => `<div class="${wide ? "wide" : ""}"><span>${label}</span><strong>${val}</strong></div>`;
+  box.innerHTML = `<h3>Each ${p.symbol} trade right now (${p.mode})</h3><div class="plan-grid">
+    ${cell("Balance", money(p.balance))}${cell("Leverage", `1:${p.leverage}`)}
+    ${cell("Stake (margin)", money(p.stake))}${cell("Lots", p.lots)}
+    ${cell(`Stop: −${p.sl_pct}% of stake`, `−${money(p.sl_money)}<small>${Number(p.sl_dist).toFixed(d)} from entry</small>`)}
+    ${cell(`Target: +${p.tp_pct}% of stake`, `+${money(p.tp_money)}<small>${Number(p.tp_dist).toFixed(d)} from entry</small>`)}
+    ${cell("Reward : risk", `${p.reward_risk} : 1`)}${cell("TP scale (200% → 50%)", `${money(p.tp_scale[0])} → ${money(p.tp_scale[1])} stake`)}${cell("Spread now", Number(p.spread_px).toFixed(d))}${cell("Margin for 1.00 lot", money(p.margin_per_lot))}
+    ${cell(`If all ${state.settings.max_open_trades} open trades stop out`, `−${money(p.worst_case_all_open)} (${p.worst_case_pct}% of balance)`, true)}</div>
+    ${p.forced_min ? `<p class="plan-note warn">${state.settings.stake_pct}% of balance is ${money(p.stake_target)}, below the ${p.volume_min}-lot minimum, so each trade uses the minimum lot (stake ${money(p.stake)}).</p>` : ""}
+    ${p.worst_case_pct > 5 ? `<p class="plan-note warn">That worst case is more than 5% of the balance. Consider fewer open trades or a larger balance.</p>` : ""}
+    ${p.spread_px > p.sl_dist * 0.35 ? `<p class="plan-note warn">The spread is over 35% of the stop distance right now, so the bot will skip entries until it narrows.</p>` : ""}`;
+}
 function bindSlider(id, key, suffix, digits) {
   const el = $(id), txt = $(`${id}-txt`);
   el.value = state.settings[key]; txt.textContent = `${Number(el.value).toFixed(digits)}${suffix}`;
@@ -391,16 +414,21 @@ $("#settings-form").onsubmit = async e => {
     else if (el.type === "number") body[el.name] = parseFloat(el.value);
     else body[el.name] = el.value.trim();
   }
-  try { state.settings = await api("/api/settings", { method: "POST", body }); $("#settings-msg").textContent = "Saved to data/settings.json"; initFromSettings(true); brainStatus(); }
+  try { state.settings = await api("/api/settings", { method: "POST", body }); $("#settings-msg").textContent = "Saved to data/settings.json"; initFromSettings(true); brainStatus(); loadPlan(); }
   catch (err) { $("#settings-msg").textContent = err.message; }
 };
-$("#unlock-real").onchange = e => { const b = $('.seg-btn[data-mode="real"]'); b.disabled = !e.target.checked; b.querySelector("small").textContent = e.target.checked ? "real money" : "locked"; };
+$("#unlock-real").onchange = e => {
+  const b = $('.seg-btn[data-mode="real"]'); b.disabled = !e.target.checked;
+  b.querySelector("small").textContent = e.target.checked ? "real money" : "locked";
+  $("#real-hint").textContent = e.target.checked ? "Real mode is unlocked for this session. Starting it still asks you to confirm." : "Real money is locked so a stray click can't start it. Unlock it in Settings → Trading when you're ready.";
+};
 
 function initFromSettings(keepSymbol = false) {
   const s = state.settings;
   if (!keepSymbol || !(s.symbols_watch || []).includes(state.symbol)) state.symbol = s.symbols_watch?.[0] || s.symbol;
   renderChips(); fillSettings();
-  bindSlider("#thr", "threshold", "", 2); bindSlider("#risk", "risk_pct", "%", 1);
+  bindSlider("#thr", "threshold", "", 2); bindSlider("#stake", "stake_pct", "% of balance", 2);
+  $("#stake").addEventListener("change", () => setTimeout(loadPlan, 300));
   $$(".sym-txt").forEach(x => x.textContent = s.symbol); $("#days-txt").textContent = s.days_history;
   loadBars();
 }
@@ -413,5 +441,6 @@ setInterval(pollStatus, 2000);
 setInterval(pollAccount, 2000);
 setInterval(() => state.tab === "dash" && (loadBars(), loadPositions()), 3000);
 setInterval(() => state.tab === "agent" && (pollAgentLog(), loadJournal()), 2000);
+setInterval(() => state.tab === "agent" && loadPlan(), 10000);
 setInterval(() => state.tab === "train" && pollTrainLog(), 1500);
 setInterval(brainStatus, 15000);

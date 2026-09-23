@@ -55,3 +55,17 @@ The bot keeps its own ledger in `data/trades.db` (`agent/ledger.py`). It covers 
   when it opens or closes a trade.
 - **History**: Agent tab → *Bot trades* (filter All/Paper/Demo/Real) with closed trades, win rate, net and today's P/L,
   total R, avg R, profit factor. Hermes can answer "what is the bot doing?" via its `get_bot_trades` tool.
+
+## Bot money rules (the user's choice; set in Settings → Bot money rules)
+- **Stake** = margin committed per trade = 0.1% of balance. If that's below the minimum lot (0.01 on XAUUSD), the minimum lot is used.
+- **Stop loss** = the trade has lost 25% of its stake. **Take profit** = +200% of stake for the smallest trade (minimum lot),
+  easing log-scaled to +50% at 1.00 lot and above (anchors adjustable; 0 = auto).
+- **Max 25** bot trades open at once (1 on netting accounts), at most one new entry per M1 candle, 100 new entries/day.
+- Price distances depend only on leverage: stop ≈ 0.25 × price / leverage (XAUUSD at 1:100 ≈ $6.6; at 1:500 ≈ $1.3).
+  The bot skips an entry if the spread is over 35% of the stop, or if the stop is inside the broker's stops level.
+- Reward:risk is up to 8:1, so the break-even win rate is ~11%. Expect low win rates and long losing streaks. Confidence
+  thresholds are therefore low (0.1–0.3); training prints and saves a suggested threshold.
+- The model is trained on these exact exits (`agent.train --margin-rate --sl-pct --tp-pct`); retrain after changing them.
+- Agent tab → *Each trade right now* shows balance, leverage, stake, lots, SL/TP in money and price, reward:risk, and the
+  worst case if all open trades stop out (warns above 5% of balance or when the minimum lot is forced).
+- Real mode is locked by default: tick *Unlock Real mode* in Settings (per session), then confirm on Start.

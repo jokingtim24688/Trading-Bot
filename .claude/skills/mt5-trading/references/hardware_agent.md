@@ -49,20 +49,20 @@ Check the GPU: `python -m agent.hardware` prints the CPU thread plan and whether
 ## Workflow
 1. **Fetch M1 history** (terminal open, symbol in Market Watch, Max bars = Unlimited):
    `python .claude/skills/mt5-trading/scripts/fetch_m1.py XAUUSD --days 365 --out data/XAUUSD_M1.parquet`
-2. **Train with walk-forward check**:
-   `python -m agent.train data/XAUUSD_M1.parquet --symbol XAUUSD`
-   This prints out-of-sample stats per probability threshold (trades, win %, avg R after spread).
-   Pick a threshold with enough trades and avg R > 0.1.
+2. **Train with the stake exits** (the app's Train button fills these in from your account):
+   `python -m agent.train data/XAUUSD_M1.parquet --symbol XAUUSD --margin-rate <from MT5> --sl-pct 25 --tp-pct 200 --horizon 240`
+   This prints the break-even win rate and out-of-sample stats per threshold (trades, win %, avg R after spread),
+   and saves a suggested threshold (most total R with 100+ trades and avg R > 0).
 3. **Paper trade** (default mode; places no orders):
-   `python -m agent.run --symbol XAUUSD --threshold 0.55`
-4. **Demo live** (real orders on a DEMO account):
-   `python -m agent.run --symbol XAUUSD --threshold 0.55 --live`
+   `python -m agent.run --symbol XAUUSD --threshold <suggested> --stake-pct 0.1 --max-open 25`
+4. **Demo live** (real orders on a DEMO account): add `--live`.
 5. **Real account**: requires `--live --allow-real`, and only after weeks of stable demo results.
 
 ## Safety built into the agent
 - Timeframe hard-locked to M1 (`config.TIMEFRAME = "M1"`; not a CLI option).
 - Acts only on closed bars.
-- Risk % per trade (default 0.5%), daily loss stop (3%), max trades/day, max 1 position per symbol.
+- Stake rules: 0.1% of balance as margin per trade (minimum lot if smaller), SL −25% / TP +200%→50% of stake,
+  max 25 open trades, bot-only daily loss stop (3%) + account stop (6%), max 100 new trades/day.
 - Spread filter (vs rolling median and ATR), session filter, rollover blackout.
 - Refuses to trade a real-money account unless `--allow-real` is passed.
 - Kill switch: create a file named `STOP` in the working directory and the agent flattens and exits.

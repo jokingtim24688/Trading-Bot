@@ -64,7 +64,9 @@ def _resources() -> dict:
 @app.get("/api/status")
 def status():
     s = settings.load()
+    meta = mt5_service.model_meta(s["symbol"]) or {}
     return {"settings": s, "jobs": jobs.status(), "model_ready": mt5_service.model_exists(s["symbol"]),
+            "model": {k: meta.get(k) for k in ("suggested_threshold", "breakeven_win_pct", "exit_rule")},
             "data_ready": (ROOT / "data" / f"{s['symbol']}_M1.parquet").exists(), "resources": _resources()}
 
 
@@ -143,6 +145,21 @@ def bot_trades(limit: int = 100, symbol: str | None = None):
 
 
 # ---------- jobs ----------
+def agent_args(s: dict, mode: str) -> list[str]:
+    args = ["-m", "agent.run", "--symbol", s["symbol"], "--threshold", str(s["threshold"]),
+            "--stake-pct", str(s["stake_pct"]), "--sl-pct", str(s["sl_pct_of_stake"]),
+            "--tp-small", str(s["tp_pct_small"]), "--tp-large", str(s["tp_pct_large"]),
+            "--small-stake", str(s["small_stake"]), "--large-stake", str(s["large_stake"]),
+            "--max-open", str(int(s["max_open_trades"])), "--paper-equity", str(s["paper_balance"])]
+    if s.get("terminal_path"):
+        args += ["--terminal", s["terminal_path"]]
+    if mode in ("demo", "real"):
+        args.append("--live")
+    if mode == "real":
+        args.append("--allow-real")
+    return args
+
+
 @app.post("/api/agent/start")
 def agent_start(body: dict = Body(default={})):
     mode = body.get("mode", "paper")
@@ -150,18 +167,17 @@ def agent_start(body: dict = Body(default={})):
     if not mt5_service.model_exists(s["symbol"]):
         raise HTTPException(400, f"No trained model for {s['symbol']}. Go to Train and run Fetch data, then Train.")
     (ROOT / "STOP").unlink(missing_ok=True)
-    args = ["-m", "agent.run", "--symbol", s["symbol"], "--threshold", str(s["threshold"]), "--risk", str(s["risk_pct"])]
-    if s.get("terminal_path"):
-        args += ["--terminal", s["terminal_path"]]
-    if mode in ("demo", "real"):
-        args.append("--live")
-    if mode == "real":
-        args.append("--allow-real")
     try:
-        jobs.start("agent", args)
+        jobs.start("agent", agent_args(s, mode))
     except RuntimeError as e:
         raise HTTPException(409, str(e))
     return jobs.status()["agent"]
+
+
+@app.get("/api/plan")
+def plan(mode: str = "paper"):
+    s = settings.load()
+    return mt5_service.trade_plan(s["symbol"], mode, s)
 
 
 @app.post("/api/{name}/stop")
@@ -192,8 +208,15 @@ def train():
     data = ROOT / "data" / f"{s['symbol']}_M1.parquet"
     if not data.exists():
         raise HTTPException(400, f"No M1 history for {s['symbol']} yet. Click Fetch data first.")
+    args = ["-m", "agent.train", str(data), "--symbol", s["symbol"], "--point", str(s["point"]),
+            "--sl-pct", str(s["sl_pct_of_stake"]), "--horizon", str(int(s["label_horizon"]))]
+    try:   # label with the same exits the bot will trade: needs this account's margin rate and current TP %
+        p = mt5_service.trade_plan(s["symbol"], "paper", s)
+        args += ["--margin-rate", f"{p['margin_rate']:.8f}", "--tp-pct", str(p["tp_pct"])]
+    except mt5_service.MT5Unavailable:
+        raise HTTPException(400, "Open MT5 first: training uses your account's margin to set the 25% stop / TP distances.")
     try:
-        jobs.start("train", ["-m", "agent.train", str(data), "--symbol", s["symbol"], "--point", str(s["point"])])
+        jobs.start("train", args)
     except RuntimeError as e:
         raise HTTPException(409, str(e))
     return jobs.status()["train"]

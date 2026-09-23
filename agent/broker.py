@@ -62,6 +62,13 @@ class MT5Data:
     def tick(self):
         return mt5.symbol_info_tick(self.symbol)
 
+    def margin_per_lot(self, side: str = "buy", price: float | None = None) -> float:
+        """Margin MT5 would require for 1.00 lot at this price (uses the account's real leverage)."""
+        t = mt5.symbol_info_tick(self.symbol)
+        price = price or (t.ask if side == "buy" else t.bid)
+        m = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY if side == "buy" else mt5.ORDER_TYPE_SELL, self.symbol, 1.0, price)
+        return float(m or 0.0)
+
     def is_demo(self) -> bool:
         return mt5.account_info().trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
 
@@ -71,7 +78,7 @@ class MT5Data:
 
 class PaperBroker:
     """Simulated fills on closed M1 bars (stop wins if a bar touches both). Every trade goes to the ledger, and
-    paper equity and any open paper trade survive restarts because they're rebuilt from the ledger."""
+    paper balance and open paper trades survive restarts because they're rebuilt from the ledger."""
 
     mode = "paper"
 
@@ -80,63 +87,67 @@ class PaperBroker:
         self.spec = spec
         self.symbol = symbol
         self.tick_fn = tick_fn
-        opened = ledger.open_trades("paper", symbol)
-        self.pos = opened[-1] if opened else None
+        self.positions = ledger.open_trades("paper", symbol)
 
     def _pnl(self, side, entry, exit_px, lots):
         move = (exit_px - entry) if side == "buy" else (entry - exit_px)
         return move / self.spec.tick_size * self.spec.tick_value * lots
 
+    def account_balance(self) -> float:
+        return self.start_equity + ledger.realized_pnl("paper")
+
     def account_equity(self) -> float:
-        return self.start_equity + ledger.realized_pnl("paper") + self.floating_pnl()
+        return self.account_balance() + self.floating_pnl()
 
     def floating_pnl(self) -> float:
-        if not self.pos:
+        if not self.positions:
             return 0.0
         t = self.tick_fn()
-        px = t.bid if self.pos["side"] == "buy" else t.ask
-        return self._pnl(self.pos["side"], self.pos["entry"], px, self.pos["lots"])
+        return sum(self._pnl(p["side"], p["entry"], t.bid if p["side"] == "buy" else t.ask, p["lots"]) for p in self.positions)
 
     def bot_pnl_today(self) -> float:
         return ledger.stats("paper")["today_pnl"] + self.floating_pnl()
 
     def has_position(self) -> bool:
-        return self.pos is not None
+        return bool(self.positions)
+
+    def open_count(self) -> int:
+        return len(self.positions)
 
     def foreign_position(self) -> bool:
         return False
 
     def open(self, side, lots, price, sl, tp, prob=None, risk_money=None, open_bar=None, **_):
         tid = ledger.open_trade("paper", self.symbol, side, lots, price, sl, tp, prob, risk_money, None, open_bar)
-        self.pos = ledger.open_trades("paper", self.symbol)[-1]
+        self.positions = ledger.open_trades("paper", self.symbol)
         return True, f"paper fill #{tid}"
 
     def on_bar(self, bar, spread_px, bar_epoch=None):
-        if not self.pos:
-            return []
-        p = self.pos
-        if p["side"] == "buy":
-            hit_sl, hit_tp = bar["low"] <= p["sl"], bar["high"] >= p["tp"]
-        else:
-            hit_sl, hit_tp = bar["high"] + spread_px >= p["sl"], bar["low"] + spread_px <= p["tp"]
-        if not (hit_sl or hit_tp):
-            return []
-        exit_px = p["sl"] if hit_sl else p["tp"]
-        pnl = self._pnl(p["side"], p["entry"], exit_px, p["lots"])
-        ledger.close_trade(p["id"], exit_px, "sl" if hit_sl else "tp", pnl, close_bar=bar_epoch)
-        self.pos = None
-        return [{"id": p["id"], "exit": exit_px, "pnl": pnl, "reason": "sl" if hit_sl else "tp"}]
+        exits, still_open = [], []
+        for p in self.positions:
+            if p["side"] == "buy":
+                hit_sl, hit_tp = bar["low"] <= p["sl"], bar["high"] >= p["tp"]
+            else:
+                hit_sl, hit_tp = bar["high"] + spread_px >= p["sl"], bar["low"] + spread_px <= p["tp"]
+            if not (hit_sl or hit_tp):
+                still_open.append(p)
+                continue
+            exit_px = p["sl"] if hit_sl else p["tp"]
+            pnl = self._pnl(p["side"], p["entry"], exit_px, p["lots"])
+            ledger.close_trade(p["id"], exit_px, "sl" if hit_sl else "tp", pnl, close_bar=bar_epoch)
+            exits.append({"id": p["id"], "exit": exit_px, "pnl": pnl, "reason": "sl" if hit_sl else "tp"})
+        self.positions = still_open
+        return exits
 
     def sync(self):
         return []
 
     def close_all(self, reason="kill"):
-        if not self.pos:
-            return
         t = self.tick_fn()
-        px = t.bid if self.pos["side"] == "buy" else t.ask
-        ledger.close_trade(self.pos["id"], px, reason, self._pnl(self.pos["side"], self.pos["entry"], px, self.pos["lots"]))
-        self.pos = None
+        for p in self.positions:
+            px = t.bid if p["side"] == "buy" else t.ask
+            ledger.close_trade(p["id"], px, reason, self._pnl(p["side"], p["entry"], px, p["lots"]))
+        self.positions = []
 
 
 REASONS = {}   # filled lazily from mt5 constants
@@ -189,6 +200,12 @@ class LiveBroker:
 
     def account_equity(self) -> float:
         return mt5.account_info().equity
+
+    def account_balance(self) -> float:
+        return mt5.account_info().balance
+
+    def open_count(self) -> int:
+        return len(self._positions())
 
     def _positions(self):
         return [p for p in (mt5.positions_get(symbol=self.symbol) or []) if p.magic == self.magic]

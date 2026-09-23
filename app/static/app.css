@@ -222,3 +222,15 @@ label.check { flex-direction: row; align-items: center; gap: 8px; grid-column: s
 .stat strong { font: 500 16px var(--mono); }
 .up { color: var(--up); } .down { color: var(--down); }
 tr.open-row td { background: rgba(201,162,74,.06); }
+
+.span2 { grid-column: span 2; margin: 0; }
+.plan { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 12px; }
+.plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.plan-grid div { background: var(--bg-2); border-radius: var(--r-sm); padding: 7px 9px; }
+.plan-grid span { display: block; font-size: 11px; color: var(--muted); }
+.plan-grid strong { font: 500 13px var(--mono); }
+.plan-grid .wide { grid-column: span 2; }
+.plan-note { font-size: 12px; margin: 8px 0 0; color: var(--muted); }
+.plan-note.warn { color: var(--warn); }
+#real-hint { margin: 6px 0 0; }
+.plan-grid strong small { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }

@@ -39,3 +39,14 @@
   mode filter; `/api/bot/trades`; Hermes tool `get_bot_trades`; Settings toggle for sound.
 - **Tested**: ledger + paper restart recovery; live sync against a simulated MT5 (SL hit, manual close, moved stop, orphan,
   user's trade ignored); risk gate cases; API with MT5 offline; UI screenshots with simulated trades.
+
+## 2026-09-23: Stake-based money rules, 25 open trades
+- **Rules**: stake = 0.1% of balance as margin (minimum lot if below it); SL at −25% of stake; TP +200% of stake at the
+  minimum lot easing (log) to +50% at 1.00 lot and above; max 25 bot trades open (1 on netting); 100 new/day.
+- **Training** now labels with the same exits (margin rate from the account's real leverage via `order_calc_margin`),
+  prints the break-even win rate (11.1% at 8:1) and saves a suggested threshold. Default threshold 0.15; slider 0.05–0.8.
+- **App**: stake slider, live *Each trade right now* plan panel (stake, lots, SL/TP money + distance, R:R, worst case if
+  all 25 stop, min-lot and spread warnings), Settings → Bot money rules, real-lock explanation.
+- **Tested**: stake plan across balances/leverage; multi-position paper broker incl. restart; stake-rule training; plan API
+  + UI with simulated MT5 (1:100, $1,000 → min lot, 16.6% worst case warning).
+- **Answered**: model = XGBoost (signals) + Hermes 3 8B / Hermes Agent (assistant); Real is locked by design.

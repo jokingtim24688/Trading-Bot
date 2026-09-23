@@ -10,7 +10,6 @@ from pathlib import Path
 import httpx
 
 from . import memory, mt5_service
-from .jobs import jobs
 from .settings import DATA, load
 
 NOTES = DATA / "notes"
@@ -60,16 +59,20 @@ def _safe_note_name(title: str) -> Path:
 
 
 def _start_agent(mode: str = "paper") -> str:
+    from .server import agent_start
     s = load()
-    if not mt5_service.model_exists(s["symbol"]):
-        return f"No trained model for {s['symbol']} yet. Train one on the Train tab first."
-    args = ["-m", "agent.run", "--symbol", s["symbol"], "--threshold", str(s["threshold"]), "--risk", str(s["risk_pct"])]
-    if s.get("terminal_path"):
-        args += ["--terminal", s["terminal_path"]]
-    if mode == "demo":
-        args.append("--live")          # agent.run itself refuses real accounts without --allow-real
-    jobs.start("agent", args)
-    return f"agent started in {mode} mode on {s['symbol']} M1"
+    agent_start({"mode": "demo" if mode == "demo" else "paper"})   # never real from chat
+    return (f"agent started in {mode} mode on {s['symbol']} M1: stake {s['stake_pct']}% of balance, "
+            f"SL -{s['sl_pct_of_stake']}% / TP +{s['tp_pct_small']}->{s['tp_pct_large']}% of stake, max {s['max_open_trades']} open")
+
+
+def _jobs():
+    from .jobs import jobs
+    return jobs
+
+
+def _plan(mode: str = "paper") -> dict:
+    return mt5_service.trade_plan(load()["symbol"], mode, load())
 
 
 def _bot_trades(limit: int = 10) -> dict:
@@ -96,11 +99,14 @@ TOOLS = {
                        "The trading bot's own trades: open ones (entry, SL, TP, live P/L) and recent closed ones, plus "
                        "win rate / P&L / R stats per mode. Use when the user wants to follow or copy the bot.",
                        {"limit": {"type": "integer", "description": "recent closed trades to include"}}),
-    "agent_status": (lambda: {**jobs.status()["agent"], "log_tail": jobs.jobs["agent"].tail(15)},
+    "bot_trade_plan": (_plan, "What the bot will risk and target per trade right now: lots, stake, SL/TP in money and price, "
+                       "whether the minimum lot was forced, and the worst case if all max open trades stop out.",
+                       {"mode": {"type": "string", "enum": ["paper", "demo", "real"]}}),
+    "agent_status": (lambda: {**_jobs().status()["agent"], "log_tail": _jobs().jobs["agent"].tail(15)},
                      "Whether the M1 trading agent is running, plus its latest log lines.", {}),
     "start_agent": (_start_agent, "Start the M1 trading agent. mode 'paper' (no orders) or 'demo' (orders on a demo account).",
                     {"mode": {"type": "string", "enum": ["paper", "demo"]}}),
-    "stop_agent": (lambda: (jobs.stop("agent"), "agent stopped")[1], "Stop the trading agent (server-side SL/TP stay active).", {}),
+    "stop_agent": (lambda: (_jobs().stop("agent"), "agent stopped")[1], "Stop the trading agent (server-side SL/TP stay active).", {}),
     "remember": (memory.remember, "Save a fact about the user, their preferences, or lessons learned to long-term memory.",
                  {"text": {"type": "string"}}),
     "recall": (lambda query: {"facts": memory.relevant_facts(query, 8), "past_messages": memory.search_messages(query, 5)},
