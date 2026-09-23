@@ -1,0 +1,453 @@
+<title>M1 Bot Live Replay</title>
+<meta name="description" content="Simulated view of the MT5 M1 trading bot running with its stake rules.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+:root {
+  --bg: #0e1013; --bg-2: #12151a; --surface: #161a1f; --raised: #1c2127;
+  --line: #262c34; --line-soft: #1f242b; --text: #e6e3da; --muted: #8c9098;
+  --gold: #c9a24a; --gold-soft: rgba(201,162,74,.14); --up: #3fb68b; --down: #e0574f; --warn: #e0a33a;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--text); }
+body { font: 14px/1.45 var(--sans); padding-inline: 16px; padding-block: 12px 24px; margin: 0; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); } .small { font-size: 12px; }
+.up { color: var(--up); } .down { color: var(--down); }
+h3 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: .01em; }
+button { font: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+.sim-note { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between;
+  border: 1px dashed rgba(201,162,74,.45); background: rgba(201,162,74,.06); border-radius: var(--r-md);
+  padding: 8px 12px; margin-bottom: 10px; font-size: 12.5px; }
+.sim-note strong { color: var(--gold); font-weight: 600; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.seg button { background: var(--bg-2); color: var(--muted); border: 0; padding: 5px 10px; cursor: pointer; font: 500 12px var(--mono); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--gold); color: #17130a; }
+.btn { background: var(--raised); color: var(--text); border: 1px solid var(--line); padding: 6px 12px; border-radius: var(--r-sm);
+  cursor: pointer; font: 500 12.5px var(--sans); transition: transform .12s cubic-bezier(.3,1.6,.5,1), border-color .15s; }
+.btn:hover { border-color: #39414b; } .btn:active { transform: scale(.97); }
+.btn.primary { background: var(--gold); border-color: var(--gold); color: #17130a; font-weight: 600; }
+.btn.xs { padding: 3px 9px; font-size: 12px; }
+
+.strip { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; justify-content: space-between;
+  background: rgba(22,26,31,.8); border: 1px solid rgba(255,255,255,.07); border-radius: var(--r-lg); padding: 10px 16px;
+  margin-bottom: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+.acct { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: baseline; }
+.acct span.k { color: var(--muted); font-size: 12.5px; margin-right: 6px; }
+#equity { font-size: 17px; font-weight: 500; }
+.badge { font: 600 11px var(--sans); padding: 3px 8px; border-radius: 4px; color: var(--up); border: 1px solid rgba(63,182,139,.35); background: rgba(63,182,139,.08); }
+.pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--raised); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; }
+.pill.live { color: var(--up); border-color: rgba(63,182,139,.35); }
+.pill.stopped { color: var(--down); border-color: rgba(224,87,79,.4); }
+
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 14px; }
+.panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.chart-panel { display: flex; flex-direction: column; min-height: 520px; }
+.chart-head { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.quote { display: flex; gap: 10px; align-items: baseline; }
+#q-bid { font-size: 18px; }
+.tf { font: 600 11px var(--mono); color: var(--gold); border: 1px solid rgba(201,162,74,.4); padding: 1px 6px; border-radius: 4px; }
+#chart { flex: 1; min-height: 440px; }
+.side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+.bot-card { border-color: rgba(201,162,74,.3); }
+.bot-card.flash { animation: flash .7s ease; }
+@keyframes flash { 0% { box-shadow: 0 0 0 6px rgba(201,162,74,.35); } 100% { box-shadow: 0 0 0 0 rgba(201,162,74,0); } }
+.bt-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.side-tag { font: 600 12px var(--mono); padding: 2px 7px; border-radius: 4px; }
+.side-tag.buy { color: var(--up); background: rgba(63,182,139,.12); } .side-tag.sell { color: var(--down); background: rgba(224,87,79,.12); }
+.levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
+.levels div { background: var(--bg-2); border-radius: var(--r-sm); padding: 6px 8px; }
+.levels span { display: block; font-size: 11px; color: var(--muted); }
+.levels strong { font: 500 13px var(--mono); }
+.levels .sl strong { color: var(--down); } .levels .tp strong { color: var(--up); }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.empty { color: var(--muted); font-size: 13px; margin: 0; }
+
+.positions { display: flex; flex-direction: column; gap: 5px; max-height: 250px; overflow: auto; }
+.pos { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; padding: 6px 9px; background: var(--bg-2); border-radius: var(--r-sm); border-left: 3px solid var(--line); font-size: 12.5px; }
+.pos.buy { border-left-color: var(--up); } .pos.sell { border-left-color: var(--down); }
+.tag { font: 600 10.5px var(--sans); padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+.tag.bot { color: #17130a; background: var(--gold); } .tag.you { color: var(--muted); border: 1px solid var(--line); }
+
+.kill { position: relative; overflow: hidden; height: 46px; border-radius: var(--r-md); border: 1px solid rgba(224,87,79,.45);
+  background: rgba(224,87,79,.08); color: var(--down); font: 600 13px var(--sans); cursor: pointer; user-select: none; touch-action: none; }
+.kill .fill { position: absolute; inset: 0; width: 0; background: rgba(224,87,79,.3); }
+.kill.holding .fill { width: 100%; transition: width 1.2s linear; }
+.kill .lbl { position: relative; }
+
+.lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 12px; margin-top: 12px; }
+.console { margin: 0; height: 300px; overflow: auto; background: #0b0d10; border: 1px solid var(--line-soft); border-radius: var(--r-sm);
+  padding: 10px 12px; font: 11.5px/1.6 var(--mono); color: #c9c6bd; white-space: pre-wrap; word-break: break-word; }
+.console .ok { color: var(--gold); } .console .win { color: var(--up); } .console .loss { color: var(--down); } .console .skip { color: #6f747c; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 6px; margin-bottom: 10px; }
+.stat { background: var(--bg-2); border-radius: var(--r-sm); padding: 7px 9px; }
+.stat span { display: block; font-size: 11px; color: var(--muted); }
+.stat strong { font: 500 15px var(--mono); }
+.table-wrap { overflow: auto; max-height: 250px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; font-weight: 500; color: var(--muted); padding: 5px 7px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); white-space: nowrap; }
+td { padding: 5px 7px; border-bottom: 1px solid var(--line-soft); font-family: var(--mono); white-space: nowrap; }
+tr.open td { background: rgba(201,162,74,.06); }
+
+.rules { margin-top: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+.rule { background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r-sm); padding: 9px 11px; font-size: 12.5px; }
+.rule b { display: block; font-weight: 600; margin-bottom: 2px; }
+
+.toasts { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 6px; z-index: 5; max-width: min(420px, calc(100vw - 32px)); }
+.toast { background: rgba(22,26,31,.92); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,.08);
+  border-radius: var(--r-md); padding: 9px 13px; font-size: 12.5px; box-shadow: 0 12px 40px rgba(0,0,0,.45); animation: tin .25s ease; }
+.toast.loss { border-color: rgba(224,87,79,.5); } .toast.win { border-color: rgba(63,182,139,.5); }
+@keyframes tin { from { transform: translateY(10px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .toast, .bot-card.flash { animation: none; } .kill.holding .fill { transition: none; } }
+
+@media (max-width: 1000px) { .grid, .lower { grid-template-columns: minmax(0, 1fr); } #chart { min-height: 360px; } .chart-panel { min-height: 420px; } }
+</style>
+
+<div class="sim-note">
+  <span><strong>Simulation.</strong> Made-up gold prices and a simple stand-in for the model, running your real money rules. It shows what the app looks like while the bot trades, not how much it would make. Expect mostly small losses and occasional big wins.</span>
+  <div class="controls">
+    <button class="btn primary" id="play">Pause</button>
+    <div class="seg" role="group" aria-label="Speed"><button data-speed="1">1×</button><button data-speed="4" aria-pressed="true">4×</button><button data-speed="15">15×</button></div>
+    <div class="seg" role="group" aria-label="Balance"><button data-bal="1000">$1k</button><button data-bal="10000" aria-pressed="true">$10k</button><button data-bal="100000">$100k</button></div>
+    <div class="seg" role="group" aria-label="Leverage"><button data-lev="100">1:100</button><button data-lev="500" aria-pressed="true">1:500</button></div>
+    <button class="btn" id="sound" aria-pressed="false">Sound off</button>
+  </div>
+</div>
+
+<header class="strip">
+  <div class="acct">
+    <span class="badge">demo</span>
+    <span><span class="k">Equity</span><strong id="equity" class="num">—</strong></span>
+    <span><span class="k">Balance</span><span id="balance" class="num">—</span></span>
+    <span><span class="k">Floating</span><span id="floating" class="num">—</span></span>
+    <span><span class="k">Free margin</span><span id="free" class="num">—</span></span>
+    <span><span class="k">Bot today</span><span id="today" class="num">—</span></span>
+  </div>
+  <span id="agent-pill" class="pill live">agent running · demo · 0/25 open</span>
+</header>
+
+<div class="grid">
+  <section class="panel chart-panel" aria-label="XAUUSD M1 chart">
+    <div class="chart-head">
+      <span class="muted small" id="clock">—</span>
+      <div class="quote"><strong>XAUUSD</strong><span class="num" id="q-bid">—</span><span class="muted small">spread</span><span class="num" id="q-spr">—</span><span class="tf">M1</span></div>
+    </div>
+    <div id="chart"></div>
+  </section>
+
+  <aside class="side">
+    <section class="panel bot-card" id="bot-card">
+      <div class="panel-head"><h3>Bot trade</h3><span class="muted small" id="bt-count"></span></div>
+      <div id="bot-now"><p class="empty">The bot is flat and watching each candle close.</p></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h3>Open positions</h3><span class="muted small" id="pos-count"></span></div>
+      <div class="positions" id="positions"></div>
+    </section>
+    <button class="kill" id="kill"><span class="fill"></span><span class="lbl">Hold to flatten agent</span></button>
+  </aside>
+</div>
+
+<div class="lower">
+  <section class="panel">
+    <div class="panel-head"><h3>Live log</h3><span class="muted small">what the agent prints each candle</span></div>
+    <pre class="console" id="log"></pre>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h3>Bot trades</h3><span class="muted small" id="be"></span></div>
+    <div class="stats" id="stats"></div>
+    <div class="table-wrap"><table><thead><tr><th>#</th><th>Opened</th><th>Side</th><th>Lots</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>P/L</th><th>R</th><th>Conf.</th></tr></thead><tbody id="trades"></tbody></table></div>
+  </section>
+</div>
+
+<div class="rules" id="rules"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const fmt = (n, d = 2) => Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const signed = v => `${v >= 0 ? "+" : "−"}${fmt(Math.abs(v))}`;
+  const cls = v => v > 0 ? "up" : v < 0 ? "down" : "";
+
+  /* ---- the bot's rules (same as agent/config.py MoneyConfig + RiskConfig) ---- */
+  const RULES = { stakePct: 0.1, slPct: 25, tpSmall: 200, tpLarge: 50, maxOpen: 25, maxSpreadToStop: 0.35,
+                  threshold: 0.15, dailyLossPct: 3, contract: 100, volMin: 0.01, volStep: 0.01 };
+  const cfg = { balance: 10000, leverage: 500, speed: 4 };
+
+  function stakePlan(balance, price) {
+    const mpl = price * RULES.contract / cfg.leverage;                 // margin for 1.00 lot
+    const target = balance * RULES.stakePct / 100;
+    let lots = Math.floor(target / mpl / RULES.volStep + 1e-9) * RULES.volStep;
+    const forcedMin = lots < RULES.volMin;
+    lots = +Math.max(lots, RULES.volMin).toFixed(2);
+    const stake = lots * mpl, small = RULES.volMin * mpl, large = 100 * small;
+    let tpPct = RULES.tpSmall;
+    if (stake >= large) tpPct = RULES.tpLarge;
+    else if (stake > small) tpPct = RULES.tpSmall + (Math.log(stake) - Math.log(small)) / (Math.log(large) - Math.log(small)) * (RULES.tpLarge - RULES.tpSmall);
+    const perPrice = lots * RULES.contract;                            // $ per 1.00 move
+    const slMoney = stake * RULES.slPct / 100, tpMoney = stake * tpPct / 100;
+    return { lots, stake, target, forcedMin, tpPct, slMoney, tpMoney, slDist: slMoney / perPrice, tpDist: tpMoney / perPrice };
+  }
+
+  /* ---- synthetic market ---- */
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const gauss = () => { let u = 0, v = 0; while (!u) u = rnd(); while (!v) v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  const TICKS = 12;
+  let S;
+
+  function reset() {
+    seed = 7;
+    S = { t: Math.floor(Date.UTC(2026, 8, 23, 12, 0) / 1000), price: 2650.4, drift: 0, regimeLeft: 40, spread: 0.16, spikeLeft: 0,
+          tick: 0, bars: [], bar: null, balance: cfg.balance, startBal: cfg.balance, trades: [], nextId: 1, log: [],
+          stopped: false, manual: { side: "buy", lots: 0.05, entry: 2648.9, sl: 2645.0, tp: 2656.0 } };
+    for (let i = 0; i < 150; i++) { for (let k = 0; k < TICKS; k++) stepPrice(); closeBar(true); }
+    series.setData(S.bars.map(b => ({ ...b })));
+    S.manual.entry = +(S.price - 0.8).toFixed(2); S.manual.sl = +(S.manual.entry - 4).toFixed(2); S.manual.tp = +(S.manual.entry + 7).toFixed(2);
+    logLine(`[demo] XAUUSD M1 | threshold ${RULES.threshold} | stake ${RULES.stakePct}% of balance | SL -${RULES.slPct}% / TP +${RULES.tpSmall}->${RULES.tpLarge}% of stake | max ${RULES.maxOpen} open`, "ok");
+    logLine(`tracking bot trades with magic 260923; your own trades are left alone`);
+    renderRules(); render();
+  }
+
+  function stepPrice() {
+    if (--S.regimeLeft <= 0) { const r = rnd(); S.drift = r < 0.3 ? 0.02 : r < 0.6 ? -0.02 : 0; S.regimeLeft = 10 * TICKS + Math.floor(rnd() * 40 * TICKS); }
+    S.price += S.drift + gauss() * 0.13;
+    if (!S.bar) S.bar = { time: S.t, open: S.price, high: S.price, low: S.price, close: S.price };
+    S.bar.high = Math.max(S.bar.high, S.price); S.bar.low = Math.min(S.bar.low, S.price); S.bar.close = S.price;
+  }
+  function closeBar(silent) {
+    const b = S.bar; S.bars.push(b); S.bar = null; S.t += 60;
+    if (S.spikeLeft > 0) S.spikeLeft--; else if (rnd() < 0.025) S.spikeLeft = 3 + Math.floor(rnd() * 4);
+    S.spread = S.spikeLeft ? 0.55 + rnd() * 0.3 : 0.14 + rnd() * 0.05;
+    if (!silent) onBarClose(b);
+  }
+
+  /* ---- the bot ---- */
+  const openTrades = () => S.trades.filter(t => t.status === "open");
+  const hhmm = t => new Date(t * 1000).toISOString().slice(11, 16);
+  function botTodayPnl() { return S.trades.reduce((a, t) => a + (t.status === "closed" ? t.pnl : floatPnl(t)), 0); }
+  function floatPnl(t) { const bid = S.price, ask = S.price + S.spread; const px = t.side === "buy" ? bid : ask;
+    return (t.side === "buy" ? px - t.entry : t.entry - px) * t.lots * RULES.contract; }
+
+  function onBarClose(b) {
+    if (S.stopped) return;
+    const open = openTrades();
+    // stand-in model: follows the last 15 candles' momentum with noise. It can't see the future, so trend flips hurt it.
+    // (The real bot uses the XGBoost model trained on your own M1 history.)
+    const n = S.bars.length, mom = n > 15 ? (S.bars[n - 1].close - S.bars[n - 16].close) / 1.5 : 0;
+    const pLong = Math.max(0.01, 0.09 + 0.06 * Math.tanh(mom) + gauss() * 0.04);
+    const pShort = Math.max(0.01, 0.09 - 0.06 * Math.tanh(mom) + gauss() * 0.04);
+    const side = pLong >= RULES.threshold && pLong > pShort ? "buy" : pShort >= RULES.threshold && pShort > pLong ? "sell" : null;
+    if (!side) return;
+    const prob = side === "buy" ? pLong : pShort;
+    const tstr = hhmm(b.time);
+    if (open.length >= RULES.maxOpen) { logLine(`${tstr} ${side} signal p=${prob.toFixed(2)} skipped: ${RULES.maxOpen}/${RULES.maxOpen} trades already open`, "skip"); return; }
+    if (botTodayPnl() <= -S.startBal * RULES.dailyLossPct / 100) { logLine(`${tstr} skip: bot daily loss limit`, "skip"); return; }
+    const price = side === "buy" ? S.price + S.spread : S.price;
+    const p = stakePlan(S.balance, price);
+    if (S.spread > p.slDist * RULES.maxSpreadToStop) { logLine(`${tstr} ${side} signal p=${prob.toFixed(2)} skipped: spread ${S.spread.toFixed(2)} is over 35% of the stop (${p.slDist.toFixed(2)})`, "skip"); return; }
+    const t = { id: S.nextId++, side, lots: p.lots, entry: price, prob,
+                sl: side === "buy" ? price - p.slDist : price + p.slDist, tp: side === "buy" ? price + p.tpDist : price - p.tpDist,
+                sl0dist: p.slDist, openBar: b.time + 60, status: "open", plan: p };
+    S.trades.push(t);
+    logLine(`${tstr} ${side.toUpperCase()} ${t.lots} @ ${fmt(price)} sl ${fmt(t.sl)} tp ${fmt(t.tp)} p=${prob.toFixed(2)} -> fill #${t.id} | stake ${fmt(p.stake)} (${p.forcedMin ? "min lot" : RULES.stakePct + "% of balance"}) SL -${fmt(p.slMoney)} TP +${fmt(p.tpMoney)} (${p.tpPct.toFixed(0)}%) open ${openTrades().length}/${RULES.maxOpen}`, "ok");
+    toast(`Bot ${side.toUpperCase()} XAUUSD ${t.lots} @ ${fmt(price)} · SL ${fmt(t.sl)} · TP ${fmt(t.tp)}`);
+    beep([660, 880]); flashCard();
+  }
+
+  function checkExits() {
+    const bid = S.price, ask = S.price + S.spread;
+    for (const t of openTrades()) {
+      const px = t.side === "buy" ? bid : ask;
+      const hitSl = t.side === "buy" ? px <= t.sl : px >= t.sl;
+      const hitTp = t.side === "buy" ? px >= t.tp : px <= t.tp;
+      if (hitSl || hitTp) closeTrade(t, hitSl ? t.sl : t.tp, hitSl ? "sl" : "tp");
+    }
+  }
+  function closeTrade(t, exit, why) {
+    t.status = "closed"; t.exit = exit; t.why = why; t.closeBar = S.t;
+    t.pnl = (t.side === "buy" ? exit - t.entry : t.entry - exit) * t.lots * RULES.contract;
+    t.r = (t.side === "buy" ? exit - t.entry : t.entry - exit) / t.sl0dist;
+    S.balance += t.pnl;
+    const win = t.pnl >= 0;
+    logLine(`EXIT #${t.id} ${why} @ ${fmt(exit)} pnl ${signed(t.pnl)} (${t.r >= 0 ? "+" : ""}${t.r.toFixed(2)}R)`, win ? "win" : "loss");
+    if (why !== "kill") { toast(`Bot closed #${t.id} · ${why} · ${signed(t.pnl)} (${t.r >= 0 ? "+" : ""}${t.r.toFixed(1)}R)`, win ? "win" : "loss"); beep(win ? [700, 940, 1180] : [520, 390]); }
+  }
+
+  /* ---- chart ---- */
+  const chart = LightweightCharts.createChart($("#chart"), {
+    layout: { background: { color: "transparent" }, textColor: "#8c9098", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
+    grid: { vertLines: { color: "rgba(255,255,255,.035)" }, horzLines: { color: "rgba(255,255,255,.035)" } },
+    rightPriceScale: { borderColor: "#262c34" }, timeScale: { borderColor: "#262c34", timeVisible: true, secondsVisible: false, rightOffset: 8 },
+    crosshair: { mode: 0 }, autoSize: true, localization: { locale: "en-US" } });
+  const series = chart.addCandlestickSeries({ upColor: "#3fb68b", downColor: "#e0574f", borderVisible: false, wickUpColor: "#3fb68b", wickDownColor: "#e0574f",
+    priceFormat: { type: "price", precision: 2, minMove: 0.01 } });
+  let lines = [];
+  function drawOverlay() {
+    lines.forEach(l => series.removePriceLine(l)); lines = [];
+    const last = openTrades().slice(-1)[0];
+    if (last) {
+      const mk = (price, color, title, style) => lines.push(series.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
+      mk(last.entry, "#c9a24a", `bot ${last.side} #${last.id}`, 2); mk(last.sl, "#e0574f", "SL", 0); mk(last.tp, "#3fb68b", "TP", 0);
+    }
+    lines.push(series.createPriceLine({ price: S.manual.entry, color: "#5b636d", lineWidth: 1, lineStyle: 3, axisLabelVisible: false, title: "your buy" }));
+    const first = S.bars.length ? S.bars[0].time : 0, lastBar = S.bar ? S.bar.time : S.t;
+    const marks = [];
+    for (const t of S.trades.slice(-40)) {
+      if (t.openBar >= first) marks.push({ time: Math.min(t.openBar, lastBar), position: t.side === "buy" ? "belowBar" : "aboveBar",
+        color: t.side === "buy" ? "#3fb68b" : "#e0574f", shape: t.side === "buy" ? "arrowUp" : "arrowDown", size: 0.6 });
+      if (t.status === "closed" && t.closeBar >= first) marks.push({ time: Math.min(t.closeBar, lastBar), position: t.side === "buy" ? "aboveBar" : "belowBar",
+        color: t.pnl >= 0 ? "#3fb68b" : "#e0574f", shape: "circle", size: 0.6, text: t.pnl >= 0 ? `+${t.r.toFixed(0)}R` : "" });
+    }
+    marks.sort((a, b) => a.time - b.time);
+    series.setMarkers(marks);
+  }
+
+  /* ---- rendering ---- */
+  const logBox = $("#log");
+  function logLine(text, kind = "") {
+    S.log.push({ text, kind }); if (S.log.length > 250) S.log.shift();
+    const stick = logBox.scrollTop + logBox.clientHeight >= logBox.scrollHeight - 20;
+    logBox.innerHTML = S.log.map(l => `<span class="${l.kind}">${l.text.replace(/</g, "&lt;")}</span>`).join("\n");
+    if (stick) logBox.scrollTop = logBox.scrollHeight;
+  }
+  function render() {
+    const open = openTrades();
+    const floatBot = open.reduce((a, t) => a + floatPnl(t), 0);
+    const m = S.manual, manualPnl = (S.price - m.entry) * m.lots * RULES.contract;
+    const margin = open.reduce((a, t) => a + t.plan.stake, 0) + m.lots * S.price * RULES.contract / cfg.leverage;
+    const equity = S.balance + floatBot + manualPnl;
+    $("#equity").textContent = fmt(equity); $("#balance").textContent = fmt(S.balance);
+    const f = $("#floating"); f.textContent = signed(floatBot + manualPnl); f.className = "num " + cls(floatBot + manualPnl);
+    $("#free").textContent = fmt(equity - margin);
+    const td = $("#today"), tv = botTodayPnl(); td.textContent = signed(tv); td.className = "num " + cls(tv);
+    const pill = $("#agent-pill");
+    pill.textContent = S.stopped ? "agent stopped · kill switch" : `agent running · demo · ${open.length}/${RULES.maxOpen} open`;
+    pill.className = "pill " + (S.stopped ? "stopped" : "live");
+    $("#q-bid").textContent = fmt(S.price); $("#q-spr").textContent = Math.round(S.spread * 100);
+    $("#q-spr").className = "num " + (S.spikeLeft ? "down" : "");
+    $("#clock").textContent = `${new Date((S.bar ? S.bar.time : S.t) * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC (simulated)`;
+
+    // bot card: newest open trade
+    const t = open.slice(-1)[0];
+    $("#bt-count").textContent = open.length ? `${open.length} open · showing newest` : "";
+    $("#bot-now").innerHTML = !t ? `<p class="empty">${S.stopped ? "The agent is stopped. Pick a balance or leverage above to start a fresh run." : "The bot is flat and watching each candle close."}</p>` : (() => {
+      const pnl = floatPnl(t), px = t.side === "buy" ? S.price : S.price + S.spread, rNow = (t.side === "buy" ? px - t.entry : t.entry - px) / t.sl0dist;
+      return `<div class="bt-head"><span class="side-tag ${t.side}">${t.side.toUpperCase()}</span><strong>XAUUSD</strong><span class="muted small">${t.lots} lots · demo · conf ${Math.round(t.prob * 100)}% · #${t.id}</span></div>
+        <div class="levels"><div><span>Entry</span><strong>${fmt(t.entry)}</strong></div><div class="sl"><span>Stop</span><strong>${fmt(t.sl)}</strong></div><div class="tp"><span>Target</span><strong>${fmt(t.tp)}</strong></div></div>
+        <div class="foot"><span class="num ${cls(pnl)}">${signed(pnl)} <span class="muted">(${rNow >= 0 ? "+" : ""}${rNow.toFixed(2)}R)</span></span>
+        <button class="btn xs" id="copy">Copy levels</button></div>
+        <p class="muted small" style="margin:6px 0 0">stake ${fmt(t.plan.stake)} · risk −${fmt(t.plan.slMoney)} · target +${fmt(t.plan.tpMoney)} (${t.plan.tpPct.toFixed(0)}% of stake)</p>`;
+    })();
+
+    // positions: bot + your manual trade
+    $("#pos-count").textContent = `${open.length + 1} open`;
+    $("#positions").innerHTML = `<div class="pos buy"><span><strong>XAUUSD</strong><span class="tag you">You</span> <span class="muted">buy ${m.lots}</span></span><span class="num ${cls(manualPnl)}">${signed(manualPnl)}</span><span class="muted small num">SL ${fmt(m.sl)} TP ${fmt(m.tp)}</span></div>`
+      + open.slice().reverse().map(o => { const p = floatPnl(o); return `<div class="pos ${o.side}"><span><strong>XAUUSD</strong><span class="tag bot">Bot</span> <span class="muted">${o.side} ${o.lots}</span></span><span class="num ${cls(p)}">${signed(p)}</span><span class="muted small num">#${o.id} SL ${fmt(o.sl)} TP ${fmt(o.tp)}</span></div>`; }).join("");
+
+    // stats + table
+    const closed = S.trades.filter(x => x.status === "closed");
+    const wins = closed.filter(x => x.pnl > 0), net = closed.reduce((a, x) => a + x.pnl, 0), totR = closed.reduce((a, x) => a + x.r, 0);
+    const gw = wins.reduce((a, x) => a + x.pnl, 0), gl = -closed.filter(x => x.pnl < 0).reduce((a, x) => a + x.pnl, 0);
+    const stat = (k, v, c = "") => `<div class="stat"><span>${k}</span><strong class="${c}">${v}</strong></div>`;
+    $("#stats").innerHTML = stat("Closed", closed.length) + stat("Open", `${open.length}/${RULES.maxOpen}`)
+      + stat("Win rate", closed.length ? `${(100 * wins.length / closed.length).toFixed(1)}%` : "—")
+      + stat("Net P/L", signed(net), cls(net)) + stat("Total R", `${totR >= 0 ? "+" : ""}${totR.toFixed(1)}`, cls(totR))
+      + stat("Profit factor", gl ? (gw / gl).toFixed(2) : "—");
+    const rr = open[0] ? open[0].plan.tpPct / RULES.slPct : RULES.tpSmall / RULES.slPct;
+    $("#be").textContent = `break-even win rate ${(100 / (1 + rr)).toFixed(1)}%`;
+    $("#trades").innerHTML = S.trades.slice(-60).reverse().map(x => `<tr class="${x.status}"><td>${x.id}</td><td>${hhmm(x.openBar)}</td><td class="${x.side === "buy" ? "up" : "down"}">${x.side}</td><td>${x.lots}</td>
+      <td>${fmt(x.entry)}</td><td>${fmt(x.sl)}</td><td>${fmt(x.tp)}</td><td>${x.status === "open" ? "open" : fmt(x.exit)}</td><td>${x.why || ""}</td>
+      <td class="${cls(x.pnl)}">${x.status === "open" ? "" : signed(x.pnl)}</td><td class="${cls(x.r)}">${x.status === "open" ? "" : (x.r >= 0 ? "+" : "") + x.r.toFixed(2)}</td><td>${Math.round(x.prob * 100)}%</td></tr>`).join("")
+      || `<tr><td colspan="12" class="muted">No trades yet. The first signal usually arrives within a few candles.</td></tr>`;
+    drawOverlay();
+  }
+  function renderRules() {
+    const p = stakePlan(cfg.balance, S.price);
+    const rows = [
+      ["Stake per trade", `${RULES.stakePct}% of $${fmt(cfg.balance, 0)} = $${fmt(p.target)} → ${p.lots} lot, $${fmt(p.stake)} margin${p.forcedMin ? " (minimum lot)" : ""}`],
+      ["Stop loss", `−${RULES.slPct}% of stake = −$${fmt(p.slMoney)}, ${p.slDist.toFixed(2)} from entry`],
+      ["Take profit", `+${p.tpPct.toFixed(0)}% of stake = +$${fmt(p.tpMoney)}, ${p.tpDist.toFixed(2)} from entry`],
+      ["Max open", `${RULES.maxOpen} trades · worst case all stop: −$${fmt(p.slMoney * RULES.maxOpen)} (${(100 * p.slMoney * RULES.maxOpen / cfg.balance).toFixed(2)}%)`],
+    ];
+    $("#rules").innerHTML = rows.map(([k, v]) => `<div class="rule"><b>${k}</b><span class="muted">${v}</span></div>`).join("");
+  }
+
+  /* ---- feedback ---- */
+  let audio = null;
+  function beep(notes) {
+    if (!audio) return;
+    let t = audio.currentTime;
+    notes.forEach(fq => { const o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = fq; o.connect(g); g.connect(audio.destination);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.15, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2); o.start(t); o.stop(t + 0.22); t += 0.15; });
+  }
+  function toast(msg, kind = "") {
+    const box = $("#toasts"), el = document.createElement("div"); el.className = "toast " + kind; el.textContent = msg;
+    box.appendChild(el); while (box.children.length > 3) box.firstChild.remove();
+    setTimeout(() => el.remove(), 4500);
+  }
+  function flashCard() { const c = $("#bot-card"); c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash"); }
+
+  /* ---- controls ---- */
+  let playing = true, timer;
+  function loop() {
+    clearInterval(timer);
+    timer = setInterval(() => {
+      if (!playing) return;
+      for (let s = 0; s < cfg.speed; s++) {
+        stepPrice(); S.tick++;
+        if (!S.stopped) checkExits();
+        if (S.tick % TICKS === 0) { const b = S.bar; series.update({ ...b }); closeBar(false); S.bars.length > 400 && S.bars.shift(); }
+      }
+      if (S.bar) series.update({ ...S.bar });
+      render();
+    }, 170);
+  }
+  $("#play").onclick = e => { playing = !playing; e.target.textContent = playing ? "Pause" : "Play"; };
+  const pick = (attr, key, cast) => document.querySelectorAll(`[data-${attr}]`).forEach(b => b.onclick = () => {
+    document.querySelectorAll(`[data-${attr}]`).forEach(x => x.setAttribute("aria-pressed", x === b)); cfg[key] = cast(b.dataset[attr]);
+    if (key !== "speed") { series.setData([]); reset(); }
+  });
+  pick("speed", "speed", Number); pick("bal", "balance", Number); pick("lev", "leverage", Number);
+  $("#sound").onclick = e => {
+    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (err) { return; } e.target.textContent = "Sound on"; e.target.setAttribute("aria-pressed", "true"); beep([660, 880]); }
+    else { audio.close(); audio = null; e.target.textContent = "Sound off"; e.target.setAttribute("aria-pressed", "false"); }
+  };
+  document.addEventListener("click", async e => {
+    if (e.target.id !== "copy") return;
+    const t = openTrades().slice(-1)[0]; if (!t) return;
+    const txt = `XAUUSD ${t.side.toUpperCase()} entry ${fmt(t.entry)} SL ${fmt(t.sl)} TP ${fmt(t.tp)}`;
+    try { await navigator.clipboard.writeText(txt); toast("Copied: " + txt); } catch (err) { toast(txt); }
+  });
+  (() => {
+    const k = $("#kill"); let h;
+    const cancel = () => { clearTimeout(h); k.classList.remove("holding"); };
+    k.addEventListener("pointerdown", () => {
+      if (S.stopped) { toast("Already stopped. Change balance or leverage to start a fresh run."); return; }
+      k.classList.add("holding");
+      h = setTimeout(() => {
+        const n = openTrades().length;
+        openTrades().forEach(t => closeTrade(t, t.side === "buy" ? S.price : S.price + S.spread, "kill"));
+        S.stopped = true; logLine(`STOP file found: flattened ${n} trade(s) and exiting.`, "loss");
+        toast(`Agent stopped · ${n} bot trade(s) closed · your own trade left open`, "loss"); cancel(); render();
+      }, 1200);
+    });
+    ["pointerup", "pointerleave", "pointercancel"].forEach(ev => k.addEventListener(ev, cancel));
+  })();
+
+  reset(); loop();
+})();
+</script>

@@ -33,5 +33,6 @@
 `data/` settings.json, memory.db, trades.db (bot ledger), notes/, SYMBOL_M1.parquet · `logs/` job logs + journals · `models/` XGBoost JSON + meta.
 
 ## Other
+- `simulation/bot-simulation.html`: standalone simulated trading session (synthetic prices, real stake rules); published artifact https://claude.ai/artifact/2NHXbvdi3XurmF51kRbEzw
 - [Progress.md](../../Progress.md): session log of work done.
 - Hardware: Ryzen 5 7600 (6C/12T, AVX-512), RTX 4060 8 GB. See [agent.md](agent.md#hardware).

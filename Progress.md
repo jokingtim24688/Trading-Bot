@@ -50,3 +50,11 @@
 - **Tested**: stake plan across balances/leverage; multi-position paper broker incl. restart; stake-rule training; plan API
   + UI with simulated MT5 (1:100, $1,000 → min lot, 16.6% worst case warning).
 - **Answered**: model = XGBoost (signals) + Hermes 3 8B / Hermes Agent (assistant); Real is locked by design.
+
+## 2026-09-23: Trading simulation
+- `simulation/bot-simulation.html`, published as a private artifact: https://claude.ai/artifact/2NHXbvdi3XurmF51kRbEzw
+- Replays the app's Market screen with synthetic XAUUSD M1 prices and a momentum stand-in model (not the real XGBoost),
+  using the real stake rules (same `stake_plan` maths). Shows alerts, bot card, Bot/You tagged positions, chart entry/SL/TP
+  lines and markers, live log, trade table + stats, 25-open cap, spread-spike skips, hold-to-flatten.
+- Controls: speed 1/4/15×, balance $1k/$10k/$100k, leverage 1:100/1:500, sound.
+- First draft trended straight up (98% wins, misleading); rebalanced to a choppy market so results sit near break-even.
