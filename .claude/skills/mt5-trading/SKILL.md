@@ -40,7 +40,7 @@ Scripts in `scripts/` do deterministic work, so run them instead of redoing the 
 1. **Risk first.** Before any order logic, pin down the risk per trade (default 0.5–1% of
    equity), the stop distance, and the lot size from `position_size.py`. A trade without a
    stop loss is a sizing error, not a strategy. (This user's own bot uses stake-based rules instead: 0.1% of balance
-   as margin, SL at −25% / TP at +200%→50% of the stake, max 25 open. See `app_and_hermes.md` before changing them.)
+   as margin, SL at −25% / TP at +200%→50% of the stake, max 10 open at once. See `app_and_hermes.md` before changing them.)
 2. **Demo before live.** New code, new EAs, and new symbols start on a demo account, then go
    through the Strategy Tester on M1 with "Every tick based on real ticks", then a forward
    demo test. Say so when the user is about to go live with something untested.

@@ -60,7 +60,7 @@ The bot keeps its own ledger in `data/trades.db` (`agent/ledger.py`). It covers 
 - **Stake** = margin committed per trade = 0.1% of balance. If that's below the minimum lot (0.01 on XAUUSD), the minimum lot is used.
 - **Stop loss** = the trade has lost 25% of its stake. **Take profit** = +200% of stake for the smallest trade (minimum lot),
   easing log-scaled to +50% at 1.00 lot and above (anchors adjustable; 0 = auto).
-- **Max 25** bot trades open at once (1 on netting accounts), at most one new entry per M1 candle, 100 new entries/day.
+- **Max 10** bot trades open at the same time (not a session total) (1 on netting accounts), at most one new entry per M1 candle, 100 new entries/day.
 - Price distances depend only on leverage: stop ≈ 0.25 × price / leverage (XAUUSD at 1:100 ≈ $6.6; at 1:500 ≈ $1.3).
   The bot skips an entry if the spread is over 35% of the stop, or if the stop is inside the broker's stops level.
 - Reward:risk is up to 8:1, so the break-even win rate is ~11%. Expect low win rates and long losing streaks. Confidence

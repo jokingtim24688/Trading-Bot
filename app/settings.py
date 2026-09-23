@@ -20,7 +20,7 @@ DEFAULTS = {
     "tp_pct_large": 50.0,                  # ...easing to +50% for large stakes
     "small_stake": 0.0,                    # 0 = auto: the minimum lot's stake gets tp_pct_small
     "large_stake": 0.0,                    # 0 = auto: 100x minimum (1.00 lot on XAUUSD) gets tp_pct_large
-    "max_open_trades": 25,
+    "max_open_trades": 10,                  # bot trades open at the same time (not a per-session total)
     "early_exit": True,                    # bot may close a trade before its stop when the model turns against it
     "sl_score_mult": 1.5,                  # score: a stop-loss hit counts this many times worse than an early close
     "paper_balance": 10000.0,

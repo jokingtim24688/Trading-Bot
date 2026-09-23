@@ -70,3 +70,12 @@
   Settings for the stop-loss penalty and early exit. Hermes `get_bot_trades` includes score.
 - Simulation page republished with score + early exits.
 - Note: training labels still assume trades are held to SL/TP; early exit is a live rule on top.
+
+## 2026-09-23: Real-chart replay + 10 open at once
+- Real XAUUSD M1 candles (7 Jan 2026, 10:00–15:48 UTC, 349 bars) from the Hugging Face dataset fokan/xauusd-2009-2026
+  (HistData, EST timestamps), saved as `simulation/xauusd_m1_2026-01-07.csv` and validated (OHLC-consistent, no gaps).
+  Market-data sites and huggingface.co downloads are blocked in the cloud sandbox, so the data was read via the HF connector.
+- Simulation page: new "Real 7 Jan 2026 / Made-up" price switch (default Real). Each real candle is replayed as 12 ticks
+  (open→low→high→close or open→high→low→close); spread estimated (0.22–0.30, wider around the NY open); Restart at the end.
+- Max open trades changed 25 → 10 (clarified: trades open at the same time, not a per-session total) in agent config,
+  app settings, simulation and docs.

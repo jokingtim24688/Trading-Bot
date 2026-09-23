@@ -54,7 +54,7 @@ Check the GPU: `python -m agent.hardware` prints the CPU thread plan and whether
    This prints the break-even win rate and out-of-sample stats per threshold (trades, win %, avg R after spread),
    and saves a suggested threshold (most total R with 100+ trades and avg R > 0).
 3. **Paper trade** (default mode; places no orders):
-   `python -m agent.run --symbol XAUUSD --threshold <suggested> --stake-pct 0.1 --max-open 25`
+   `python -m agent.run --symbol XAUUSD --threshold <suggested> --stake-pct 0.1 --max-open 10`
 4. **Demo live** (real orders on a DEMO account): add `--live`.
 5. **Real account**: requires `--live --allow-real`, and only after weeks of stable demo results.
 
@@ -62,7 +62,7 @@ Check the GPU: `python -m agent.hardware` prints the CPU thread plan and whether
 - Timeframe hard-locked to M1 (`config.TIMEFRAME = "M1"`; not a CLI option).
 - Acts only on closed bars.
 - Stake rules: 0.1% of balance as margin per trade (minimum lot if smaller), SL −25% / TP +200%→50% of stake,
-  max 25 open trades, bot-only daily loss stop (3%) + account stop (6%), max 100 new trades/day.
+  max 10 open trades at once, bot-only daily loss stop (3%) + account stop (6%), max 100 new trades/day.
 - Spread filter (vs rolling median and ATR), session filter, rollover blackout.
 - Refuses to trade a real-money account unless `--allow-real` is passed.
 - Kill switch: create a file named `STOP` in the working directory and the agent flattens and exits.

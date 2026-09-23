@@ -32,7 +32,7 @@ def main():
     ap.add_argument("--tp-large", type=float, default=None, help="take-profit %% of stake for large stakes (default 50)")
     ap.add_argument("--small-stake", type=float, default=None, help="stake (account currency) at/below which --tp-small applies")
     ap.add_argument("--large-stake", type=float, default=None, help="stake at/above which --tp-large applies")
-    ap.add_argument("--max-open", type=int, default=None, help="max bot trades open at once (default 25)")
+    ap.add_argument("--max-open", type=int, default=None, help="max bot trades open at once (default 10)")
     ap.add_argument("--no-early-exit", action="store_true", help="always hold trades until SL or TP")
     ap.add_argument("--sl-score-mult", type=float, default=None, help="score penalty multiplier when a stop loss hits (default 1.5)")
     ap.add_argument("--terminal", default=None, help="path to terminal64.exe (optional)")
