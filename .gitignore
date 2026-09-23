@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+logs/
+models/
+STOP
+.env
+*-workspace/
+dist/
+build/
+*.skill

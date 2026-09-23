@@ -1,0 +1,7 @@
+# Add this to ~/.hermes/config.yaml inside WSL (merge with what's already there).
+# It gives Hermes Agent the MT5 tools. The Trading Bot app starts the bridge on Windows at launch
+# (Settings -> "Start the MT5 bridge for Hermes Agent when the app opens").
+# Requires WSL mirrored networking so "localhost" reaches Windows (see hermes/SETUP.md, step 1).
+mcp_servers:
+  mt5:
+    url: "http://localhost:8765/mcp"

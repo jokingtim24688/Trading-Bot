@@ -1,0 +1,49 @@
+"""Agent configuration. The timeframe is fixed to M1 on purpose and is not a CLI option."""
+from dataclasses import dataclass, field
+
+TIMEFRAME = "M1"          # locked: every data request and signal uses 1-minute bars
+BAR_SECONDS = 60
+
+
+@dataclass
+class HardwareConfig:
+    physical_cores: int = 6       # Ryzen 5 7600
+    logical_threads: int = 12
+    gpu_name_hint: str = "RTX 4060"
+    gpu_vram_gb: int = 8
+    train_on_gpu: bool = True     # XGBoost device="cuda" when available
+    live_predict_threads: int = 2 # leave cores for the MT5 terminal
+
+
+@dataclass
+class LabelConfig:
+    atr_period: int = 14
+    stop_atr_mult: float = 1.2    # stop distance = ATR * mult
+    reward_risk: float = 1.5      # take profit = stop * RR (keep >= 1)
+    horizon_bars: int = 30        # max holding time in M1 bars
+
+
+@dataclass
+class RiskConfig:
+    risk_per_trade_pct: float = 0.5
+    daily_loss_pct: float = 3.0
+    max_trades_per_day: int = 12
+    max_spread_to_atr: float = 0.15
+    max_spread_vs_median: float = 1.8
+    # Server-time hours when new entries are allowed (typical GMT+2/+3 broker: London open .. NY afternoon)
+    session_start_hour: int = 9
+    session_end_hour: int = 22
+    rollover_blackout: tuple = (23, 1)   # server hours [start, end) with no entries; wraps midnight
+    magic: int = 260923
+
+
+@dataclass
+class AgentConfig:
+    symbol: str = "XAUUSD"
+    threshold: float = 0.55
+    history_bars: int = 5000      # bars fetched each cycle (enough warm-up for EMA 3000)
+    model_dir: str = "models"
+    log_dir: str = "logs"
+    hardware: HardwareConfig = field(default_factory=HardwareConfig)
+    labels: LabelConfig = field(default_factory=LabelConfig)
+    risk: RiskConfig = field(default_factory=RiskConfig)

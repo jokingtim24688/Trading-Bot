@@ -1,0 +1,15 @@
+# Trading
+MetaTrader5>=5.0.45 ; sys_platform == "win32"
+numpy>=1.26
+pandas>=2.1
+pyarrow>=15
+xgboost>=2.0          # CUDA build is included in the Windows/Linux wheels (uses the RTX 4060)
+# App
+fastapi>=0.110
+uvicorn>=0.29
+httpx>=0.27
+psutil>=5.9
+pywebview>=5.0        # native window; the app falls back to your browser without it
+# MCP bridge (Claude / Hermes Agent)
+mcp>=1.2,<2          # 2.x renamed FastMCP; this server uses the 1.x API
+pydantic>=2.6
