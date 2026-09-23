@@ -22,7 +22,7 @@ function showTab(name) {
   $$(".tab").forEach(t => t.classList.toggle("active", t.id === `tab-${name}`));
   if (name === "dash" && state.chart) state.chart.timeScale().scrollToRealTime();
   if (name === "chat") { loadHistory(); loadFacts(); }
-  if (name === "agent") { pollAgentLog(); loadJournal(); }
+  if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); }
   if (name === "train") pollTrainLog();
 }
 $$(".rail-btn").forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -93,6 +93,8 @@ async function loadBars() {
     $("#q-sym").textContent = d.symbol; $("#q-bid").textContent = fmt(d.bid, d.digits);
     $("#q-spr").textContent = Math.round((d.ask - d.bid) / d.point);
     $("#chart-msg").classList.add("hidden");
+    state.barRange = d.bars.length ? [d.bars[0].time, d.bars[d.bars.length - 1].time] : null;
+    drawBotOverlay();
     if (!$("#sz-entry").value) $("#sz-entry").placeholder = fmt(d.bid, d.digits).replace(/,/g, "");
   } catch (e) {
     const m = $("#chart-msg"); m.textContent = e.message; m.classList.remove("hidden");
@@ -102,10 +104,138 @@ function renderChips() {
   const box = $("#symbols"); box.innerHTML = "";
   (state.settings.symbols_watch || []).forEach(sym => {
     const b = document.createElement("button"); b.className = "chip" + (sym === state.symbol ? " active" : ""); b.textContent = sym;
-    b.onclick = () => { state.symbol = sym; renderChips(); state.series && state.series.setData([]); loadBars(); sizeTrade(); };
+    b.onclick = () => selectSymbol(sym);
     box.appendChild(b);
   });
 }
+
+function selectSymbol(sym) {
+  if (sym === state.symbol) return;
+  state.symbol = sym; renderChips(); state.series && state.series.setData([]); loadBars(); sizeTrade();
+}
+
+/* ---------- the bot's own trades: card, chart overlay, history, alerts ---------- */
+state.bot = { known: null, data: null, filter: "", lines: [] };
+let audioCtx;
+function beep(notes) {
+  if (!state.settings?.alert_sound) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    let t = audioCtx.currentTime;
+    notes.forEach(f => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = "sine"; o.frequency.value = f; o.connect(g); g.connect(audioCtx.destination);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      o.start(t); o.stop(t + 0.24); t += 0.16;
+    });
+  } catch (e) {}
+}
+document.addEventListener("pointerdown", () => audioCtx && audioCtx.state === "suspended" && audioCtx.resume());
+const px = (v, sym) => v == null ? "—" : Number(v).toFixed(sym === state.symbol ? state.digits : (v < 20 ? 5 : 2));
+const signed = v => v == null ? "—" : `${v >= 0 ? "+" : ""}${fmt(v)}`;
+const cls = v => v > 0 ? "up" : v < 0 ? "down" : "";
+
+async function pollBot() {
+  let d;
+  try { d = await api("/api/bot/trades?limit=200"); } catch (e) { return; }
+  state.bot.data = d;
+  const now = new Map(d.recent.map(t => [t.id, t.status]));
+  if (state.bot.known) {
+    for (const t of d.recent) {
+      const before = state.bot.known.get(t.id);
+      if (before === undefined && t.status === "open") {
+        toast(`Bot ${t.side.toUpperCase()} ${t.symbol} ${t.lots} @ ${px(t.entry, t.symbol)} · SL ${px(t.sl, t.symbol)} · TP ${px(t.tp, t.symbol)} (${t.mode})`);
+        beep([660, 880]);
+        $("#bot-card").classList.remove("live"); void $("#bot-card").offsetWidth; $("#bot-card").classList.add("live");
+      } else if (before === "open" && t.status === "closed") {
+        toast(`Bot closed #${t.id} ${t.symbol} · ${t.exit_reason} · ${signed(t.pnl)}${t.r_multiple != null ? ` (${t.r_multiple >= 0 ? "+" : ""}${t.r_multiple}R)` : ""}`, t.pnl < 0);
+        beep(t.pnl >= 0 ? [700, 940, 1180] : [520, 390]);
+      }
+    }
+  }
+  state.bot.known = now;
+  renderBotCard(); drawBotOverlay();
+  if (state.tab === "agent") renderBotTable();
+}
+
+function renderBotCard() {
+  const d = state.bot.data; if (!d) return;
+  const box = $("#bot-now"), open = d.open;
+  const running = [...document.querySelectorAll("#agent-pill")].some(p => p.classList.contains("live"));
+  const today = Object.entries(d.stats).filter(([, s]) => s.closed || s.open).map(([m, s]) => `${m} ${signed(s.today_pnl)}`).join(" · ");
+  $("#bot-today").textContent = today ? `today: ${today}` : "";
+  if (!open.length) {
+    $("#bot-card").classList.remove("live");
+    box.innerHTML = `<p class="empty">${running ? "The bot is watching and currently flat." : "The bot isn't running."} When it enters you'll get an alert, and its entry, stop and target are drawn on the chart.</p>`;
+    return;
+  }
+  $("#bot-card").classList.add("live");
+  box.innerHTML = open.slice().reverse().map(t => {
+    const risk = Math.abs(t.entry - t.sl0), rNow = t.price != null && risk ? ((t.side === "buy" ? t.price - t.entry : t.entry - t.price) / risk) : null;
+    return `<div class="bt">
+      <div class="bt-head"><span class="bt-side ${t.side}">${t.side.toUpperCase()}</span><strong>${t.symbol}</strong><span class="muted small">${t.lots} lots · ${t.mode}${t.prob ? ` · conf ${Math.round(t.prob * 100)}%` : ""}</span></div>
+      <div class="bt-levels"><div><span>Entry</span><strong>${px(t.entry, t.symbol)}</strong></div><div class="sl"><span>Stop</span><strong>${px(t.sl, t.symbol)}</strong></div><div class="tp"><span>Target</span><strong>${px(t.tp, t.symbol)}</strong></div></div>
+      <div class="bt-foot"><span class="num ${cls(t.pnl)}">${signed(t.pnl)}${rNow != null ? ` <span class="muted">(${rNow >= 0 ? "+" : ""}${rNow.toFixed(2)}R)</span>` : ""}</span>
+        <span class="row gap"><button class="btn xs" data-follow="${t.id}" title="Put the bot's stop into the sizer to size your own copy">Size mine</button><button class="btn xs" data-copy="${t.id}">Copy levels</button></span></div>
+      <p class="muted small" style="margin:6px 0 0">opened ${(t.open_utc || "").replace("T", " ").slice(0, 16)} UTC · #${t.id}</p></div>`;
+  }).join("");
+}
+$("#bot-now").addEventListener("click", async e => {
+  const f = e.target.closest("[data-follow]"), c = e.target.closest("[data-copy]");
+  const t = state.bot.data?.open.find(x => x.id == (f || c)?.dataset[f ? "follow" : "copy"]); if (!t) return;
+  if (f) {
+    selectSymbol(t.symbol); $("#sz-entry").value = ""; $("#sz-stop").value = px(t.sl, t.symbol); sizeTrade();
+    toast("Sizer filled with the bot's stop. Entry uses the current price; adjust the risk slider for your size.");
+  } else {
+    const txt = `${t.symbol} ${t.side.toUpperCase()} entry ${px(t.entry, t.symbol)} SL ${px(t.sl, t.symbol)} TP ${px(t.tp, t.symbol)}`;
+    try { await navigator.clipboard.writeText(txt); toast("Copied: " + txt); } catch (err) { toast(txt); }
+  }
+});
+
+function drawBotOverlay() {
+  const d = state.bot.data; if (!d || !state.series) return;
+  state.bot.lines.forEach(l => state.series.removePriceLine(l)); state.bot.lines = [];
+  d.open.filter(t => t.symbol === state.symbol).forEach(t => {
+    const mk = (price, color, title, style) => price && state.bot.lines.push(state.series.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
+    mk(t.entry, "#c9a24a", `bot ${t.side}`, 2); mk(t.sl, "#e0574f", "bot SL", 0); mk(t.tp, "#3fb68b", "bot TP", 0);
+  });
+  const r = state.barRange; if (!r) { state.series.setMarkers([]); return; }
+  const snap = t => t - (t % 60), inRange = t => t && t >= r[0] && t <= r[1] + 60;
+  const marks = [];
+  d.recent.filter(t => t.symbol === state.symbol).forEach(t => {
+    if (inRange(t.open_bar)) marks.push({ time: Math.min(snap(t.open_bar), r[1]), position: t.side === "buy" ? "belowBar" : "aboveBar",
+      color: t.side === "buy" ? "#3fb68b" : "#e0574f", shape: t.side === "buy" ? "arrowUp" : "arrowDown", text: `bot ${t.side} ${t.lots}` });
+    if (t.status === "closed" && inRange(t.close_bar)) marks.push({ time: Math.min(snap(t.close_bar), r[1]), position: t.side === "buy" ? "aboveBar" : "belowBar",
+      color: t.pnl >= 0 ? "#3fb68b" : "#e0574f", shape: "circle", text: t.r_multiple != null ? `${t.r_multiple >= 0 ? "+" : ""}${t.r_multiple}R` : t.exit_reason });
+  });
+  marks.sort((a, b) => a.time - b.time);
+  state.series.setMarkers(marks);
+}
+
+function renderBotTable() {
+  const d = state.bot.data; if (!d) return;
+  const m = state.bot.filter, rows = d.recent.filter(t => !m || t.mode === m);
+  const S = m ? d.stats[m] : Object.values(d.stats).reduce((a, s) => ({ closed: a.closed + s.closed, open: a.open + s.open,
+    net_pnl: a.net_pnl + s.net_pnl, today_pnl: a.today_pnl + s.today_pnl, total_r: a.total_r + s.total_r,
+    wins: a.wins + (s.win_pct || 0) * s.closed / 100 }), { closed: 0, open: 0, net_pnl: 0, today_pnl: 0, total_r: 0, wins: 0 });
+  const win = m ? S.win_pct : (S.closed ? (100 * S.wins / S.closed).toFixed(1) : null);
+  const avgR = m ? S.avg_r : (S.closed ? (S.total_r / S.closed).toFixed(2) : null);
+  const card = (label, val, c = "") => `<div class="stat"><span>${label}</span><strong class="${c}">${val ?? "—"}</strong></div>`;
+  $("#bt-stats").innerHTML = card("Closed trades", S.closed) + card("Open", S.open) + card("Win rate", win != null ? `${win}%` : "—")
+    + card("Net P/L", signed(S.net_pnl), cls(S.net_pnl)) + card("Today", signed(S.today_pnl), cls(S.today_pnl))
+    + card("Total R", S.total_r != null ? `${S.total_r >= 0 ? "+" : ""}${Number(S.total_r).toFixed(2)}` : "—", cls(S.total_r))
+    + card("Avg R / trade", avgR) + (m ? card("Profit factor", S.profit_factor) : "");
+  $("#bt-table tbody").innerHTML = rows.map(t => `<tr class="${t.status === "open" ? "open-row" : ""}"><td>${t.id}</td><td>${t.mode}</td>
+    <td>${(t.open_utc || "").replace("T", " ").slice(0, 16)}</td><td>${t.symbol}</td><td class="${t.side === "buy" ? "up" : "down"}">${t.side}</td><td>${t.lots}</td>
+    <td>${px(t.entry, t.symbol)}</td><td>${px(t.sl, t.symbol)}</td><td>${px(t.tp, t.symbol)}</td>
+    <td>${t.status === "open" ? "open" : px(t.exit, t.symbol)}</td><td>${t.exit_reason || ""}</td>
+    <td class="${cls(t.pnl)}">${t.status === "open" ? "" : signed(t.pnl)}</td><td class="${cls(t.r_multiple)}">${t.r_multiple ?? ""}</td><td>${t.prob ? Math.round(t.prob * 100) + "%" : ""}</td></tr>`).join("")
+    || `<tr><td colspan="14" class="muted">No bot trades yet${m ? ` in ${m} mode` : ""}. Start the agent and every trade it takes is recorded here, including ones that hit stop or target while the app was closed.</td></tr>`;
+}
+$("#bt-filter").addEventListener("click", e => {
+  const b = e.target.closest("[data-m]"); if (!b) return;
+  state.bot.filter = b.dataset.m; $$("#bt-filter .chip").forEach(x => x.classList.toggle("active", x === b)); renderBotTable();
+});
 
 /* ---------- sizing ---------- */
 let szTimer;
@@ -131,7 +261,7 @@ async function loadPositions() {
     $("#pos-count").textContent = ps.length ? `${ps.length} open` : "";
     if (!ps.length) { box.innerHTML = `<p class="empty">Nothing open. Positions from the agent, Hermes or manual trades in MT5 show up here.</p>`; return; }
     box.innerHTML = ps.map(p => `<div class="pos ${p.side}">
-      <span><strong>${p.symbol}</strong> <span class="muted">${p.side} ${p.volume}</span></span>
+      <span><strong>${p.symbol}</strong><span class="tag ${p.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[p.owner] || "You"}</span> <span class="muted">${p.side} ${p.volume}</span></span>
       <button class="btn xs" data-close="${p.ticket}">Close</button>
       <span class="num small muted">SL ${p.sl || "none"}  TP ${p.tp || "none"}</span>
       <span class="num small"><span class="pl ${p.profit >= 0 ? "up" : "down"}">${p.profit >= 0 ? "+" : ""}${fmt(p.profit)}</span> <span class="muted">from ${p.open}</span></span></div>`).join("");
@@ -277,7 +407,8 @@ function initFromSettings(keepSymbol = false) {
 
 /* ---------- boot ---------- */
 initChart();
-pollStatus().then(() => { pollAccount(); loadPositions(); brainStatus(); });
+pollStatus().then(() => { pollAccount(); loadPositions(); brainStatus(); pollBot(); });
+setInterval(pollBot, 2000);
 setInterval(pollStatus, 2000);
 setInterval(pollAccount, 2000);
 setInterval(() => state.tab === "dash" && (loadBars(), loadPositions()), 3000);

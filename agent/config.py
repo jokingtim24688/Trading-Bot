@@ -26,7 +26,8 @@ class LabelConfig:
 @dataclass
 class RiskConfig:
     risk_per_trade_pct: float = 0.5
-    daily_loss_pct: float = 3.0
+    daily_loss_pct: float = 3.0          # bot's OWN losses today (your manual trades don't count)
+    account_daily_loss_pct: float = 6.0  # whole-account safety net: bot pauses if the account is down this much today
     max_trades_per_day: int = 12
     max_spread_to_atr: float = 0.15
     max_spread_vs_median: float = 1.8

@@ -43,15 +43,16 @@ class RiskGate:
             self.day_start_equity = equity
             self.trades_today = 0
 
-    def daily_stop_hit(self, equity: float) -> bool:
-        return equity <= self.day_start_equity * (1 - self.cfg.daily_loss_pct / 100.0)
-
-    def check(self, server_time: datetime, equity: float, spread_px: float, median_spread_px: float, atr_px: float):
-        """Return (ok, reason)."""
+    def check(self, server_time: datetime, equity: float, spread_px: float, median_spread_px: float, atr_px: float,
+              bot_pnl_today: float = 0.0):
+        """Return (ok, reason). The daily stop uses the bot's own P/L so trading alongside it doesn't trip it;
+        a wider account-level stop still protects the whole account."""
         self.roll_day(server_time, equity)
         c = self.cfg
-        if self.daily_stop_hit(equity):
-            return False, "daily loss limit"
+        if bot_pnl_today <= -self.day_start_equity * c.daily_loss_pct / 100.0:
+            return False, "bot daily loss limit"
+        if equity <= self.day_start_equity * (1 - c.account_daily_loss_pct / 100.0):
+            return False, "account daily loss limit"
         if self.trades_today >= c.max_trades_per_day:
             return False, "max trades today"
         h = server_time.hour

@@ -72,6 +72,16 @@ def _start_agent(mode: str = "paper") -> str:
     return f"agent started in {mode} mode on {s['symbol']} M1"
 
 
+def _bot_trades(limit: int = 10) -> dict:
+    from .server import bot_trades_payload
+    d = bot_trades_payload(limit)
+    keep = ("id", "mode", "symbol", "side", "lots", "entry", "sl", "tp", "prob", "status", "open_utc", "exit",
+            "exit_reason", "pnl", "r_multiple", "close_utc", "price")
+    return {"open": [{k: t.get(k) for k in keep} for t in d["open"]],
+            "recent": [{k: t.get(k) for k in keep} for t in d["recent"] if t["status"] == "closed"][:limit],
+            "stats": d["stats"]}
+
+
 TOOLS = {
     "get_account": (lambda: mt5_service.account(), "MT5 account balance, equity, margin, demo/real, connection.", {}),
     "get_positions": (lambda: mt5_service.positions(), "Open MT5 positions.", {}),
@@ -82,6 +92,10 @@ TOOLS = {
                       "Lot size so a stop-out loses risk_pct of equity.",
                       {"symbol": {"type": "string"}, "entry": {"type": "number"}, "stop": {"type": "number"},
                        "risk_pct": {"type": "number"}}),
+    "get_bot_trades": (lambda limit=10: _bot_trades(limit),
+                       "The trading bot's own trades: open ones (entry, SL, TP, live P/L) and recent closed ones, plus "
+                       "win rate / P&L / R stats per mode. Use when the user wants to follow or copy the bot.",
+                       {"limit": {"type": "integer", "description": "recent closed trades to include"}}),
     "agent_status": (lambda: {**jobs.status()["agent"], "log_tail": jobs.jobs["agent"].tail(15)},
                      "Whether the M1 trading agent is running, plus its latest log lines.", {}),
     "start_agent": (_start_agent, "Start the M1 trading agent. mode 'paper' (no orders) or 'demo' (orders on a demo account).",

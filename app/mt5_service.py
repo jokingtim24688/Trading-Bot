@@ -9,6 +9,8 @@ except ImportError:
 
 from .settings import load
 
+BOT_MAGIC = 260923       # agent/config.py RiskConfig.magic
+HERMES_MAGIC = 260924    # mcp_server MT5_MCP_MAGIC default
 _lock = threading.Lock()   # the MetaTrader5 package isn't thread-safe
 
 
@@ -43,7 +45,9 @@ def positions() -> list[dict]:
         _ensure()
         return [{"ticket": p.ticket, "symbol": p.symbol, "side": "buy" if p.type == 0 else "sell",
                  "volume": p.volume, "open": p.price_open, "current": p.price_current, "sl": p.sl, "tp": p.tp,
-                 "profit": p.profit, "magic": p.magic, "time": p.time} for p in (mt5.positions_get() or [])]
+                 "profit": p.profit, "magic": p.magic, "time": p.time,
+                 "owner": "bot" if p.magic == BOT_MAGIC else "hermes" if p.magic == HERMES_MAGIC else "you"}
+                for p in (mt5.positions_get() or [])]
 
 
 def m1_bars(symbol: str, count: int = 300) -> dict:
@@ -110,3 +114,32 @@ def lots_for_risk(symbol: str, entry: float, stop: float, risk_pct: float) -> di
 
 def model_exists(symbol: str) -> bool:
     return (Path(__file__).resolve().parent.parent / "models" / f"{symbol}_M1.json").exists()
+
+
+def sync_bot_ledger() -> list[dict]:
+    """Record exits of bot trades closed while the agent wasn't watching (kill switch, Close button, SL/TP)."""
+    from agent.broker import sync_ledger
+    with _lock:
+        _ensure()
+        return sync_ledger()
+
+
+def floating_for(trades: list[dict]) -> dict:
+    """Live P/L per open ledger trade: MT5's own figure for demo/real, computed from the current tick for paper."""
+    out = {}
+    with _lock:
+        _ensure()
+        by_ticket = {p.ticket: p for p in (mt5.positions_get() or [])}
+        for t in trades:
+            if t["mode"] != "paper" and t["ticket"] in by_ticket:
+                p = by_ticket[t["ticket"]]
+                out[t["id"]] = {"pnl": p.profit, "price": p.price_current}
+            elif t["mode"] == "paper":
+                i, tick = mt5.symbol_info(t["symbol"]), mt5.symbol_info_tick(t["symbol"])
+                if i is None or tick is None:
+                    continue
+                px = tick.bid if t["side"] == "buy" else tick.ask
+                move = (px - t["entry"]) if t["side"] == "buy" else (t["entry"] - px)
+                tv = i.trade_tick_value_loss or i.trade_tick_value
+                out[t["id"]] = {"pnl": round(move / i.trade_tick_size * tv * t["lots"], 2), "price": px}
+    return out

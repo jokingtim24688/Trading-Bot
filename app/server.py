@@ -9,6 +9,8 @@ from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from agent import ledger
+
 from . import brain, memory, mt5_service, settings
 from .jobs import LOGS, jobs
 from .settings import ROOT
@@ -111,9 +113,33 @@ def kill_switch():
     stop.unlink(missing_ok=True)
     try:
         closed = mt5_service.close_all(AGENT_MAGIC)
+        time.sleep(0.5)
+        mt5_service.sync_bot_ledger()
     except mt5_service.MT5Unavailable:
         closed = []
     return {"stopped": True, "closed": closed}
+
+
+# ---------- the bot's own trades ----------
+def bot_trades_payload(limit: int = 100, symbol: str | None = None) -> dict:
+    try:
+        mt5_service.sync_bot_ledger()
+    except Exception:
+        pass                                    # MT5 offline: show the ledger as last recorded
+    open_ = ledger.open_trades(symbol=symbol)
+    try:
+        floating = mt5_service.floating_for(open_)
+    except Exception:
+        floating = {}
+    for t in open_:
+        t.update(floating.get(t["id"], {"pnl": None, "price": None}))
+    return {"open": open_, "recent": ledger.recent(limit, symbol=symbol),
+            "stats": {m: ledger.stats(m) for m in ("paper", "demo", "real")}}
+
+
+@app.get("/api/bot/trades")
+def bot_trades(limit: int = 100, symbol: str | None = None):
+    return bot_trades_payload(limit, symbol)
 
 
 # ---------- jobs ----------

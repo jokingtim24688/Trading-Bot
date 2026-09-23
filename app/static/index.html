@@ -63,6 +63,11 @@
           <div class="sz-out"><span class="muted">Lots</span><strong id="sz-lots" class="num big">—</strong><span id="sz-detail" class="muted small"></span></div>
         </div>
 
+        <div class="panel bot-card" id="bot-card">
+          <div class="panel-head"><h3>Bot trade</h3><span id="bot-today" class="muted small"></span></div>
+          <div id="bot-now"><p class="empty">The bot is flat. When it enters you'll get an alert, and its entry, stop and target are drawn on the chart.</p></div>
+        </div>
+
         <div class="panel">
           <div class="panel-head"><h3>Open positions</h3><span id="pos-count" class="muted small"></span></div>
           <div id="positions" class="positions"><p class="empty">Nothing open. Positions from the agent, Hermes or manual trades in MT5 show up here.</p></div>
@@ -99,6 +104,13 @@
         <div class="panel-head"><h3>Live log</h3><span id="agent-state" class="muted small"></span></div>
         <pre id="agent-log" class="console">The agent's output appears here once it starts.</pre>
       </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>Bot trades</h3>
+        <div class="chips" id="bt-filter"><button class="chip active" data-m="">All</button><button class="chip" data-m="paper">Paper</button><button class="chip" data-m="demo">Demo</button><button class="chip" data-m="real">Real</button></div>
+      </div>
+      <div class="stats" id="bt-stats"></div>
+      <div class="table-wrap"><table id="bt-table"><thead><tr><th>#</th><th>Mode</th><th>Opened (UTC)</th><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>P/L</th><th>R</th><th>Conf.</th></tr></thead><tbody></tbody></table></div>
     </div>
     <div class="panel">
       <div class="panel-head"><h3>Journal</h3><span class="muted small">every signal, skip, order and exit, saved to logs/</span></div>
@@ -160,6 +172,7 @@
         <label>MT5 terminal path (optional)<input name="terminal_path" placeholder="C:\Program Files\MetaTrader 5\terminal64.exe"></label>
         <label>Point size of symbol<input name="point" type="number" step="any"></label>
         <label>History to download (days)<input name="days_history" type="number"></label>
+        <label class="check"><input type="checkbox" name="alert_sound"> Play a sound when the bot opens or closes a trade</label>
         <label class="check"><input type="checkbox" id="unlock-real"> Unlock Real mode on the Agent tab (this session only)</label>
       </fieldset>
       <fieldset><legend>Hermes</legend>

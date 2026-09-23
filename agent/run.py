@@ -40,14 +40,23 @@ def main():
     spec = data.spec()
     if args.live and not data.is_demo() and not args.allow_real:
         raise SystemExit("Account is REAL. Refusing to trade without --allow-real.")
-    mode = "live" if args.live else "paper"
-    broker = LiveBroker(data, cfg.risk.magic) if args.live else PaperBroker(args.paper_equity, spec)
+    mode = ("demo" if data.is_demo() else "real") if args.live else "paper"
+    broker = LiveBroker(data, cfg.risk.magic, mode) if args.live else PaperBroker(args.paper_equity, spec, cfg.symbol, data.tick)
     model = SignalModel.load(cfg.model_dir, cfg.symbol, cfg.hardware)
     gate = RiskGate(cfg.risk)
-    journal = Journal(cfg.log_dir, cfg.symbol, mode)
+    journal = Journal(cfg.log_dir, cfg.symbol, "paper" if mode == "paper" else "live")
     L = cfg.labels
 
     print(f"[{mode}] {cfg.symbol} M1 | threshold {cfg.threshold} | risk {cfg.risk.risk_per_trade_pct}% | hw {PLAN}")
+    print(f"tracking bot trades with magic {cfg.risk.magic} in data/trades.db; your own trades are left alone")
+    if getattr(broker, "netting", False):
+        print("NETTING account: positions on one symbol merge, so the bot won't trade while you hold this symbol.")
+
+    def report_exits(exits, bar_time=""):
+        for x in exits:
+            journal.log(event="exit", bar_time=bar_time, symbol=cfg.symbol, price=x["exit"],
+                        equity=broker.account_equity(), note=f"#{x['id']} {x['reason']} pnl={x['pnl']:.2f}")
+            print(f"EXIT #{x['id']} {x['reason']} @ {x['exit']} pnl {x['pnl']:+.2f}")
     journal.log(event="start", symbol=cfg.symbol, note=f"mode={mode} thr={cfg.threshold}")
     last_bar = None
 
@@ -59,6 +68,7 @@ def main():
                 print("STOP file found: flattened and exiting.")
                 break
 
+            report_exits(broker.sync())                    # live: catch SL/TP/manual exits within ~1s
             bar_time = data.m1_bars(1).index[-1]          # cheap poll for a new closed bar
             if bar_time == last_bar:
                 time.sleep(1.0)
@@ -67,11 +77,9 @@ def main():
             bars = data.m1_bars(cfg.history_bars)
             bar = bars.iloc[-1]
             spread_px = float(bar["spread"]) * spec.point
+            bar_epoch = int(bar_time.timestamp())          # server-time epoch, same clock as the chart
 
-            exit_info = broker.on_bar(bar, spread_px)
-            if exit_info:
-                journal.log(event="exit", bar_time=bar_time, symbol=cfg.symbol, price=exit_info["exit"],
-                            equity=broker.account_equity(), note=f"{exit_info['reason']} pnl={exit_info['pnl']:.2f}")
+            report_exits(broker.on_bar(bar, spread_px, bar_epoch), bar_time)
 
             if broker.has_position():
                 continue
@@ -93,7 +101,10 @@ def main():
             if side is None:
                 continue
 
-            ok, reason = gate.check(bar_time.to_pydatetime(), equity, spread_px, median_spread_px, a)
+            ok, reason = gate.check(bar_time.to_pydatetime(), equity, spread_px, median_spread_px, a,
+                                    bot_pnl_today=broker.bot_pnl_today())
+            if ok and getattr(broker, "netting", False) and broker.foreign_position():
+                ok, reason = False, "netting account: you hold this symbol, bot waits"
             if not ok:
                 journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side, prob=round(prob, 3), note=reason)
                 continue
@@ -110,7 +121,9 @@ def main():
             price = t.ask if side == "buy" else t.bid
             sl = price - stop if side == "buy" else price + stop
             tp = price + stop * L.reward_risk if side == "buy" else price - stop * L.reward_risk
-            filled, note = broker.open(side, lots, price, sl, tp)
+            risk_money = round(stop / spec.tick_size * spec.tick_value * lots, 2)
+            filled, note = broker.open(side, lots, price, sl, tp, prob=round(float(prob), 3),
+                                       risk_money=risk_money, open_bar=bar_epoch + 60)
             journal.log(event="order" if filled else "reject", bar_time=bar_time, symbol=cfg.symbol, side=side,
                         lots=lots, price=price, sl=sl, tp=tp, prob=round(prob, 3), equity=equity, note=note)
             print(f"{bar_time} {side} {lots} @ {price} sl {sl:.5g} tp {tp:.5g} p={prob:.2f} -> {note}")

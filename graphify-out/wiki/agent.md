@@ -4,9 +4,10 @@
 - **features.py**: causal features (returns, EMA 20/50/200/750/3000 distance and slope, RSI, ATR rel, BB pos, range pos, wicks, vol z, spread/ATR, time of day, weekday) + `triple_barrier` labels (spread-aware, stop-first when both hit).
 - **model.py**: `SignalModel`, XGBoost multi:softprob 3-class, GPU train, CPU predict, save/load JSON + meta (best_iteration).
 - **train.py**: chronological split with a horizon gap, prints out-of-sample threshold table (trades, win %, avg R, total R).
-- **risk.py**: `lots_for_risk`, `RiskGate` (daily stop, trade cap, session, rollover, spread filters).
-- **broker.py**: `Journal` CSV, `MT5Data`, `PaperBroker` (bar-based SL/TP), `LiveBroker` (order_check + order_send, filling mode).
-- **run.py**: loop; cheap poll for a new closed bar; paper default; `--live` demo only unless `--allow-real`; STOP file kill switch.
+- **risk.py**: `lots_for_risk`, `RiskGate` (bot-only daily stop 3% from `bot_pnl_today`, account-wide stop 6%, trade cap, session, rollover, spread filters).
+- **ledger.py**: bot trade ledger `data/trades.db` (open_trade, close_trade with R from original stop `sl0`, update_levels, open_trades, recent, realized_pnl, stats). Shared by agent and app.
+- **broker.py**: `Journal` CSV, `MT5Data`, `PaperBroker` (bar-based SL/TP, ledger-backed, restores open trade + equity after restart), `sync_ledger()` (reconciles ledger with MT5 positions/deals: exit price, P/L incl. commission/swap, reason sl/tp/manual/stop_out, SL/TP edits), `LiveBroker` (magic-filtered, adopts orphan bot positions, `foreign_position()` for netting accounts).
+- **run.py**: loop; `broker.sync()` every second; cheap poll for a new closed bar; paper default; `--live` demo only unless `--allow-real`; modes paper/demo/real; netting guard; records prob, risk_money and open_bar per trade; STOP file kill switch.
 
 ## Hardware
 Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. RTX 4060 8 GB: XGBoost CUDA training, optional small PyTorch nets (bf16), and a local Hermes 3 8B Q4 (~5 GB).

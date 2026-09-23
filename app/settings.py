@@ -14,6 +14,7 @@ DEFAULTS = {
     "threshold": 0.55,
     "risk_pct": 0.5,
     "days_history": 365,
+    "alert_sound": True,                   # beep when the bot opens or closes a trade
     "point": 0.01,
     # Assistant
     "assistant_backend": "auto",           # auto | hermes_agent | local

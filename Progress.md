@@ -25,3 +25,17 @@
 - Run: Train tab → Fetch data → Train → Paper mode for 1–2 weeks → Demo.
 - Optional: news/economic-calendar blackout feed; PyTorch sequence model if it beats XGBoost out of sample.
 - Regenerate the graphify wiki locally with the real `graphify` tool.
+
+## 2026-09-23: Bot tracks its own trades (trade alongside it)
+- **Gaps found** (via the wiki): live exits made by the server (SL/TP) were never recorded, and the daily loss limit used
+  account equity, so the user's manual losses would have paused the bot.
+- **New** `agent/ledger.py`: SQLite `data/trades.db` covering paper/demo/real trades, with R measured from the original stop.
+- **Brokers**: paper broker is ledger-backed (open trade + equity survive restarts); `sync_ledger()` reconciles with MT5
+  deals (real P/L incl. commission/swap, reason sl/tp/manual/stop_out, SL/TP edits); orphan bot positions are adopted;
+  ownership is by magic 260923, so the user's trades are ignored; netting-account guard.
+- **Risk**: bot daily stop uses only bot P/L (3%); separate whole-account stop (6%).
+- **App**: Bot/Hermes/You tags on positions; *Bot trade* card (entry/SL/TP, confidence, live P/L and R, Size mine, Copy levels);
+  chart price lines + entry/exit markers; toast + sound alerts on open/close; Agent tab *Bot trades* table + stats with
+  mode filter; `/api/bot/trades`; Hermes tool `get_bot_trades`; Settings toggle for sound.
+- **Tested**: ledger + paper restart recovery; live sync against a simulated MT5 (SL hit, manual close, moved stop, orphan,
+  user's trade ignored); risk gate cases; API with MT5 offline; UI screenshots with simulated trades.

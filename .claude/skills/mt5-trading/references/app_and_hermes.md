@@ -38,3 +38,20 @@ Running code must be in RAM. Everything persistent is on disk: `data/` (settings
 | Hermes pill "Ollama not running" | Start Ollama; `ollama pull hermes3:8b` |
 | Hermes pill "Hermes Agent not running" | In WSL: `hermes gateway`; check API key in Settings |
 | Agent log shows retcode 10027 | Algo Trading button off in MT5 (Ctrl+E) |
+
+## Trading alongside the bot
+The bot keeps its own ledger in `data/trades.db` (`agent/ledger.py`). It covers paper, demo and real trades, and it survives restarts.
+- **Ownership by magic number**: bot = 260923, Hermes/MCP = 260924, anything else (your manual trades, magic 0) = "You".
+  Positions on the Market tab carry a Bot / Hermes / You tag. The bot never touches, sizes against, or counts your trades.
+- **Exits are always recorded**: in demo/real the agent reconciles with MT5 every second (`sync_ledger`). The app also
+  reconciles on every refresh, so SL/TP hits, manual closes (tagged "manual"), kill-switch closes and stops you moved in MT5 are
+  captured with the real P/L (incl. commission and swap), even if the agent wasn't running.
+- **Daily loss limits**: the bot's 3% stop counts only the bot's own P/L, so your manual losses don't pause it. A separate
+  6% whole-account stop still protects the account.
+- **Netting accounts** merge positions per symbol, so the bot waits while you hold that symbol. Hedging accounts have no conflict.
+- **Following it**: the Market tab's *Bot trade* card shows side, entry, stop, target, confidence and live P/L/R. The chart draws
+  the bot's entry/SL/TP lines and entry/exit markers (exits labelled in R). *Size mine* loads the bot's stop into the sizer at
+  your own risk %, and *Copy levels* copies "XAUUSD BUY entry … SL … TP …". You get a toast and a sound (toggle in Settings)
+  when it opens or closes a trade.
+- **History**: Agent tab → *Bot trades* (filter All/Paper/Demo/Real) with closed trades, win rate, net and today's P/L,
+  total R, avg R, profit factor. Hermes can answer "what is the bot doing?" via its `get_bot_trades` tool.
