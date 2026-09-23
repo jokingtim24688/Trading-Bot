@@ -11,7 +11,7 @@ also help with anything else.
 ## In the app
 - **Market**: live M1 chart, spread, a trade-size calculator, open positions, and a hold-to-flatten kill switch.
 - **Train**: *Fetch data*, then *Train*. The model learns from your M1 history on the GPU and is tested on data it never saw.
-- **Agent**: choose Paper → Demo → Real, set confidence and risk, and press *Start*. Every bot trade goes into its own ledger with win rate, P/L and R stats.
+- **Agent**: the bot climbs a ladder: Paper (in the app) → Demo → Real · 2 open → Real · 5 open → Real · full. It moves to Demo by itself once it earns enough on Paper; every real-money step needs you to type REAL, and a bad drawdown drops it back a stage. It learns from its own trades and writes those lessons into a skill.
 - **Trade alongside it**: bot positions are tagged and drawn on the chart (entry/SL/TP). You get an alert when it enters or exits, and *Size mine* sizes your own copy. Your manual trades are never touched and don't count toward its loss limit.
 - **Hermes**: chat with the assistant. It remembers what you tell it (stored on disk) and can check your account,
   summarise the market, size trades, run the agent, take notes, and read web pages.

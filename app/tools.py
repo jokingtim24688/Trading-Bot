@@ -61,9 +61,19 @@ def _safe_note_name(title: str) -> Path:
 def _start_agent(mode: str = "paper") -> str:
     from .server import agent_start
     s = load()
-    agent_start({"mode": "demo" if mode == "demo" else "paper"})   # never real from chat
+    from agent import progression
+    if progression.stage_info(progression.load()["stage"])["mode"] == "real":
+        return "The bot has reached a real-money stage. Start it from the Agent tab yourself; I won't start real trading from chat."
+    agent_start({})                                   # the stage ladder decides paper or demo
     return (f"agent started in {mode} mode on {s['symbol']} M1: stake {s['stake_pct']}% of balance, "
             f"SL -{s['sl_pct_of_stake']}% / TP +{s['tp_pct_small']}->{s['tp_pct_large']}% of stake, max {s['max_open_trades']} open")
+
+
+def _progress() -> dict:
+    from .server import progress
+    p = progress()
+    return {"stage": p["stage"]["label"], "next": p["next"]["label"] if p["next"] else None, "eligible": p["eligible"],
+            "needs_your_approval": p["needs_approval"], "checks": p["checks"], "learned_rules": p["learned"]}
 
 
 def _jobs():
@@ -102,9 +112,11 @@ TOOLS = {
     "bot_trade_plan": (_plan, "What the bot will risk and target per trade right now: lots, stake, SL/TP in money and price, "
                        "whether the minimum lot was forced, and the worst case if all max open trades stop out.",
                        {"mode": {"type": "string", "enum": ["paper", "demo", "real"]}}),
+    "bot_progress": (lambda: _progress(), "Where the bot is on its ladder (Paper -> Demo -> Real 2 -> Real 5 -> Real full), "
+                     "how close it is to moving up, and the rules it has learned from its own trades.", {}),
     "agent_status": (lambda: {**_jobs().status()["agent"], "log_tail": _jobs().jobs["agent"].tail(15)},
                      "Whether the M1 trading agent is running, plus its latest log lines.", {}),
-    "start_agent": (_start_agent, "Start the M1 trading agent. mode 'paper' (no orders) or 'demo' (orders on a demo account).",
+    "start_agent": (_start_agent, "Start the M1 trading agent at the stage it has earned (Paper or Demo). Never starts real money.",
                     {"mode": {"type": "string", "enum": ["paper", "demo"]}}),
     "stop_agent": (lambda: (_jobs().stop("agent"), "agent stopped")[1], "Stop the trading agent (server-side SL/TP stay active).", {}),
     "remember": (memory.remember, "Save a fact about the user, their preferences, or lessons learned to long-term memory.",

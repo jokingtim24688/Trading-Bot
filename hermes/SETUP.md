@@ -49,6 +49,8 @@ MT5 stays on Windows, and the app runs a small bridge (MCP server) so Hermes can
 5. **Give it the trading knowledge**: copy the skill folder into Hermes' skills directory. Hermes uses the same
    `SKILL.md` format:
    `cp -r /mnt/c/<path-to>/Trading-Bot/.claude/skills/mt5-trading ~/.hermes/skills/`
+   and the bot's own lessons (it rewrites these as it learns, so a symlink keeps Hermes up to date):
+   `ln -s /mnt/c/<path-to>/Trading-Bot/.claude/skills/m1-bot-lessons ~/.hermes/skills/m1-bot-lessons`
 6. In the app: **Settings → Hermes**, set Backend *Auto* or *Hermes Agent*, paste the API key, and save.
 7. Seed its memory: open the Hermes tab and paste the contents of `hermes/user_seed.md` with "remember all of this".
 

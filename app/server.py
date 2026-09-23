@@ -9,7 +9,7 @@ from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from agent import ledger, score as scoring
+from agent import learn, ledger, progression, score as scoring
 
 from . import brain, memory, mt5_service, settings
 from .jobs import LOGS, jobs
@@ -152,15 +152,17 @@ def bot_trades(limit: int = 100, symbol: str | None = None):
 
 
 # ---------- jobs ----------
-def agent_args(s: dict, mode: str) -> list[str]:
+def agent_args(s: dict, mode: str, max_open: int | None = None) -> list[str]:
     args = ["-m", "agent.run", "--symbol", s["symbol"], "--threshold", str(s["threshold"]),
             "--stake-pct", str(s["stake_pct"]), "--sl-pct", str(s["sl_pct_of_stake"]),
             "--tp-small", str(s["tp_pct_small"]), "--tp-large", str(s["tp_pct_large"]),
             "--small-stake", str(s["small_stake"]), "--large-stake", str(s["large_stake"]),
-            "--max-open", str(int(s["max_open_trades"])), "--paper-equity", str(s["paper_balance"]),
+            "--max-open", str(int(max_open or s["max_open_trades"])), "--paper-equity", str(s["paper_balance"]),
             "--sl-score-mult", str(s["sl_score_mult"])]
     if not s.get("early_exit", True):
         args.append("--no-early-exit")
+    if not s.get("use_learned", True):
+        args.append("--no-learned")
     if s.get("terminal_path"):
         args += ["--terminal", s["terminal_path"]]
     if mode in ("demo", "real"):
@@ -170,18 +172,113 @@ def agent_args(s: dict, mode: str) -> list[str]:
     return args
 
 
+def stage_args(s: dict) -> list[str]:
+    """Agent arguments for the stage the bot has earned (mode + how many trades it may hold)."""
+    st = progression.stage_info(progression.load()["stage"])
+    cap = min(int(s["max_open_trades"]), st["max_open"]) if st["max_open"] else int(s["max_open_trades"])
+    return agent_args(s, st["mode"], cap)
+
+
 @app.post("/api/agent/start")
 def agent_start(body: dict = Body(default={})):
-    mode = body.get("mode", "paper")
     s = settings.load()
     if not mt5_service.model_exists(s["symbol"]):
         raise HTTPException(400, f"No trained model for {s['symbol']}. Go to Train and run Fetch data, then Train.")
     (ROOT / "STOP").unlink(missing_ok=True)
     try:
-        jobs.start("agent", agent_args(s, mode))
+        jobs.start("agent", stage_args(s))
     except RuntimeError as e:
         raise HTTPException(409, str(e))
     return jobs.status()["agent"]
+
+
+# ---------- stage ladder + learning ----------
+def _stage_balance(mode: str, s: dict) -> float | None:
+    if mode == "paper":
+        return s["paper_balance"] + ledger.realized_pnl("paper")
+    try:
+        return mt5_service.account()["balance"]
+    except Exception:
+        return None
+
+
+def _restart_agent_if_running(s: dict):
+    if jobs.jobs["agent"].running:
+        jobs.stop("agent")
+        jobs.start("agent", stage_args(s))
+
+
+def _maybe_learn(state: dict, s: dict, force: bool = False):
+    closed = sum(ledger.stats(m)["closed"] for m in ("paper", "demo", "real"))
+    if force or closed - state.get("learned_at_trades", 0) >= int(s.get("learn_every", 50)):
+        learn.learn()
+        state["learned_at_trades"] = closed
+        progression.save(state)
+
+
+@app.get("/api/progress")
+def progress():
+    s = settings.load()
+    state = progression.load()
+    mode = progression.stage_info(state["stage"])["mode"]
+    if state.get("start_balance") is None:
+        state["start_balance"] = _stage_balance(mode, s)
+        progression.save(state)
+    ev = progression.evaluate(state)
+    event = None
+    if ev["breach"] and ev["trades"]:
+        state = progression.demote(state, f"drawdown {ev['drawdown_pct']}% passed the "
+                                          f"{progression.DEFAULT_GATES[ev['stage']['id']]['max_drawdown_pct']}% limit", None)
+        state["start_balance"] = _stage_balance(progression.stage_info(state["stage"])["mode"], s)
+        progression.save(state)
+        _restart_agent_if_running(s)
+        event = {"type": "demoted", "to": progression.stage_info(state["stage"])["label"]}
+    elif ev["eligible"] and not ev["needs_approval"] and s.get("auto_promote_demo", True):
+        _maybe_learn(state, s, force=True)
+        state = progression.promote(state, "passed the Paper gate", None)
+        state["start_balance"] = _stage_balance(progression.stage_info(state["stage"])["mode"], s)
+        progression.save(state)
+        _restart_agent_if_running(s)
+        event = {"type": "promoted", "to": progression.stage_info(state["stage"])["label"]}
+    else:
+        _maybe_learn(state, s)
+    ev = progression.evaluate(state)
+    return {**ev, "stages": progression.STAGES, "event": event, "gate": progression.DEFAULT_GATES[state["stage"]],
+            "learned": learn.load_rules()}
+
+
+@app.post("/api/progress/promote")
+def progress_promote(body: dict = Body(default={})):
+    s = settings.load()
+    state = progression.load()
+    ev = progression.evaluate(state)
+    if not ev["eligible"]:
+        raise HTTPException(400, "This stage hasn't passed its gate yet. See the checks on the Agent tab.")
+    if ev["needs_approval"] and body.get("confirm") != "REAL":
+        raise HTTPException(400, "Moving to real money needs your confirmation.")
+    _maybe_learn(state, s, force=True)
+    state = progression.promote(state, "approved by you" if ev["needs_approval"] else "passed its gate", None)
+    state["start_balance"] = _stage_balance(progression.stage_info(state["stage"])["mode"], s)
+    progression.save(state)
+    _restart_agent_if_running(s)
+    return progress()
+
+
+@app.post("/api/progress/demote")
+def progress_demote():
+    s = settings.load()
+    state = progression.demote(progression.load(), "moved back by you", None)
+    state["start_balance"] = _stage_balance(progression.stage_info(state["stage"])["mode"], s)
+    progression.save(state)
+    _restart_agent_if_running(s)
+    return progress()
+
+
+@app.post("/api/learn")
+def learn_now():
+    state = progression.load()
+    _maybe_learn(state, settings.load(), force=True)
+    return {"rules": learn.load_rules(), "analysis": learn.analyze()}
 
 
 @app.get("/api/plan")

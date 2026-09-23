@@ -17,7 +17,9 @@ PLAN = hardware.apply()
 
 from .broker import Journal, LiveBroker, MT5Data, PaperBroker  # noqa: E402
 from .features import atr, build_features  # noqa: E402
-from . import ledger, score as scoring  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+
+from . import learn, ledger, score as scoring  # noqa: E402
 from .model import SignalModel  # noqa: E402
 from .risk import RiskGate, stake_plan  # noqa: E402
 
@@ -34,6 +36,7 @@ def main():
     ap.add_argument("--large-stake", type=float, default=None, help="stake at/above which --tp-large applies")
     ap.add_argument("--max-open", type=int, default=None, help="max bot trades open at once (default 10)")
     ap.add_argument("--no-early-exit", action="store_true", help="always hold trades until SL or TP")
+    ap.add_argument("--no-learned", action="store_true", help="ignore the bot's learned rules (data/learned_rules.json)")
     ap.add_argument("--sl-score-mult", type=float, default=None, help="score penalty multiplier when a stop loss hits (default 1.5)")
     ap.add_argument("--terminal", default=None, help="path to terminal64.exe (optional)")
     ap.add_argument("--live", action="store_true", help="send real orders (demo account unless --allow-real)")
@@ -135,6 +138,13 @@ def main():
                 side, prob = "sell", p_short
             if side is None:
                 continue
+
+            if not args.no_learned:
+                why = learn.block_reason(learn.load_rules(), "buy" if side == "buy" else "sell", float(prob),
+                                         datetime.now(timezone.utc).hour)
+                if why:
+                    journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side, prob=round(prob, 3), note=why)
+                    continue
 
             ok, reason = gate.check(bar_time.to_pydatetime(), equity, spread_px, median_spread_px, a,
                                     bot_pnl_today=broker.bot_pnl_today())

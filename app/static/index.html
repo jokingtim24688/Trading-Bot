@@ -87,12 +87,8 @@
       <div class="panel">
         <h3>Run the M1 agent</h3>
         <p class="muted small">It waits for each 1-minute candle to close, scores it with your trained model and only trades when every risk check passes.</p>
-        <div class="seg" role="radiogroup" aria-label="Mode">
-          <button class="seg-btn active" data-mode="paper">Paper<small>no orders</small></button>
-          <button class="seg-btn" data-mode="demo">Demo<small>orders on demo</small></button>
-          <button class="seg-btn danger" data-mode="real" disabled title="Unlock in Settings → Trading">Real<small>locked</small></button>
-        </div>
-        <p id="real-hint" class="muted small">Real money is locked so a stray click can't start it. Unlock it in Settings → Trading when you're ready.</p>
+        <ol class="ladder" id="ladder" aria-label="Stages"></ol>
+        <div class="gate" id="gate"><p class="empty">Loading the bot's stage…</p></div>
         <label class="slider-label">Confidence threshold <span id="thr-txt" class="num"></span><input id="thr" type="range" min="0.05" max="0.8" step="0.01"></label>
         <p id="thr-hint" class="muted small" style="margin:4px 0 0"></p>
         <label class="slider-label">Stake per trade <span id="stake-txt" class="num"></span><input id="stake" type="range" min="0.01" max="1" step="0.01"></label>
@@ -107,6 +103,10 @@
         <div class="panel-head"><h3>Live log</h3><span id="agent-state" class="muted small"></span></div>
         <pre id="agent-log" class="console">The agent's output appears here once it starts.</pre>
       </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>What the bot has learned</h3><button class="btn xs" id="learn-now">Learn now</button></div>
+      <div id="learned"><p class="empty">Nothing yet. The bot writes its first lessons after 50 closed trades and updates them every 50 after that. They're saved as a skill in <code>.claude/skills/m1-bot-lessons/</code>.</p></div>
     </div>
     <div class="panel">
       <div class="panel-head"><h3>Bot trades</h3>
@@ -176,7 +176,8 @@
         <label>Point size of symbol<input name="point" type="number" step="any"></label>
         <label>History to download (days)<input name="days_history" type="number"></label>
         <label class="check"><input type="checkbox" name="alert_sound"> Play a sound when the bot opens or closes a trade</label>
-        <label class="check"><input type="checkbox" id="unlock-real"> Unlock Real mode on the Agent tab (this session only)</label>
+        <label class="check"><input type="checkbox" name="auto_promote_demo"> Move from Paper to Demo automatically when the Paper gate is passed</label>
+        <label class="check"><input type="checkbox" name="use_learned"> Apply the rules the bot learned from its own trades</label>
       </fieldset>
       <fieldset><legend>Bot money rules</legend>
         <label>Stake per trade (% of balance)<input name="stake_pct" type="number" step="0.01" min="0.01"></label>

@@ -75,3 +75,11 @@ The bot keeps its own ledger in `data/trades.db` (`agent/ledger.py`). It covers 
 its loss (−$20 → −30); a trade the bot closes early (model turned against it), the kill switch, or a manual close costs only
 what it actually lost (−$20 → −20). Example: −$20 stop hit then +$100 win = −30 + 100 = +70. Shown on the Agent tab (Score, Today's score, Avg points, Stops / early exits) and in close alerts.
 Early exit: opposite-side probability ≥ threshold and ≥ 2× the trade's own side. Toggle in Settings.
+
+## Stage ladder and learning
+Paper (inside the app, live MT5 prices, no orders) → Demo (MT5 demo account) → Real · 2 open → Real · 5 open → Real · full.
+Gates (score = $): Paper 100 trades / 5 days / +100 pts / PF ≥ 1.2 / drawdown ≤ 5%; Demo 150 / 10 days / +150 / 1.2 / 5%;
+Real·2 100 / 10 / +50 / 1.2 / 3%; Real·5 150 / 10 / +100 / 1.2 / 3%. Paper → Demo is automatic (Settings toggle); real steps
+need the user to type REAL; breaching a stage's drawdown drops the bot back one stage. The Start button uses the current stage.
+The bot writes lessons to the `m1-bot-lessons` skill and `data/learned_rules.json` and applies them as entry filters
+(skip losing UTC hours, minimum confidence, disable a losing side) unless turned off in Settings.

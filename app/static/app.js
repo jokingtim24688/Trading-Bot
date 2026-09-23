@@ -22,7 +22,7 @@ function showTab(name) {
   $$(".tab").forEach(t => t.classList.toggle("active", t.id === `tab-${name}`));
   if (name === "dash" && state.chart) state.chart.timeScale().scrollToRealTime();
   if (name === "chat") { loadHistory(); loadFacts(); }
-  if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); }
+  if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); loadProgress(); }
   if (name === "train") pollTrainLog();
 }
 $$(".rail-btn").forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -302,7 +302,57 @@ $("#positions").addEventListener("click", async e => {
 })();
 
 /* ---------- agent ---------- */
-$$(".seg-btn").forEach(b => b.onclick = () => { if (b.disabled) return; state.mode = b.dataset.mode; $$(".seg-btn").forEach(x => x.classList.toggle("active", x === b)); loadPlan(); });
+/* ---------- stage ladder: Paper -> Demo -> Real 2 -> Real 5 -> Real full ---------- */
+state.progress = null; state.confirmReal = false;
+async function loadProgress() {
+  let p;
+  try { p = await api("/api/progress"); } catch (e) { return; }
+  const prevStage = state.progress?.stage?.id;
+  state.progress = p; state.mode = p.stage.mode;
+  if (p.event?.type === "promoted") { toast(`The bot moved up to ${p.event.to}.`); beep([660, 880, 1100]); }
+  if (p.event?.type === "demoted") { toast(`Drawdown limit hit. The bot moved back to ${p.event.to}.`, true); beep([520, 390]); }
+  if (prevStage && prevStage !== p.stage.id) loadPlan();
+  const idx = p.stages.findIndex(x => x.id === p.stage.id);
+  $("#ladder").innerHTML = p.stages.map((x, i) => `<li class="${i < idx ? "done" : i === idx ? "current" : ""} ${x.mode === "real" ? "real" : ""}" title="${x.note}"><b>${x.label}</b>${i < idx ? "passed" : i === idx ? "now" : ""}</li>`).join("");
+  const rows = p.checks.map(c => {
+    const v = typeof c.value === "number" ? c.value : c.target * 2;
+    const pct = c.limit ? Math.min(100, (v / (c.target || 1)) * 100) : Math.min(100, c.target ? (v / c.target) * 100 : 100);
+    return `<div class="check-row ${c.ok ? "ok" : c.limit ? "bad" : ""}"><span>${c.name}</span><span class="num">${c.value} ${c.limit ? "/ max " : "/ "}${c.target}${c.ok ? " ✓" : ""}</span><div class="track"><i style="width:${pct}%"></i></div></div>`;
+  }).join("");
+  const nxt = p.next;
+  let action = "";
+  if (!nxt) action = `<span class="muted small">Top stage. Keep an eye on the drawdown limit.</span>`;
+  else if (p.eligible && p.needs_approval) action = state.confirmReal
+      ? `<span class="small">Type REAL to move to <b>${nxt.label}</b>:</span><input id="real-confirm" autocomplete="off"><button class="btn primary" id="promote-go">Move to real money</button><button class="btn" id="promote-cancel">Cancel</button>`
+      : `<button class="btn primary" id="promote">Promote to ${nxt.label}</button><span class="muted small">Passed. Real money needs your OK.</span>`;
+  else if (p.eligible) action = `<button class="btn primary" id="promote">Promote to ${nxt.label}</button>`;
+  else action = `<span class="muted small">Next: ${nxt.label}${nxt.id === "demo" && state.settings?.auto_promote_demo ? " (automatic when every check is green)" : nxt.mode === "real" ? " (needs your OK when every check is green)" : ""}</span>`;
+  $("#gate").innerHTML = `<h4>${p.stage.label} <span class="muted small">· ${p.stage.note} · since ${p.since.replace("T", " ").slice(0, 16)} UTC</span></h4>${rows}
+    <div class="actions">${action}${idx > 0 ? `<button class="btn xs" id="demote">Move back a stage</button>` : ""}</div>`;
+  renderLearned(p.learned);
+}
+$("#gate").addEventListener("click", async e => {
+  const id = e.target.id;
+  try {
+    if (id === "promote") {
+      if (state.progress.needs_approval) { state.confirmReal = true; return loadProgress(); }
+      await api("/api/progress/promote", { method: "POST", body: {} }); toast("Promoted."); loadProgress();
+    } else if (id === "promote-go") {
+      await api("/api/progress/promote", { method: "POST", body: { confirm: $("#real-confirm").value.trim() } });
+      state.confirmReal = false; toast("Moved to real money. Start small and watch it."); loadProgress();
+    } else if (id === "promote-cancel") { state.confirmReal = false; loadProgress(); }
+    else if (id === "demote") { await api("/api/progress/demote", { method: "POST" }); toast("Moved back a stage."); loadProgress(); }
+  } catch (err) { toast(err.message, true); }
+});
+function renderLearned(r) {
+  if (!r || !r.generated) return;
+  const chips = [...(r.blocked_hours || []).map(h => `skip ${String(h).padStart(2, "0")}:00 UTC`),
+    ...(r.min_confidence ? [`confidence ≥ ${r.min_confidence}`] : []), ...(r.disabled_side ? [`no ${r.disabled_side} trades`] : [])];
+  $("#learned").innerHTML = `<div class="learned-rules">${chips.length ? chips.map(c => `<span class="rule-chip">${c}</span>`).join("") : `<span class="muted small">No filters yet. Nothing has lost consistently enough to block.</span>`}</div>
+    <p class="muted small" style="margin:0">From ${r.trades_analyzed} closed trades · updated ${r.generated.replace("T", " ")} UTC · ${state.settings?.use_learned ? "applied to new entries" : "not applied (Settings)"} · saved to <code>.claude/skills/m1-bot-lessons/</code></p>
+    ${(r.reasons || []).length ? `<ul class="small muted" style="margin:6px 0 0;padding-left:18px">${r.reasons.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}`;
+}
+$("#learn-now").onclick = async () => { try { const r = await api("/api/learn", { method: "POST" }); renderLearned(r.rules); toast("Lessons updated from the bot's trades."); } catch (e) { toast(e.message, true); } };
 
 async function loadPlan() {
   const box = $("#plan");
@@ -330,8 +380,8 @@ function bindSlider(id, key, suffix, digits) {
 }
 $("#agent-start").onclick = async () => {
   const msg = $("#agent-msg"); msg.className = "note";
-  if (state.mode === "real" && !confirm("Start the agent on a REAL-money account? It will place real orders.")) return;
-  try { await api("/api/agent/start", { method: "POST", body: { mode: state.mode } }); msg.textContent = `Started in ${state.mode} mode. It acts when the next M1 candle closes.`; pollStatus(); pollAgentLog(); }
+  if (state.mode === "real" && !confirm(`Start the agent at ${state.progress?.stage?.label}? It will place REAL-money orders.`)) return;
+  try { await api("/api/agent/start", { method: "POST", body: {} }); msg.textContent = `Started at the ${state.progress?.stage?.label || state.mode} stage. It acts when the next M1 candle closes.`; pollStatus(); pollAgentLog(); }
   catch (e) { msg.textContent = e.message; msg.className = "note err"; }
 };
 $("#agent-stop").onclick = async () => { await api("/api/agent/stop", { method: "POST" }); $("#agent-msg").textContent = "Stopped. Any open position keeps its server-side stop loss and take profit."; pollStatus(); };
@@ -423,11 +473,7 @@ $("#settings-form").onsubmit = async e => {
   try { state.settings = await api("/api/settings", { method: "POST", body }); $("#settings-msg").textContent = "Saved to data/settings.json"; initFromSettings(true); brainStatus(); loadPlan(); }
   catch (err) { $("#settings-msg").textContent = err.message; }
 };
-$("#unlock-real").onchange = e => {
-  const b = $('.seg-btn[data-mode="real"]'); b.disabled = !e.target.checked;
-  b.querySelector("small").textContent = e.target.checked ? "real money" : "locked";
-  $("#real-hint").textContent = e.target.checked ? "Real mode is unlocked for this session. Starting it still asks you to confirm." : "Real money is locked so a stray click can't start it. Unlock it in Settings → Trading when you're ready.";
-};
+
 
 function initFromSettings(keepSymbol = false) {
   const s = state.settings;
@@ -443,6 +489,7 @@ function initFromSettings(keepSymbol = false) {
 initChart();
 pollStatus().then(() => { pollAccount(); loadPositions(); brainStatus(); pollBot(); });
 setInterval(pollBot, 2000);
+loadProgress(); setInterval(loadProgress, 5000);
 setInterval(pollStatus, 2000);
 setInterval(pollAccount, 2000);
 setInterval(() => state.tab === "dash" && (loadBars(), loadPositions()), 3000);

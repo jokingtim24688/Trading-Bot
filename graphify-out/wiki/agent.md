@@ -12,3 +12,5 @@
 
 ## Hardware
 Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. RTX 4060 8 GB: XGBoost CUDA training, optional small PyTorch nets (bf16), and a local Hermes 3 8B Q4 (~5 GB).
+- **progression.py**: stage ladder (paper → demo → real_1 (2 open) → real_2 (5) → real_3), gates, evaluate/promote/demote, data/progression.json.
+- **learn.py**: analyze ledger → learned_rules.json + `.claude/skills/m1-bot-lessons/`; `block_reason()` used by run.py.
