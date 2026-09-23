@@ -166,12 +166,19 @@ async function pollBot() {
 function renderBotCard() {
   const d = state.bot.data; if (!d) return;
   const box = $("#bot-now"), open = d.open;
-  const running = [...document.querySelectorAll("#agent-pill")].some(p => p.classList.contains("live"));
   const today = Object.entries(d.stats).filter(([, s]) => s.closed || s.open).map(([m, s]) => `${m} ${signed(s.today_pnl)} · ${pts(s.today_score)} pts`).join(" · ");
   $("#bot-today").textContent = today ? `today: ${today}` : "";
   if (!open.length) {
     $("#bot-card").classList.remove("live");
-    box.innerHTML = `<p class="empty">${running ? "The bot is watching and currently flat." : "The bot isn't running."} When it enters you'll get an alert, and its entry, stop and target are drawn on the chart.</p>`;
+    const a = d.agent;
+    const pct = v => v == null ? "–" : `${Math.round(v * 100)}%`;
+    box.innerHTML = a ? `<div class="watch">
+        <div class="watch-head"><span class="live-dot"></span><strong>Watching ${state.settings?.symbol || ""} · ${a.mode || ""}</strong><span class="muted small">${a.bar ? "candle " + a.bar : ""}</span></div>
+        ${a.p_buy != null ? `<div class="conf"><span>Buy</span><div class="bar"><i style="width:${Math.min(100, a.p_buy / Math.max(a.threshold, .01) * 100)}%"></i></div><span class="num">${pct(a.p_buy)}</span></div>
+        <div class="conf"><span>Sell</span><div class="bar"><i style="width:${Math.min(100, a.p_sell / Math.max(a.threshold, .01) * 100)}%"></i></div><span class="num">${pct(a.p_sell)}</span></div>
+        <p class="muted small" style="margin:4px 0 0">Needs ${pct(a.threshold)} to enter · ${a.open ?? 0}/${a.max_open ?? "–"} open</p>` : ""}
+        <p class="small" style="margin:8px 0 0"><b>${a.decision}</b>${a.reason ? ` · <span class="muted">${a.reason}</span>` : ""}</p></div>`
+      : `<p class="empty">The bot isn't running. Start it on the Agent tab. When it enters you'll get an alert, and its entry, stop and target are drawn on the chart.</p>`;
     return;
   }
   $("#bot-card").classList.add("live");

@@ -7,6 +7,7 @@
 Create a file named STOP in the working directory to flatten and exit.
 """
 import argparse
+import json
 import time
 from pathlib import Path
 
@@ -79,6 +80,24 @@ def main():
     if getattr(broker, "netting", False):
         print("NETTING account: positions on one symbol merge, so the bot won't trade while you hold this symbol.")
 
+    status_path = Path(cfg.log_dir).parent / "data" / "agent_status.json"
+    probs = {"buy": None, "sell": None}
+
+    def say(bar_time, decision, reason=""):
+        """One line per closed candle in the live log + data/agent_status.json for the Market tab."""
+        hhmm = str(bar_time)[11:16]
+        pb, ps = probs["buy"], probs["sell"]
+        conf = f"buy {pb:.0%} / sell {ps:.0%} (needs {cfg.threshold:.0%})" if pb is not None else "model warming up"
+        print(f"{hhmm} {conf} -> {decision}{': ' + reason if reason else ''}", flush=True)
+        try:
+            status_path.parent.mkdir(exist_ok=True)
+            status_path.write_text(json.dumps({
+                "time_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "bar": hhmm, "mode": mode,
+                "symbol": cfg.symbol, "p_buy": pb, "p_sell": ps, "threshold": cfg.threshold, "decision": decision,
+                "reason": reason, "open": broker.open_count(), "max_open": max_open}))
+        except OSError:
+            pass
+
     def report_exits(exits, bar_time=""):
         for x in exits:
             row = next((r for r in ledger.recent(50) if r["id"] == x["id"]), {})
@@ -114,8 +133,10 @@ def main():
             feats = build_features(bars, spec.point)
             row = feats.iloc[[-1]]
             if row.isna().any(axis=1).iloc[0]:
+                say(bar_time, "waiting", "not enough history for the indicators yet")
                 continue
             p_short, _, p_long = model.predict_proba(row)[0]
+            probs.update(buy=float(p_long), sell=float(p_short))
 
             # early exit: close a trade before its stop when the model has clearly turned against it
             if m.early_exit:
@@ -127,6 +148,7 @@ def main():
                             report_exits([x], bar_time)
 
             if broker.open_count() >= max_open:
+                say(bar_time, "holding", f"{max_open}/{max_open} trades already open")
                 continue
             a = float(atr(bars, L.atr_period).iloc[-1])
             median_spread_px = float(bars["spread"].tail(1440).median()) * spec.point
@@ -138,6 +160,7 @@ def main():
             elif p_short >= cfg.threshold and p_short > p_long:
                 side, prob = "sell", p_short
             if side is None:
+                say(bar_time, "no signal")
                 continue
 
             if not args.no_learned:
@@ -145,6 +168,7 @@ def main():
                                          datetime.now(timezone.utc).hour)
                 if why:
                     journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side, prob=round(prob, 3), note=why)
+                    say(bar_time, f"skipped {side}", why)
                     continue
 
             ok, reason = gate.check(bar_time.to_pydatetime(), equity, spread_px, median_spread_px, a,
@@ -153,6 +177,7 @@ def main():
                 ok, reason = False, "netting account: you hold this symbol, bot waits"
             if not ok:
                 journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side, prob=round(prob, 3), note=reason)
+                say(bar_time, f"skipped {side}", reason)
                 continue
 
             t = data.tick()
@@ -160,15 +185,18 @@ def main():
             plan = stake_plan(broker.account_balance(), data.margin_per_lot(side, price), spec, m, price)
             if plan is None:
                 journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side, note="no margin data")
+                say(bar_time, f"skipped {side}", "no margin data from MT5")
                 continue
             min_stop = spec.stops_level_points * spec.point
             if plan["sl_dist"] <= min_stop:
                 journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side,
                             note=f"stop {plan['sl_dist']:.5g} inside broker stops level {min_stop:.5g}")
+                say(bar_time, f"skipped {side}", "stop is inside the broker's minimum distance")
                 continue
             if spread_px > plan["sl_dist"] * m.max_spread_to_stop:
                 journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side,
                             note=f"spread {spread_px:.5g} is over {int(m.max_spread_to_stop * 100)}% of the stop")
+                say(bar_time, f"skipped {side}", f"spread {spread_px:.2f} is too wide for the stop")
                 continue
             lots = plan["lots"]
             sl = price - plan["sl_dist"] if side == "buy" else price + plan["sl_dist"]
@@ -180,6 +208,7 @@ def main():
             journal.log(event="order" if filled else "reject", bar_time=bar_time, symbol=cfg.symbol, side=side,
                         lots=lots, price=price, sl=sl, tp=tp, prob=round(prob, 3), equity=equity, note=note)
             print(f"{bar_time} {side} {lots} @ {price} sl {sl:.5g} tp {tp:.5g} p={prob:.2f} -> {note}")
+            say(bar_time, f"OPENED {side.upper()}" if filled else f"order rejected ({side})", "" if filled else note)
             if filled:
                 gate.record_trade()
     except KeyboardInterrupt:

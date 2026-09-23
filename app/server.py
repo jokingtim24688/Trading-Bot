@@ -1,5 +1,6 @@
 """Local HTTP API + static UI for the desktop app. Bound to 127.0.0.1 only."""
 import csv
+import json
 import shutil
 import subprocess
 import time
@@ -142,8 +143,14 @@ def bot_trades_payload(limit: int = 100, symbol: str | None = None) -> dict:
         floating = {}
     for t in open_:
         t.update(floating.get(t["id"], {"pnl": None, "price": None}))
+    status = None
+    if jobs.jobs["agent"].running:
+        try:
+            status = json.loads((ROOT / "data" / "agent_status.json").read_text())
+        except (OSError, ValueError):
+            status = {"decision": "starting", "reason": "waiting for the next 1-minute candle to close"}
     return {"open": open_, "recent": ledger.recent(limit, symbol=symbol),
-            "stats": {m: ledger.stats(m) for m in ("paper", "demo", "real")}}
+            "stats": {m: ledger.stats(m) for m in ("paper", "demo", "real")}, "agent": status}
 
 
 @app.get("/api/bot/trades")
