@@ -87,7 +87,48 @@ function initChart() {
   });
   state.series = state.chart.addCandlestickSeries({ upColor: "#3fb68b", downColor: "#e0574f", borderVisible: false, wickUpColor: "#3fb68b", wickDownColor: "#e0574f" });
 }
+/* ---------- replay: bot on downloaded history ---------- */
+state.replay = { view: false, running: false };
+const speedFromSlider = v => Math.round(Math.pow(600, v / 100));           // 0..100 -> 1..600 candles/s (log)
+const sliderFromSpeed = s => Math.round(Math.log(Math.max(1, s)) / Math.log(600) * 100);
+function setReplayView(on) {
+  state.replay.view = on;
+  $("#replay-toggle").classList.toggle("active", on);
+  $("#replay-bar").classList.toggle("hidden", !on);
+  if (on) $("#chart-msg").classList.add("hidden");
+  state.series && state.series.setData([]);
+  loadBars();
+}
+$("#replay-toggle").onclick = () => setReplayView(!state.replay.view);
+$("#rp-speed").addEventListener("input", e => { $("#rp-speed-txt").textContent = `${speedFromSlider(e.target.value)} candles/s`; });
+$("#rp-speed").addEventListener("change", e => api("/api/replay/control", { method: "POST", body: { speed: speedFromSlider(e.target.value) } }));
+$("#rp-start").onclick = async () => {
+  const [from, days] = $("#rp-days").value.split("|");
+  try { await api("/api/replay/start", { method: "POST", body: { from, days: Number(days), speed: speedFromSlider($("#rp-speed").value), fresh: true } }); toast("Replay started. Scoring the history first, a few seconds."); }
+  catch (e) { toast(e.message, true); }
+};
+$("#rp-pause").onclick = async () => { const c = await api("/api/replay/state"); await api("/api/replay/control", { method: "POST", body: { paused: !c.control?.paused } }); };
+$("#rp-stop").onclick = () => api("/api/replay/control", { method: "POST", body: { stop: true } });
+async function loadReplay() {
+  let r;
+  try { r = await api("/api/replay/state"); } catch (e) { return; }
+  state.replay.running = r.job_running; state.replay.last = r;
+  $("#rp-pause").textContent = r.control?.paused ? "Resume" : "Pause";
+  if (document.activeElement !== $("#rp-speed")) { $("#rp-speed").value = sliderFromSpeed(r.control?.speed || 20); $("#rp-speed-txt").textContent = `${r.control?.speed || 20} candles/s`; }
+  $("#rp-prog").style.width = r.total ? `${(100 * r.index / r.total).toFixed(1)}%` : "0";
+  const st = r.stats || {};
+  $("#rp-status").textContent = !r.total ? (r.job_running ? "Scoring the history with the model..." : "Replays your downloaded M1 history through the bot with all its rules. Trades are recorded as \"replay\" and feed its learning.")
+    : `${(r.bar_time_utc || "").slice(0, 16)} · ${r.index.toLocaleString()} / ${r.total.toLocaleString()} candles · ${r.open}/${r.max_open} open · ${st.closed || 0} closed · win ${st.win_pct ?? "–"}% · net ${signed(st.net_pnl || 0)} · score ${pts(st.score || 0)}${r.done ? " · finished" : r.control?.paused ? " · paused" : ""}`;
+  if (state.series && r.bars?.length) {
+    state.series.setData(r.bars);
+    state.barRange = [r.bars[0].time, r.bars[r.bars.length - 1].time];
+    const last = r.bars[r.bars.length - 1];
+    $("#q-sym").textContent = `${r.symbol} · replay`; $("#q-bid").textContent = fmt(last.close, state.digits);
+    drawBotOverlay();
+  }
+}
 async function loadBars() {
+  if (state.replay?.view) return loadReplay();
   if (!state.series || !state.symbol) return;
   try {
     const d = await api(`/api/bars?symbol=${encodeURIComponent(state.symbol)}&count=300`);
@@ -165,12 +206,13 @@ async function pollBot() {
 
 function renderBotCard() {
   const d = state.bot.data; if (!d) return;
-  const box = $("#bot-now"), open = d.open;
+  const box = $("#bot-now"), open = d.open.filter(t => (t.mode === "replay") === !!state.replay?.view);
   const today = Object.entries(d.stats).filter(([, s]) => s.closed || s.open).map(([m, s]) => `${m} ${signed(s.today_pnl)} · ${pts(s.today_score)} pts`).join(" · ");
   $("#bot-today").textContent = today ? `today: ${today}` : "";
   if (!open.length) {
     $("#bot-card").classList.remove("live");
-    const a = d.agent;
+    const rp = state.replay?.view && state.replay.last?.total ? state.replay.last : null;
+    const a = rp ? { ...rp, mode: "replay", bar: (rp.bar_time_utc || "").slice(11, 16) } : d.agent;
     const pct = v => v == null ? "–" : `${Math.round(v * 100)}%`;
     box.innerHTML = a ? `<div class="watch">
         <div class="watch-head"><span class="live-dot"></span><strong>Watching ${state.settings?.symbol || ""} · ${a.mode || ""}</strong><span class="muted small">${a.bar ? "candle " + a.bar : ""}</span></div>
@@ -207,14 +249,15 @@ $("#bot-now").addEventListener("click", async e => {
 function drawBotOverlay() {
   const d = state.bot.data; if (!d || !state.series) return;
   state.bot.lines.forEach(l => state.series.removePriceLine(l)); state.bot.lines = [];
-  d.open.filter(t => t.symbol === state.symbol).forEach(t => {
+  const inView = t => (t.mode === "replay") === !!state.replay?.view;
+  d.open.filter(t => t.symbol === state.symbol && inView(t)).forEach(t => {
     const mk = (price, color, title, style) => price && state.bot.lines.push(state.series.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
     mk(t.entry, "#c9a24a", `bot ${t.side}`, 2); mk(t.sl, "#e0574f", "bot SL", 0); mk(t.tp, "#3fb68b", "bot TP", 0);
   });
   const r = state.barRange; if (!r) { state.series.setMarkers([]); return; }
   const snap = t => t - (t % 60), inRange = t => t && t >= r[0] && t <= r[1] + 60;
   const marks = [];
-  d.recent.filter(t => t.symbol === state.symbol).forEach(t => {
+  d.recent.filter(t => t.symbol === state.symbol && inView(t)).forEach(t => {
     if (inRange(t.open_bar)) marks.push({ time: Math.min(snap(t.open_bar), r[1]), position: t.side === "buy" ? "belowBar" : "aboveBar",
       color: t.side === "buy" ? "#3fb68b" : "#e0574f", shape: t.side === "buy" ? "arrowUp" : "arrowDown", text: `bot ${t.side} ${t.lots}` });
     if (t.status === "closed" && inRange(t.close_bar)) marks.push({ time: Math.min(snap(t.close_bar), r[1]), position: t.side === "buy" ? "aboveBar" : "belowBar",
@@ -499,7 +542,8 @@ setInterval(pollBot, 2000);
 loadProgress(); setInterval(loadProgress, 5000);
 setInterval(pollStatus, 2000);
 setInterval(pollAccount, 2000);
-setInterval(() => state.tab === "dash" && (loadBars(), loadPositions()), 3000);
+setInterval(() => state.tab === "dash" && !state.replay.view && (loadBars(), loadPositions()), 3000);
+setInterval(() => state.tab === "dash" && state.replay.view && loadReplay(), 700);
 setInterval(() => state.tab === "agent" && (pollAgentLog(), loadJournal()), 2000);
 setInterval(() => state.tab === "agent" && loadPlan(), 10000);
 setInterval(() => state.tab === "train" && pollTrainLog(), 1500);

@@ -22,6 +22,7 @@ from datetime import datetime, timezone  # noqa: E402
 
 from . import learn, ledger, score as scoring  # noqa: E402
 from .model import SignalModel  # noqa: E402
+from .practice import Practice  # noqa: E402
 from .risk import RiskGate, stake_plan  # noqa: E402
 
 
@@ -39,6 +40,7 @@ def main():
     ap.add_argument("--ref-leverage", type=float, default=None, help="size stop/target as if leverage were 1:N (0 = real)")
     ap.add_argument("--no-early-exit", action="store_true", help="always hold trades until SL or TP")
     ap.add_argument("--no-learned", action="store_true", help="ignore the bot's learned rules (data/learned_rules.json)")
+    ap.add_argument("--practice", action="store_true", help="paper only: trade the model's top 10%% setups instead of the threshold")
     ap.add_argument("--sl-score-mult", type=float, default=None, help="score penalty multiplier when a stop loss hits (default 1.5)")
     ap.add_argument("--terminal", default=None, help="path to terminal64.exe (optional)")
     ap.add_argument("--live", action="store_true", help="send real orders (demo account unless --allow-real)")
@@ -82,6 +84,9 @@ def main():
 
     status_path = Path(cfg.log_dir).parent / "data" / "agent_status.json"
     probs = {"buy": None, "sell": None}
+    practice = Practice() if args.practice and mode == "paper" else None
+    if practice:
+        print("practice mode: trading the model's top 10% setups (paper only)")
 
     def say(bar_time, decision, reason=""):
         """One line per closed candle in the live log + data/agent_status.json for the Market tab."""
@@ -159,6 +164,12 @@ def main():
                 side, prob = "buy", p_long
             elif p_short >= cfg.threshold and p_short > p_long:
                 side, prob = "sell", p_short
+            if practice is not None:
+                side, prob, cut = practice.decide(p_long, p_short)
+                if side is None:
+                    say(bar_time, "no signal", f"practice: waiting for a top-10% setup (needs {cut:.1%})" if cut else
+                        "practice: collecting an hour of readings first")
+                    continue
             if side is None:
                 say(bar_time, "no signal")
                 continue

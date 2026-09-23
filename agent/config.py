@@ -53,7 +53,7 @@ class RiskConfig:
     daily_loss_pct: float = 3.0          # bot's OWN losses today (your manual trades don't count)
     account_daily_loss_pct: float = 6.0  # whole-account safety net: bot pauses if the account is down this much today
     max_trades_per_day: int = 100       # new entries per day (at most one per M1 candle)
-    max_spread_to_atr: float = 0.15
+    max_spread_to_atr: float = 0.35    # stops are stake-based now; the spread-vs-stop check does the real work
     max_spread_vs_median: float = 1.8
     # Server-time hours when new entries are allowed (typical GMT+2/+3 broker: London open .. NY afternoon)
     session_start_hour: int = 9

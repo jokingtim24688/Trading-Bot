@@ -80,21 +80,20 @@ class PaperBroker:
     """Simulated fills on closed M1 bars (stop wins if a bar touches both). Every trade goes to the ledger, and
     paper balance and open paper trades survive restarts because they're rebuilt from the ledger."""
 
-    mode = "paper"
-
-    def __init__(self, start_equity: float, spec: SymbolSpec, symbol: str, tick_fn):
+    def __init__(self, start_equity: float, spec: SymbolSpec, symbol: str, tick_fn, mode: str = "paper"):
+        self.mode = mode           # "paper" (live prices) or "replay" (historical candles)
         self.start_equity = start_equity
         self.spec = spec
         self.symbol = symbol
         self.tick_fn = tick_fn
-        self.positions = ledger.open_trades("paper", symbol)
+        self.positions = ledger.open_trades(mode, symbol)
 
     def _pnl(self, side, entry, exit_px, lots):
         move = (exit_px - entry) if side == "buy" else (entry - exit_px)
         return move / self.spec.tick_size * self.spec.tick_value * lots
 
     def account_balance(self) -> float:
-        return self.start_equity + ledger.realized_pnl("paper")
+        return self.start_equity + ledger.realized_pnl(self.mode)
 
     def account_equity(self) -> float:
         return self.account_balance() + self.floating_pnl()
@@ -106,7 +105,7 @@ class PaperBroker:
         return sum(self._pnl(p["side"], p["entry"], t.bid if p["side"] == "buy" else t.ask, p["lots"]) for p in self.positions)
 
     def bot_pnl_today(self) -> float:
-        return ledger.stats("paper")["today_pnl"] + self.floating_pnl()
+        return ledger.stats(self.mode)["today_pnl"] + self.floating_pnl()
 
     def has_position(self) -> bool:
         return bool(self.positions)
@@ -118,8 +117,8 @@ class PaperBroker:
         return False
 
     def open(self, side, lots, price, sl, tp, prob=None, risk_money=None, open_bar=None, stake=None, **_):
-        tid = ledger.open_trade("paper", self.symbol, side, lots, price, sl, tp, prob, risk_money, None, open_bar, stake)
-        self.positions = ledger.open_trades("paper", self.symbol)
+        tid = ledger.open_trade(self.mode, self.symbol, side, lots, price, sl, tp, prob, risk_money, None, open_bar, stake)
+        self.positions = ledger.open_trades(self.mode, self.symbol)
         return True, f"paper fill #{tid}"
 
     def on_bar(self, bar, spread_px, bar_epoch=None):

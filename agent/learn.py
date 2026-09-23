@@ -50,7 +50,7 @@ def _group(rows, key):
     return dict(sorted(out.items()))
 
 
-def analyze(modes=("paper", "demo", "real")) -> dict:
+def analyze(modes=("replay", "paper", "demo", "real")) -> dict:
     rows = [r for r in ledger.recent(100_000) if r["status"] == "closed" and r["mode"] in modes]
     hour = lambda r: int((r["open_utc"] or "T00")[11:13] or 0)      # noqa: E731
     return {
@@ -153,7 +153,7 @@ Earlier snapshots: `references/history.md`. Rules file the agent reads: `data/le
         f.write(entry)
 
 
-def learn(modes=("paper", "demo", "real")) -> dict:
+def learn(modes=("replay", "paper", "demo", "real")) -> dict:
     when = datetime.now(timezone.utc).isoformat(timespec="minutes")
     a = analyze(modes)
     rules = derive_rules(a)

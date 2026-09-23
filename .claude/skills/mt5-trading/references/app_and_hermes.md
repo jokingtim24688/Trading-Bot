@@ -86,3 +86,10 @@ The bot writes lessons to the `m1-bot-lessons` skill and `data/learned_rules.jso
 
 Note: the user's broker gives 1:20 on gold, so exits are sized with `ref_leverage` = 100 (stop/target measured against the
 stake the trade would need at 1:100; lot size still from the real margin). At gold ~$4,450 on 0.01 lot: stop ~$11, target ~$89.
+
+## Practice mode and Replay
+- Practice (Settings, default on): on Paper and Replay the bot takes its top-10% confidence setups instead of the threshold,
+  because 8:1 exits keep raw confidence low (a few %). Demo/Real use the threshold.
+- Market tab → Replay history: runs the bot over downloaded M1 history (model's unseen period or the most recent days) at
+  1-600 candles/s with pause/stop. Trades are mode "replay": they feed stats and learning, not the Paper → Demo gate.
+- The Bot trade card and the Agent log show every candle's buy/sell confidence and decision (or skip reason).

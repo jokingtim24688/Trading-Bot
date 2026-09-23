@@ -260,3 +260,14 @@ tr.open-row td { background: rgba(201,162,74,.06); }
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
 .conf { display: grid; grid-template-columns: 34px 1fr 40px; gap: 8px; align-items: center; font-size: 12px; margin: 3px 0; }
 .conf .bar { width: 100%; }
+
+/* replay */
+.replay-chip { border-color: rgba(201,162,74,.45); color: var(--gold); }
+.replay-chip.active { background: var(--gold); color: var(--bg); }
+.replay-bar { background: var(--bg-2); border: 1px solid rgba(201,162,74,.3); border-radius: var(--r-sm); padding: 10px 12px; margin-bottom: 8px; display: grid; gap: 6px; }
+.replay-bar .wrap { flex-wrap: wrap; }
+label.inline { flex-direction: row; align-items: center; gap: 6px; }
+label.inline select { width: auto; padding: 4px 8px; }
+.rp-speed { margin-top: 2px; }
+.rp-progress { display: grid; gap: 4px; }
+.rp-progress .bar { width: 100%; }

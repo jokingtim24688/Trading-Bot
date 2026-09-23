@@ -28,7 +28,9 @@ DEFAULTS = {
     "learn_every": 50,                     # re-learn after this many new closed trades                    # bot may close a trade before its stop when the model turns against it
     "sl_score_mult": 1.5,                  # score: a stop-loss hit counts this many times worse than an early close
     "paper_balance": 10000.0,
-    "label_horizon": 240,                  # bars a training label may take to hit its stop/target
+    "label_horizon": 1440,                 # bars (1 day) a training label may take to hit its stop/target
+    "practice": True,                      # Paper/Replay: trade the model's top-10% setups instead of the threshold
+    "replay_speed": 20,                    # candles per second in Replay
     "days_history": 365,
     "alert_sound": True,                   # beep when the bot opens or closes a trade
     "point": 0.01,
@@ -43,6 +45,7 @@ DEFAULTS = {
     # MCP bridge for Hermes Agent
     "mcp_http_port": 8765,
     "mcp_autostart": True,
+    "settings_version": 2,
 }
 
 
@@ -50,7 +53,13 @@ def load() -> dict:
     s = dict(DEFAULTS)
     if PATH.exists():
         try:
-            s.update(json.loads(PATH.read_text()))
+            saved = json.loads(PATH.read_text())
+            s.update(saved)
+            if saved.get("settings_version", 1) < 2:          # v2: training look-ahead 240 -> 1440 candles
+                if s.get("label_horizon") == 240:
+                    s["label_horizon"] = 1440
+                s["settings_version"] = 2
+                PATH.write_text(json.dumps(s, indent=2))
         except json.JSONDecodeError:
             pass
     return s

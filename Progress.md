@@ -102,3 +102,16 @@
 - Found: broker leverage on gold is 1:20 (margin rate 0.05), which made stake-based exits ~$55 stop / ~$445 target.
   User chose to size exits as if leverage were 1:100 (`ref_leverage`, Settings): stop ~$11, target ~$89 on 0.01 lot;
   lot size still from the real margin. Training labels use margin rate 1/ref_leverage.
+
+## 2026-09-23: Practice mode, Replay, visible decisions
+- User's live run: model confidence ~1% vs a 0.8 threshold, so no trades. Causes: 8:1 exits + 240-bar training
+  look-ahead labelled most eventual winners "no result". Look-ahead now 1440 bars (settings auto-upgrade 240 -> 1440).
+- Practice mode (`agent/practice.py`, default on for Paper/Replay): trade the model's top-10% setups over the last day of
+  readings instead of the fixed threshold. Demo/Real keep the threshold.
+- Replay (`agent/replay.py`): runs the bot on downloaded M1 history (default: the model's unseen test period) with a live
+  speed slider (1-600 candles/s), pause/stop; trades recorded as mode "replay" (feed learning/stats, not the Paper gate);
+  unfinished trades at the end are discarded. Market tab: "Replay history" panel + chart + bot card follow the replay.
+- Agent prints one line per candle (buy/sell confidence vs needed, decision/skip reason) and writes data/agent_status.json;
+  the Market tab's Bot trade card shows it live.
+- Spread/ATR filter relaxed 0.15 -> 0.35 (stops are stake-based now; spread-vs-stop check remains).
+- Bugs found in testing: replay timestamps wrong for ms-resolution parquet (fixed); end-of-replay force-closes skewed stats (now dropped).

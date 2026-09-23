@@ -48,8 +48,18 @@
     <div class="dash-grid">
       <div class="panel chart-panel">
         <div class="chart-head">
-          <div id="symbols" class="chips"></div>
+          <div class="row gap"><div id="symbols" class="chips"></div><button class="chip replay-chip" id="replay-toggle" title="Run the bot on downloaded history, fast">Replay history</button></div>
           <div class="quote"><span id="q-sym">—</span><span class="num" id="q-bid">—</span><span class="muted">spread</span><span class="num" id="q-spr">—</span><span class="tf">M1</span></div>
+        </div>
+        <div class="replay-bar hidden" id="replay-bar">
+          <div class="row gap wrap">
+            <label class="inline">Period <select id="rp-days"><option value="test|7">Model's unseen data · 7 days</option><option value="test|30" selected>Model's unseen data · 30 days</option><option value="end|7">Most recent 7 days</option><option value="end|30">Most recent 30 days</option></select></label>
+            <button class="btn primary xs" id="rp-start">Start replay</button>
+            <button class="btn xs" id="rp-pause">Pause</button>
+            <button class="btn xs" id="rp-stop">Stop</button>
+          </div>
+          <label class="slider-label rp-speed">Speed <span id="rp-speed-txt" class="num"></span><input id="rp-speed" type="range" min="0" max="100" step="1"></label>
+          <div class="rp-progress"><div class="bar"><i id="rp-prog"></i></div><span id="rp-status" class="muted small">Replays your downloaded M1 history through the bot with all its rules. Trades are recorded as "replay" and feed its learning.</span></div>
         </div>
         <div id="chart"></div>
         <p id="chart-msg" class="empty hidden"></p>
@@ -110,7 +120,7 @@
     </div>
     <div class="panel">
       <div class="panel-head"><h3>Bot trades</h3>
-        <div class="chips" id="bt-filter"><button class="chip active" data-m="">All</button><button class="chip" data-m="paper">Paper</button><button class="chip" data-m="demo">Demo</button><button class="chip" data-m="real">Real</button></div>
+        <div class="chips" id="bt-filter"><button class="chip active" data-m="">All</button><button class="chip" data-m="replay">Replay</button><button class="chip" data-m="paper">Paper</button><button class="chip" data-m="demo">Demo</button><button class="chip" data-m="real">Real</button></div>
       </div>
       <div class="stats" id="bt-stats"></div>
       <div class="table-wrap"><table id="bt-table"><thead><tr><th>#</th><th>Mode</th><th>Opened (UTC)</th><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>P/L</th><th>R</th><th>Score</th><th>Conf.</th></tr></thead><tbody></tbody></table></div>
@@ -176,6 +186,7 @@
         <label>Point size of symbol<input name="point" type="number" step="any"></label>
         <label>History to download (days)<input name="days_history" type="number"></label>
         <label class="check"><input type="checkbox" name="alert_sound"> Play a sound when the bot opens or closes a trade</label>
+        <label class="check"><input type="checkbox" name="practice"> Practice mode: on Paper and Replay, trade the model's top-10% setups instead of the confidence threshold</label>
         <label class="check"><input type="checkbox" name="auto_promote_demo"> Move from Paper to Demo automatically when the Paper gate is passed</label>
         <label class="check"><input type="checkbox" name="use_learned"> Apply the rules the bot learned from its own trades</label>
       </fieldset>

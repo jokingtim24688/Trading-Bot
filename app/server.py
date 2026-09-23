@@ -150,7 +150,7 @@ def bot_trades_payload(limit: int = 100, symbol: str | None = None) -> dict:
         except (OSError, ValueError):
             status = {"decision": "starting", "reason": "waiting for the next 1-minute candle to close"}
     return {"open": open_, "recent": ledger.recent(limit, symbol=symbol),
-            "stats": {m: ledger.stats(m) for m in ("paper", "demo", "real")}, "agent": status}
+            "stats": {m: ledger.stats(m) for m in ("replay", "paper", "demo", "real")}, "agent": status}
 
 
 @app.get("/api/bot/trades")
@@ -170,6 +170,8 @@ def agent_args(s: dict, mode: str, max_open: int | None = None) -> list[str]:
         args.append("--no-early-exit")
     if not s.get("use_learned", True):
         args.append("--no-learned")
+    if s.get("practice", True) and mode == "paper":
+        args.append("--practice")
     if s.get("terminal_path"):
         args += ["--terminal", s["terminal_path"]]
     if mode in ("demo", "real"):
@@ -216,7 +218,7 @@ def _restart_agent_if_running(s: dict):
 
 
 def _maybe_learn(state: dict, s: dict, force: bool = False):
-    closed = sum(ledger.stats(m)["closed"] for m in ("paper", "demo", "real"))
+    closed = sum(ledger.stats(m)["closed"] for m in ("replay", "paper", "demo", "real"))
     if force or closed - state.get("learned_at_trades", 0) >= int(s.get("learn_every", 50)):
         learn.learn()
         state["learned_at_trades"] = closed
@@ -279,6 +281,84 @@ def progress_demote():
     progression.save(state)
     _restart_agent_if_running(s)
     return progress()
+
+
+# ---------- replay: run the bot on downloaded history at slider speed ----------
+REPLAY_CONTROL = ROOT / "data" / "replay_control.json"
+REPLAY_STATE = ROOT / "data" / "replay_state.json"
+
+
+def _replay_control(update: dict | None = None) -> dict:
+    try:
+        ctl = json.loads(REPLAY_CONTROL.read_text())
+    except (OSError, ValueError):
+        ctl = {"speed": 20, "paused": False, "stop": False}
+    if update:
+        ctl.update({k: v for k, v in update.items() if k in ("speed", "paused", "stop")})
+        REPLAY_CONTROL.parent.mkdir(exist_ok=True)
+        REPLAY_CONTROL.write_text(json.dumps(ctl))
+    return ctl
+
+
+@app.post("/api/replay/start")
+def replay_start(body: dict = Body(default={})):
+    s = settings.load()
+    data = ROOT / "data" / f"{s['symbol']}_M1.parquet"
+    if not data.exists():
+        raise HTTPException(400, "No M1 history yet. Train tab -> Fetch data first.")
+    if not mt5_service.model_exists(s["symbol"]):
+        raise HTTPException(400, "Train a model first (Train tab).")
+    if jobs.jobs["replay"].running:
+        raise HTTPException(409, "A replay is already running.")
+    rate, spec = None, None
+    try:
+        rate = mt5_service.margin_per_lot(s["symbol"])["margin_rate"]
+        spec = mt5_service.symbol_spec(s["symbol"])
+    except Exception:
+        pass
+    args = ["-m", "agent.replay", str(data), "--symbol", s["symbol"], "--point", str(s["point"]),
+            "--days", str(body.get("days", 30)), "--from", str(body.get("from", "test")),
+            "--threshold", str(s["threshold"]), "--balance", str(s["paper_balance"]),
+            "--stake-pct", str(s["stake_pct"]), "--sl-pct", str(s["sl_pct_of_stake"]),
+            "--tp-small", str(s["tp_pct_small"]), "--tp-large", str(s["tp_pct_large"]),
+            "--max-open", str(int(s["max_open_trades"])), "--ref-leverage", str(s.get("ref_leverage", 100)),
+            "--sl-score-mult", str(s["sl_score_mult"])]
+    if rate:
+        args += ["--margin-rate", f"{rate:.6f}"]
+    if spec:
+        args += ["--tick-size", str(spec["tick_size"]), "--tick-value", str(spec["tick_value"]),
+                 "--volume-min", str(spec["volume_min"]), "--volume-step", str(spec["volume_step"])]
+    if s.get("practice", True):
+        args.append("--practice")
+    if not s.get("early_exit", True):
+        args.append("--no-early-exit")
+    if not s.get("use_learned", True):
+        args.append("--no-learned")
+    if body.get("fresh"):
+        args.append("--fresh")
+    REPLAY_STATE.unlink(missing_ok=True)
+    _replay_control({"speed": body.get("speed", s.get("replay_speed", 20)), "paused": False, "stop": False})
+    jobs.start("replay", args)
+    return {"started": True}
+
+
+@app.post("/api/replay/control")
+def replay_control(body: dict = Body(default={})):
+    if "speed" in body:
+        settings.save({"replay_speed": body["speed"]})
+    return _replay_control(body)
+
+
+@app.get("/api/replay/state")
+def replay_state():
+    try:
+        st = json.loads(REPLAY_STATE.read_text())
+    except (OSError, ValueError):
+        st = {"bars": []}
+    st["job_running"] = jobs.jobs["replay"].running
+    st["control"] = _replay_control()
+    st["log"] = jobs.jobs["replay"].tail(8)
+    return st
 
 
 @app.post("/api/learn")
