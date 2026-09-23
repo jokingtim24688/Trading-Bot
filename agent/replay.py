@@ -31,6 +31,7 @@ from .broker import PaperBroker  # noqa: E402
 from .features import atr, build_features  # noqa: E402
 from .model import SignalModel  # noqa: E402
 from .practice import Practice  # noqa: E402
+from .pro import SETUP_NAMES, active_setups, primary_setup  # noqa: E402
 from .risk import RiskGate, SymbolSpec, stake_plan  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -159,7 +160,8 @@ def main():
             "bar_time_utc": str(df.index[i]), "bars": bars, "speed": read_control().get("speed", 20),
             "p_buy": None if np.isnan(p[2]) else float(p[2]), "p_sell": None if np.isnan(p[0]) else float(p[0]),
             "threshold": cfg.threshold, "need": need["v"] if practice and need["v"] else cfg.threshold,
-            "practice": bool(practice), "decision": decision, "reason": reason,
+            "practice": bool(practice),
+            "setups": [SETUP_NAMES[k] for k in active_setups(feats.iloc[i].to_dict())] if i < len(feats) else [], "decision": decision, "reason": reason,
             "open": broker.open_count(), "max_open": m.max_open_trades, "balance": round(broker.account_balance(), 2),
             "rate": round(pace["rate"]), "skips": [[k, n] for k, n in skips.most_common(4)], "opened": stats["opened"], "stats": ledger.stats("replay"), "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}))
 
@@ -208,7 +210,8 @@ def main():
                     decision, reason = "holding", f"{m.max_open_trades} trades open"
                     skips["max open trades"] += 1
                 elif side:
-                    why = None if args.no_learned else learn.block_reason(rules, side, prob, (df.index[i] - offset).hour)
+                    setup = primary_setup(active_setups(feats.iloc[i].to_dict()), side)
+                    why = None if args.no_learned else learn.block_reason(rules, side, prob, (df.index[i] - offset).hour, setup)
                     okg, rsn = gate.check(df.index[i].tz_convert(None).to_pydatetime(), broker.account_equity(), SP[i],
                                           spread_med[i], atr_s[i], bot_pnl_today=broker.bot_pnl_today())
                     price = C[i] + SP[i] if side == "buy" else C[i]
@@ -227,7 +230,8 @@ def main():
                         sl = price - plan["sl_dist"] if side == "buy" else price + plan["sl_dist"]
                         tp = price + plan["tp_dist"] if side == "buy" else price - plan["tp_dist"]
                         broker.open(side, plan["lots"], price, sl, tp, prob=round(prob, 3), risk_money=plan["sl_money"],
-                                    open_bar=int(T[i]) + 60, stake=plan["stake"])
+                                    open_bar=int(T[i]) + 60, stake=plan["stake"],
+                                    setup=setup)
                         gate.record_trade()
                         stats["opened"] += 1
                         decision = f"OPENED {side.upper()}"

@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent import learn, ledger, progression, score as scoring
+from agent.pro import SETUP_NAMES
 
 from . import brain, memory, mt5_service, settings
 from .jobs import LOGS, jobs
@@ -150,7 +151,8 @@ def bot_trades_payload(limit: int = 100, symbol: str | None = None) -> dict:
         except (OSError, ValueError):
             status = {"decision": "starting", "reason": "waiting for the next 1-minute candle to close"}
     return {"open": open_, "recent": ledger.recent(limit, symbol=symbol),
-            "stats": {m: ledger.stats(m) for m in ("replay", "paper", "demo", "real")}, "agent": status}
+            "stats": {m: ledger.stats(m) for m in ("replay", "paper", "demo", "real")}, "agent": status,
+            "setup_names": SETUP_NAMES}
 
 
 @app.get("/api/bot/trades")

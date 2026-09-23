@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from .config import LabelConfig
+from .pro import pro_features
 
 
 def _ema(s: pd.Series, n: int) -> pd.Series:
@@ -59,6 +60,7 @@ def build_features(df: pd.DataFrame, point: float) -> pd.DataFrame:
     f["tod_sin"] = np.sin(2 * np.pi * minute / 1440)
     f["tod_cos"] = np.cos(2 * np.pi * minute / 1440)
     f["dow"] = df.index.dayofweek
+    f = pd.concat([f, pro_features(df, a_safe)], axis=1)      # what professional traders watch (agent/pro.py)
     return f.replace([np.inf, -np.inf], np.nan).astype("float32")
 
 

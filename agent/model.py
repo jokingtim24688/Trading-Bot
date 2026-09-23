@@ -42,6 +42,10 @@ class SignalModel:
         return cls(booster, list(X_tr.columns), {"device_trained": params["device"], "best_iteration": booster.best_iteration})
 
     def predict_proba(self, X) -> np.ndarray:
+        missing = [c for c in self.features if c not in X.columns]
+        if missing:
+            raise SystemExit(f"This model was trained with older inputs ({', '.join(missing[:3])}...). "
+                             "Retrain it on the Train tab, then start again.")
         d = xgb.DMatrix(X[self.features], feature_names=self.features)
         best = self.meta.get("best_iteration")
         return self.booster.predict(d, iteration_range=(0, best + 1) if best is not None else (0, 0))

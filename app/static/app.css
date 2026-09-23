@@ -273,3 +273,5 @@ label.inline select { width: auto; padding: 4px 8px; }
 .rp-progress .bar { width: 100%; }
 .row-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .rp-presets { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.setups { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 8px; }
+.setup-chip { font: 500 11px var(--mono); padding: 2px 7px; border-radius: var(--r-sm); border: 1px solid var(--line); color: var(--text); background: var(--bg-2); }

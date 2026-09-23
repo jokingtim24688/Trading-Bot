@@ -147,3 +147,20 @@
   years (user saw 0 open / 0 closed after 5,330 candles). Replay skips it by default (`--strict-filters` restores it);
   the spread-vs-stop cost check, session hours, daily loss limit and max open still apply. Reproduced on 2021-like
   data: strict 0 trades vs default 27. Replay status now lists the top skip reasons ("signals skipped: ...").
+
+## 2026-09-23: What professional traders watch, as model inputs
+- `agent/pro.py`: 19 causal inputs from the pro intraday playbook, in ATRs: prior-day high/low/close, day and week open,
+  position in the day's range, Asian range, London/NY 30-min opening ranges, session average price (VWAP stand-in; no
+  volume in history), liquidity sweeps (stop hunts) of the 60-candle high/low, fresh breaks, fair value gaps, H1
+  structure, $10/$50 round numbers. Model now has 49 inputs. Checked causal (values never change when later candles
+  are added); 1.8M candles build in ~13 s.
+- `active_setups()` names what a pro would see (17 setups, e.g. "Liquidity sweep below lows", "Opening-range breakout
+  up"); `primary_setup()` files each trade under the setup matching its direction (new ledger column `setup`).
+- Learning: new "By pro setup" table in the m1-bot-lessons skill; setups that keep losing get blocked (never more
+  than half). App: "Pro read" chips on the bot card (waiting and with trades open), setup on each open trade, Setup
+  column in Bot trades, blocked setups in the learned panel.
+- Skill: `references/pro_playbook.md` (prep, levels, sessions, the setups, risk/execution habits, what pros avoid,
+  review, and how each maps to the inputs).
+- Old models: a model trained before this stops with "trained with older inputs, retrain on the Train tab".
+- Tested end to end on synthetic data: train -> replay (632 trades, all filed by setup) -> learn (setup table,
+  blocked setups) -> app screenshots.

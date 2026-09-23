@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import ledger
+from .pro import SETUP_NAMES
 
 ROOT = Path(__file__).resolve().parent.parent
 RULES_PATH = ROOT / "data" / "learned_rules.json"
@@ -61,11 +62,12 @@ def analyze(modes=("replay", "paper", "demo", "real")) -> dict:
         "by_confidence": _group(rows, lambda r: _bucket(r["prob"])),
         "by_exit": _group(rows, lambda r: r["exit_reason"] or "unknown"),
         "by_mode": _group(rows, lambda r: r["mode"]),
+        "by_setup": _group(rows, lambda r: r.get("setup") or "not recorded"),
     }
 
 
 def derive_rules(a: dict) -> dict:
-    rules = {"blocked_hours": [], "min_confidence": None, "disabled_side": None, "reasons": []}
+    rules = {"blocked_hours": [], "min_confidence": None, "disabled_side": None, "blocked_setups": [], "reasons": []}
     if a["trades"] < MIN_TRADES:
         rules["reasons"].append(f"Only {a['trades']} closed trades; rules start at {MIN_TRADES}.")
         return rules
@@ -83,6 +85,12 @@ def derive_rules(a: dict) -> dict:
             rules["reasons"].append(f"Confidence {b} lost {s['score']} points over {s['trades']} trades.")
         else:
             break
+    # pro setups that keep losing: stop taking them, but never more than half of them, so the bot keeps trading/learning
+    groups = {k: s for k, s in a.get("by_setup", {}).items() if k != "not recorded"}
+    losers = sorted((k for k, s in groups.items() if s["trades"] >= MIN_GROUP and s["score"] < 0), key=lambda k: groups[k]["score"])
+    for k in losers[: len(groups) // 2]:
+        rules["blocked_setups"].append(k)
+        rules["reasons"].append(f"Setup '{SETUP_NAMES.get(k, k)}' lost {groups[k]['score']} points over {groups[k]['trades']} trades.")
     sides = a["by_side"]
     if {"buy", "sell"} <= sides.keys():
         for bad_side, good_side in (("buy", "sell"), ("sell", "buy")):
@@ -111,6 +119,8 @@ def write_skill(a: dict, rules: dict, when: str):
         active.append(f"- Require model confidence of at least {rules['min_confidence']:.2f}")
     if rules["disabled_side"]:
         active.append(f"- Don't open {rules['disabled_side']} trades")
+    if rules.get("blocked_setups"):
+        active.append("- Skip these setups: " + ", ".join(SETUP_NAMES.get(k, k) for k in rules["blocked_setups"]))
     body = f"""---
 name: m1-bot-lessons
 description: What the user's MT5 M1 trading bot has learned from its own trades (paper, demo and real) - which hours, directions and confidence levels made or lost money, and the entry filters it now applies. Use this whenever the user asks how the bot is doing, why it skipped a trade, what it has learned, or whether it is ready to move up to demo or real money.
@@ -134,6 +144,9 @@ Why:
 
 ## By model confidence
 {_table(a['by_confidence'], 'Confidence')}
+
+## By pro setup (what a professional trader would call the entry)
+{_table({SETUP_NAMES.get(k, k): s for k, s in a.get('by_setup', {}).items()}, 'Setup')}
 
 ## By how trades closed
 {_table(a['by_exit'], 'Exit')}
@@ -177,7 +190,7 @@ def load_rules() -> dict:
     return _cache["rules"]
 
 
-def block_reason(rules: dict, side: str, prob: float, utc_hour: int) -> str | None:
+def block_reason(rules: dict, side: str, prob: float, utc_hour: int, setup: str | None = None) -> str | None:
     """Why the learned rules skip this entry, or None to allow it."""
     if not rules:
         return None
@@ -187,4 +200,6 @@ def block_reason(rules: dict, side: str, prob: float, utc_hour: int) -> str | No
         return f"learned: confidence {prob:.2f} below {rules['min_confidence']:.2f}"
     if rules.get("disabled_side") == side:
         return f"learned: {side} trades have been losing"
+    if setup and setup in rules.get("blocked_setups", []):
+        return f"learned: '{SETUP_NAMES.get(setup, setup)}' entries have been losing"
     return None

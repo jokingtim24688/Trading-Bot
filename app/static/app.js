@@ -260,15 +260,18 @@ function renderBotCard() {
         ${a.p_buy != null ? `<div class="conf"><span>Buy</span><div class="bar"><i style="width:${Math.min(100, a.p_buy / Math.max(need, .001) * 100)}%"></i></div><span class="num">${pct(a.p_buy)}</span></div>
         <div class="conf"><span>Sell</span><div class="bar"><i style="width:${Math.min(100, a.p_sell / Math.max(need, .001) * 100)}%"></i></div><span class="num">${pct(a.p_sell)}</span></div>
         <p class="muted small" style="margin:4px 0 0">Needs ${pct(need)} to enter${a.practice ? " (practice: its best ~10% of readings)" : ""} · ${a.open ?? 0}/${a.max_open ?? "–"} open</p>` : ""}
+        ${a.setups?.length ? `<div class="setups"><span class="muted small">Pro read:</span>${a.setups.map(x => `<span class="setup-chip">${x}</span>`).join("")}</div>` : ""}
         <p class="small" style="margin:8px 0 0"><b>${a.decision}</b>${a.reason ? ` · <span class="muted">${a.reason}</span>` : ""}</p></div>`
       : `<p class="empty">The bot isn't running. Start it on the Agent tab. When it enters you'll get an alert, and its entry, stop and target are drawn on the chart.</p>`;
     return;
   }
   $("#bot-card").classList.add("live");
-  box.innerHTML = open.slice().reverse().map(t => {
+  const now = state.replay?.view ? state.replay.last : d.agent;
+  const proRead = now?.setups?.length ? `<div class="setups" style="margin:0 0 8px"><span class="muted small">Pro read:</span>${now.setups.map(x => `<span class="setup-chip">${x}</span>`).join("")}</div>` : "";
+  box.innerHTML = proRead + open.slice().reverse().map(t => {
     const risk = Math.abs(t.entry - t.sl0), rNow = t.price != null && risk ? ((t.side === "buy" ? t.price - t.entry : t.entry - t.price) / risk) : null;
     return `<div class="bt">
-      <div class="bt-head"><span class="bt-side ${t.side}">${t.side.toUpperCase()}</span><strong>${t.symbol}</strong><span class="muted small">${t.lots} lots · ${t.mode}${t.prob ? ` · conf ${Math.round(t.prob * 100)}%` : ""}</span></div>
+      <div class="bt-head"><span class="bt-side ${t.side}">${t.side.toUpperCase()}</span><strong>${t.symbol}</strong><span class="muted small">${t.lots} lots · ${t.mode}${t.prob ? ` · conf ${Math.round(t.prob * 100)}%` : ""}${t.setup ? ` · ${d.setup_names?.[t.setup] || t.setup}` : ""}</span></div>
       <div class="bt-levels"><div><span>Entry</span><strong>${px(t.entry, t.symbol)}</strong></div><div class="sl"><span>Stop</span><strong>${px(t.sl, t.symbol)}</strong></div><div class="tp"><span>Target</span><strong>${px(t.tp, t.symbol)}</strong></div></div>
       <div class="bt-foot"><span class="num ${cls(t.pnl)}">${signed(t.pnl)}${rNow != null ? ` <span class="muted">(${rNow >= 0 ? "+" : ""}${rNow.toFixed(2)}R)</span>` : ""}</span>
         <span class="row gap"><button class="btn xs" data-follow="${t.id}" title="Put the bot's stop into the sizer to size your own copy">Size mine</button><button class="btn xs" data-copy="${t.id}">Copy levels</button></span></div>
@@ -330,8 +333,8 @@ function renderBotTable() {
     <td>${(t.open_utc || "").replace("T", " ").slice(0, 16)}</td><td>${t.symbol}</td><td class="${t.side === "buy" ? "up" : "down"}">${t.side}</td><td>${t.lots}</td>
     <td>${px(t.entry, t.symbol)}</td><td>${px(t.sl, t.symbol)}</td><td>${px(t.tp, t.symbol)}</td>
     <td>${t.status === "open" ? "open" : px(t.exit, t.symbol)}</td><td>${t.exit_reason || ""}</td>
-    <td class="${cls(t.pnl)}">${t.status === "open" ? "" : signed(t.pnl)}</td><td class="${cls(t.r_multiple)}">${t.r_multiple ?? ""}</td><td class="${cls(t.score)}">${t.status === "open" ? "" : pts(t.score)}</td><td>${t.prob ? Math.round(t.prob * 100) + "%" : ""}</td></tr>`).join("")
-    || `<tr><td colspan="15" class="muted">No bot trades yet${m ? ` in ${m} mode` : ""}. Start the agent and every trade it takes is recorded here, including ones that hit stop or target while the app was closed.</td></tr>`;
+    <td class="${cls(t.pnl)}">${t.status === "open" ? "" : signed(t.pnl)}</td><td class="${cls(t.r_multiple)}">${t.r_multiple ?? ""}</td><td class="${cls(t.score)}">${t.status === "open" ? "" : pts(t.score)}</td><td>${t.prob ? Math.round(t.prob * 100) + "%" : ""}</td><td class="small">${t.setup ? (d.setup_names?.[t.setup] || t.setup) : ""}</td></tr>`).join("")
+    || `<tr><td colspan="16" class="muted">No bot trades yet${m ? ` in ${m} mode` : ""}. Start the agent and every trade it takes is recorded here, including ones that hit stop or target while the app was closed.</td></tr>`;
 }
 $("#bt-filter").addEventListener("click", e => {
   const b = e.target.closest("[data-m]"); if (!b) return;
@@ -438,7 +441,8 @@ $("#gate").addEventListener("click", async e => {
 function renderLearned(r) {
   if (!r || !r.generated) return;
   const chips = [...(r.blocked_hours || []).map(h => `skip ${String(h).padStart(2, "0")}:00 UTC`),
-    ...(r.min_confidence ? [`confidence ≥ ${r.min_confidence}`] : []), ...(r.disabled_side ? [`no ${r.disabled_side} trades`] : [])];
+    ...(r.min_confidence ? [`confidence ≥ ${r.min_confidence}`] : []), ...(r.disabled_side ? [`no ${r.disabled_side} trades`] : []),
+    ...(r.blocked_setups || []).map(k => `skip ${state.bot.data?.setup_names?.[k] || k}`)];
   $("#learned").innerHTML = `<div class="learned-rules">${chips.length ? chips.map(c => `<span class="rule-chip">${c}</span>`).join("") : `<span class="muted small">No filters yet. Nothing has lost consistently enough to block.</span>`}</div>
     <p class="muted small" style="margin:0">From ${r.trades_analyzed} closed trades · updated ${r.generated.replace("T", " ")} UTC · ${state.settings?.use_learned ? "applied to new entries" : "not applied (Settings)"} · saved to <code>.claude/skills/m1-bot-lessons/</code></p>
     ${(r.reasons || []).length ? `<ul class="small muted" style="margin:6px 0 0;padding-left:18px">${r.reasons.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}`;

@@ -28,6 +28,7 @@ stands on its own.
 | Automate with Python (`MetaTrader5` package), including M1 data and order_send | `references/python_api.md` |
 | Run or tune the local trading agent on the RTX 4060 + Ryzen 5 7600 | `references/hardware_agent.md` |
 | Gold / XAUUSD specifics | `references/instruments.md` |
+| What professional traders do (prep, levels, sessions, sweeps, ORB, VWAP, FVG) and how the bot's inputs encode it | `references/pro_playbook.md` |
 | Use the desktop app (chart, agent, training, Hermes assistant) or set up Hermes memory | `references/app_and_hermes.md` |
 
 Scripts in `scripts/` do deterministic work, so run them instead of redoing the math by hand:

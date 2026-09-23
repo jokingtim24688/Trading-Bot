@@ -121,9 +121,9 @@ class PaperBroker:
     def foreign_position(self) -> bool:
         return False
 
-    def open(self, side, lots, price, sl, tp, prob=None, risk_money=None, open_bar=None, stake=None, **_):
+    def open(self, side, lots, price, sl, tp, prob=None, risk_money=None, open_bar=None, stake=None, setup=None, **_):
         tid = ledger.open_trade(self.mode, self.symbol, side, lots, price, sl, tp, prob, risk_money, None, open_bar, stake,
-                                open_utc=self._stamp())
+                                open_utc=self._stamp(), setup=setup)
         self.positions = ledger.open_trades(self.mode, self.symbol)
         return True, f"paper fill #{tid}"
 
@@ -259,7 +259,8 @@ class LiveBroker:
             return mt5.ORDER_FILLING_IOC
         return mt5.ORDER_FILLING_RETURN
 
-    def open(self, side, lots, price, sl, tp, prob=None, risk_money=None, open_bar=None, stake=None, comment="m1-agent"):
+    def open(self, side, lots, price, sl, tp, prob=None, risk_money=None, open_bar=None, stake=None, comment="m1-agent",
+             setup=None):
         digits = mt5.symbol_info(self.symbol).digits
         req = {
             "action": mt5.TRADE_ACTION_DEAL, "symbol": self.symbol, "volume": float(lots),
@@ -276,7 +277,7 @@ class LiveBroker:
             return False, f"order_send retcode {getattr(res, 'retcode', None)} {getattr(res, 'comment', mt5.last_error())}"
         # for a new market position the position ticket equals the opening order ticket
         tid = ledger.open_trade(self.mode, self.symbol, side, res.volume, res.price or price, req["sl"], req["tp"],
-                                prob, risk_money, res.order, open_bar, stake)
+                                prob, risk_money, res.order, open_bar, stake, setup=setup)
         return True, f"filled {res.volume} @ {res.price} (ticket {res.order}, ledger #{tid})"
 
     def on_bar(self, bar, spread_px, bar_epoch=None):

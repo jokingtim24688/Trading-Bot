@@ -23,6 +23,7 @@ from datetime import datetime, timezone  # noqa: E402
 from . import learn, ledger, score as scoring  # noqa: E402
 from .model import SignalModel  # noqa: E402
 from .practice import Practice  # noqa: E402
+from .pro import SETUP_NAMES, active_setups, primary_setup  # noqa: E402
 from .risk import RiskGate, stake_plan  # noqa: E402
 
 
@@ -83,7 +84,7 @@ def main():
         print("NETTING account: positions on one symbol merge, so the bot won't trade while you hold this symbol.")
 
     status_path = Path(cfg.log_dir).parent / "data" / "agent_status.json"
-    probs = {"buy": None, "sell": None, "need": None}
+    probs = {"buy": None, "sell": None, "need": None, "setups": []}
     practice = Practice() if args.practice and mode == "paper" else None
     if practice:
         print("practice mode: trading the model's top 10% setups (paper only)")
@@ -100,7 +101,8 @@ def main():
             status_path.write_text(json.dumps({
                 "time_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "bar": hhmm, "mode": mode,
                 "symbol": cfg.symbol, "p_buy": pb, "p_sell": ps, "threshold": cfg.threshold, "need": need,
-                "practice": practice is not None, "decision": decision,
+                "practice": practice is not None, "setups": [SETUP_NAMES[k] for k in probs["setups"]],
+                "decision": decision,
                 "reason": reason, "open": broker.open_count(), "max_open": max_open}))
         except OSError:
             pass
@@ -143,6 +145,7 @@ def main():
                 say(bar_time, "waiting", "not enough history for the indicators yet")
                 continue
             p_short, _, p_long = model.predict_proba(row)[0]
+            probs["setups"] = active_setups(row.iloc[0].to_dict())
             probs.update(buy=float(p_long), sell=float(p_short))
 
             # early exit: close a trade before its stop when the model has clearly turned against it
@@ -180,7 +183,7 @@ def main():
 
             if not args.no_learned:
                 why = learn.block_reason(learn.load_rules(), "buy" if side == "buy" else "sell", float(prob),
-                                         datetime.now(timezone.utc).hour)
+                                         datetime.now(timezone.utc).hour, setup=primary_setup(probs["setups"], side))
                 if why:
                     journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side, prob=round(prob, 3), note=why)
                     say(bar_time, f"skipped {side}", why)
@@ -217,7 +220,8 @@ def main():
             sl = price - plan["sl_dist"] if side == "buy" else price + plan["sl_dist"]
             tp = price + plan["tp_dist"] if side == "buy" else price - plan["tp_dist"]
             filled, note = broker.open(side, lots, price, sl, tp, prob=round(float(prob), 3),
-                                       risk_money=plan["sl_money"], open_bar=bar_epoch + 60, stake=plan["stake"])
+                                       risk_money=plan["sl_money"], open_bar=bar_epoch + 60, stake=plan["stake"],
+                                       setup=primary_setup(probs["setups"], side))
             note += (f" | stake {plan['stake']} ({'min lot' if plan['forced_min'] else str(m.stake_pct_of_balance) + '% of balance'})"
                      f" SL -{plan['sl_money']} TP +{plan['tp_money']} ({plan['tp_pct']}%) open {broker.open_count()}/{max_open}")
             journal.log(event="order" if filled else "reject", bar_time=bar_time, symbol=cfg.symbol, side=side,
