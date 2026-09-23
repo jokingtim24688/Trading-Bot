@@ -12,3 +12,5 @@
   (`agent.history`); log shows in Train output. Train accepts history alone (no MT5 file needed).
 - Bot card: the needed % is the practice cutoff (`need` in agent_status.json / replay_state.json) instead of the 0.8
   threshold; "no signal" renamed "waiting for a strong setup" with a reason.
+- Replay bar: period optgroups (unseen / recent / everything), speed presets incl. 2000/s and Max, ETA; smooth chart via
+  `rpAnim` queue + requestAnimationFrame (`queueReplayBars`, `replayFrame`), poll 400 ms.

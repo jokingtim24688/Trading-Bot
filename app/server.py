@@ -304,8 +304,8 @@ def _replay_control(update: dict | None = None) -> dict:
 def replay_start(body: dict = Body(default={})):
     s = settings.load()
     data = ROOT / "data" / f"{s['symbol']}_M1.parquet"
-    if not data.exists():
-        raise HTTPException(400, "No M1 history yet. Train tab -> Fetch data first.")
+    if not data.exists() and not (ROOT / "data" / f"{s['symbol']}_M1_history.parquet").exists():
+        raise HTTPException(400, "No M1 history yet. Train tab -> Fetch data or Download history first.")
     if not mt5_service.model_exists(s["symbol"]):
         raise HTTPException(400, "Train a model first (Train tab).")
     if jobs.jobs["replay"].running:

@@ -272,3 +272,4 @@ label.inline select { width: auto; padding: 4px 8px; }
 .rp-progress { display: grid; gap: 4px; }
 .rp-progress .bar { width: 100%; }
 .row-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rp-presets { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 10px; }

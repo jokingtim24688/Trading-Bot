@@ -87,6 +87,10 @@ class PaperBroker:
         self.symbol = symbol
         self.tick_fn = tick_fn
         self.positions = ledger.open_trades(mode, symbol)
+        self.clock = None          # replay sets this to the candle's UTC time (ISO), so days/hours are historical ones
+
+    def _stamp(self):
+        return self.clock() if self.clock else None
 
     def _pnl(self, side, entry, exit_px, lots):
         move = (exit_px - entry) if side == "buy" else (entry - exit_px)
@@ -105,7 +109,8 @@ class PaperBroker:
         return sum(self._pnl(p["side"], p["entry"], t.bid if p["side"] == "buy" else t.ask, p["lots"]) for p in self.positions)
 
     def bot_pnl_today(self) -> float:
-        return ledger.stats(self.mode)["today_pnl"] + self.floating_pnl()
+        day = (self._stamp() or ledger._now())[:10]
+        return ledger.realized_pnl(self.mode, day=day) + self.floating_pnl()
 
     def has_position(self) -> bool:
         return bool(self.positions)
@@ -117,7 +122,8 @@ class PaperBroker:
         return False
 
     def open(self, side, lots, price, sl, tp, prob=None, risk_money=None, open_bar=None, stake=None, **_):
-        tid = ledger.open_trade(self.mode, self.symbol, side, lots, price, sl, tp, prob, risk_money, None, open_bar, stake)
+        tid = ledger.open_trade(self.mode, self.symbol, side, lots, price, sl, tp, prob, risk_money, None, open_bar, stake,
+                                open_utc=self._stamp())
         self.positions = ledger.open_trades(self.mode, self.symbol)
         return True, f"paper fill #{tid}"
 
@@ -133,7 +139,7 @@ class PaperBroker:
                 continue
             exit_px = p["sl"] if hit_sl else p["tp"]
             pnl = self._pnl(p["side"], p["entry"], exit_px, p["lots"])
-            ledger.close_trade(p["id"], exit_px, "sl" if hit_sl else "tp", pnl, close_bar=bar_epoch)
+            ledger.close_trade(p["id"], exit_px, "sl" if hit_sl else "tp", pnl, close_bar=bar_epoch, close_utc=self._stamp())
             exits.append({"id": p["id"], "exit": exit_px, "pnl": pnl, "reason": "sl" if hit_sl else "tp"})
         self.positions = still_open
         return exits
@@ -149,7 +155,7 @@ class PaperBroker:
         t = self.tick_fn()
         px = t.bid if trade["side"] == "buy" else t.ask
         pnl = self._pnl(trade["side"], trade["entry"], px, trade["lots"])
-        ledger.close_trade(trade["id"], px, reason, pnl)
+        ledger.close_trade(trade["id"], px, reason, pnl, close_utc=self._stamp())
         self.positions = [p for p in self.positions if p["id"] != trade["id"]]
         return {"id": trade["id"], "exit": px, "pnl": pnl, "reason": reason}
 
@@ -157,7 +163,7 @@ class PaperBroker:
         t = self.tick_fn()
         for p in self.positions:
             px = t.bid if p["side"] == "buy" else t.ask
-            ledger.close_trade(p["id"], px, reason, self._pnl(p["side"], p["entry"], px, p["lots"]))
+            ledger.close_trade(p["id"], px, reason, self._pnl(p["side"], p["entry"], px, p["lots"]), close_utc=self._stamp())
         self.positions = []
 
 
@@ -234,7 +240,8 @@ class LiveBroker:
         return sum(p.profit for p in self._positions())
 
     def bot_pnl_today(self) -> float:
-        return ledger.stats(self.mode)["today_pnl"] + self.floating_pnl()
+        day = (self._stamp() or ledger._now())[:10]
+        return ledger.realized_pnl(self.mode, day=day) + self.floating_pnl()
 
     def adopt_orphans(self):
         """Record bot positions that exist in MT5 but not in the ledger (e.g. the app crashed right after a fill)."""

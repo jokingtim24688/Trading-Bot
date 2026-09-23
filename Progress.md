@@ -129,3 +129,17 @@
 - Fixed pandas 3 timestamp-resolution crash in replay (index normalised to ns).
 - Checked: dataset file names/CSV format via the HF connector; import+merge, train, replay, API endpoint with synthetic
   data (huggingface.co downloads are blocked in the cloud sandbox, so the real download runs on the PC).
+
+## 2026-09-23: Replay all of it, faster and smooth
+- Period menu: model's unseen data 1/7/30/90 days, 1 year or **all of it** (default); last 7/30/90/365 days; or all
+  downloaded history (marked as including training data). `--days 0` = to the end, `--from all` = from the first candle.
+- Speed: presets 1 / 10 / 60 / 600 / **2000** / **Max** candles/s plus the custom slider (now 1 to ~18k, top = Max).
+  Status line shows the real candles/s and time left. Pacing sleeps in small batches (Windows sleeps are coarse);
+  control file read 5x/s and learned rules once per run instead of every candle. Measured ~2-3.5k candles/s at Max here.
+- Smooth chart: new candles are queued and drawn a few per animation frame (series.update) instead of redrawing a
+  300-candle snapshot every 0.7 s; state carries 1500 candles, polled every 0.4 s. Measured in Chromium: at 60/s and
+  2000/s the chart advanced on every 50 ms sample with no jumps.
+- Bug fixed: replay trades were stamped with today's wall-clock date, so the 3% bot daily loss limit summed ALL replay
+  losses and stopped the bot for the rest of a long replay (and learn.py's hour rules saw every replay trade in the
+  current hour). Replay trades now carry the replayed candle's UTC date/time (server time -2h); daily P/L is a per-day
+  SQL sum (indexed) instead of loading every trade per signal. Same test period: 304 -> 1019 trades taken.

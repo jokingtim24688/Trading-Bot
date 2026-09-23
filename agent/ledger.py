@@ -25,6 +25,7 @@ def _conn():
         id INTEGER PRIMARY KEY, mode TEXT, symbol TEXT, side TEXT, lots REAL, entry REAL, sl REAL, sl0 REAL, tp REAL,
         prob REAL, risk_money REAL, ticket INTEGER, status TEXT, open_utc TEXT, open_bar INTEGER,
         exit REAL, exit_reason TEXT, pnl REAL, r_multiple REAL, close_utc TEXT, close_bar INTEGER, updated REAL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS ix_trades_mode_status ON trades(mode, status)")
     have = {r[1] for r in c.execute("PRAGMA table_info(trades)")}
     for col, typ in (("stake", "REAL"), ("score", "REAL"), ("close_hint", "TEXT")):
         if col not in have:                         # upgrade ledgers created before scoring existed
@@ -37,11 +38,11 @@ def _now() -> str:
 
 
 def open_trade(mode, symbol, side, lots, entry, sl, tp, prob=None, risk_money=None, ticket=None, open_bar=None,
-               stake=None) -> int:
+               stake=None, open_utc=None) -> int:
     with _conn() as c:
         cur = c.execute("""INSERT INTO trades (mode, symbol, side, lots, entry, sl, sl0, tp, prob, risk_money, ticket, status,
                            open_utc, open_bar, updated, stake) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'open', ?,?,?,?)""",
-                        (mode, symbol, side, lots, entry, sl, sl, tp, prob, risk_money, ticket, _now(), open_bar, time.time(),
+                        (mode, symbol, side, lots, entry, sl, sl, tp, prob, risk_money, ticket, open_utc or _now(), open_bar, time.time(),
                          stake))
         return cur.lastrowid
 
@@ -97,10 +98,12 @@ def recent(limit: int = 200, mode: str | None = None, symbol: str | None = None)
         return [dict(r) for r in c.execute(q + " ORDER BY id DESC LIMIT ?", (*args, limit))]
 
 
-def realized_pnl(mode: str, since_utc: str | None = None) -> float:
+def realized_pnl(mode: str, since_utc: str | None = None, day: str | None = None) -> float:
     q, args = "SELECT COALESCE(SUM(pnl),0) FROM trades WHERE status='closed' AND mode=?", [mode]
     if since_utc:
         q += " AND close_utc >= ?"; args.append(since_utc)
+    if day:                                            # 'YYYY-MM-DD'
+        q += " AND close_utc >= ? AND close_utc < ?"; args += [day, day + "~"]
     with _conn() as c:
         return float(c.execute(q, args).fetchone()[0])
 

@@ -37,6 +37,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CONTROL = ROOT / "data" / "replay_control.json"
 STATE = ROOT / "data" / "replay_state.json"
 Tick = namedtuple("Tick", "bid ask")
+SERVER_UTC_OFFSET_H = 2     # candle times are broker server time (UTC+2 winter / +3 summer); ledger times are UTC
 
 
 def read_control() -> dict:
@@ -51,8 +52,9 @@ def main():
     ap.add_argument("bars")
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--point", type=float, default=0.01)
-    ap.add_argument("--days", type=float, default=30, help="how many days of history to replay (from the start point)")
-    ap.add_argument("--from", dest="start", default="test", help="'test' (model's unseen period), 'end' (last N days) or a date")
+    ap.add_argument("--days", type=float, default=30, help="days of history to replay from the start point (0 = all of it)")
+    ap.add_argument("--from", dest="start", default="test",
+                    help="'test' (model's unseen period), 'end' (last N days), 'all' (from the first candle) or a date")
     ap.add_argument("--threshold", type=float, default=0.15)
     ap.add_argument("--practice", action="store_true")
     ap.add_argument("--balance", type=float, default=10_000)
@@ -93,14 +95,17 @@ def main():
         start = pd.Timestamp(model.meta["test_start"])
         start = start.tz_localize("UTC") if start.tzinfo is None else start
         where = "the model's unseen test period"
-    elif args.start == "end":
+    elif args.start == "end" and args.days > 0:
         start = df.index[-1] - pd.Timedelta(days=args.days)
         where = f"the last {args.days:g} days"
+    elif args.start in ("all", "end", "test"):
+        start = df.index[0]
+        where = "all downloaded history (includes candles the model trained on, so results look better than live)"
     else:
-        start = pd.Timestamp(args.start, tz="UTC") if args.start not in ("test", "end") else df.index[0]
+        start = pd.Timestamp(args.start, tz="UTC")
         where = f"from {start.date()}"
     start = pd.Timestamp(start).as_unit("ns").floor("min")
-    end = start + pd.Timedelta(days=args.days)
+    end = start + pd.Timedelta(days=args.days) if args.days > 0 else df.index[-1] + pd.Timedelta(minutes=1)
     i0 = max(int(df.index.searchsorted(start)), 3000)          # features need 3000 bars of warm-up
     i1 = min(int(df.index.searchsorted(end)), len(df))
     if i1 - i0 < 10:
@@ -121,21 +126,25 @@ def main():
     if args.fresh:
         with ledger._conn() as c:
             c.execute("DELETE FROM trades WHERE mode='replay'")
-    cur = {"px": float(df["close"].iloc[i0]), "spread": float(df["spread"].iloc[i0]) * args.point}
+    cur = {"px": float(df["close"].iloc[i0]), "spread": float(df["spread"].iloc[i0]) * args.point, "i": i0}
     broker = PaperBroker(args.balance, spec, cfg.symbol, lambda: Tick(cur["px"], cur["px"] + cur["spread"]), mode="replay")
+    offset = pd.Timedelta(hours=SERVER_UTC_OFFSET_H)
+    utc_iso = lambda k: (df.index[k] - offset).strftime("%Y-%m-%dT%H:%M:%S+00:00")    # noqa: E731
+    broker.clock = lambda: utc_iso(cur["i"])  # trades get the replayed candle's date/hour, not today's
     gate = RiskGate(cfg.risk)
     practice = Practice() if args.practice else None
     O, H, L, C = (df[k].to_numpy() for k in ("open", "high", "low", "close"))
     SP = df["spread"].to_numpy(dtype=float) * args.point
     T = ((df.index - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(seconds=1)).to_numpy().astype(int)   # any resolution
     start_wall = time.time()
+    pace = {"t": time.time(), "i": 0, "rate": 0.0, "due": time.time()}
     last_state = 0.0
     last_decision = ""
     stats = {"opened": 0}
     need = {"v": None}
 
     def write_state(i, decision, reason, done=False):
-        lo = max(0, i - 299)
+        lo = max(0, i - 1499)                   # enough that the chart never misses candles between polls at 2000/s
         bars = [{"time": int(T[k]), "open": float(O[k]), "high": float(H[k]), "low": float(L[k]), "close": float(C[k])}
                 for k in range(lo, i + 1)]
         p = proba[i]
@@ -146,12 +155,15 @@ def main():
             "threshold": cfg.threshold, "need": need["v"] if practice and need["v"] else cfg.threshold,
             "practice": bool(practice), "decision": decision, "reason": reason,
             "open": broker.open_count(), "max_open": m.max_open_trades, "balance": round(broker.account_balance(), 2),
-            "stats": ledger.stats("replay"), "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}))
+            "rate": round(pace["rate"]), "stats": ledger.stats("replay"), "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}))
 
+    rules = learn.load_rules()                         # fixed for the run: reading files per candle limits max speed
+    ctl, ctl_read = read_control(), time.time()
     i = i0
     try:
         while i < i1:
-            ctl = read_control()
+            if time.time() - ctl_read > 0.2:
+                ctl, ctl_read = read_control(), time.time()
             if ctl.get("stop"):
                 print("stopped from the app")
                 break
@@ -160,10 +172,11 @@ def main():
                     write_state(i - 1 if i > i0 else i0, "paused", "")
                     last_state = time.time()
                 time.sleep(0.2)
+                ctl, ctl_read = read_control(), time.time()
                 continue
-            speed = max(1.0, float(ctl.get("speed", 20)))
+            speed = float(ctl.get("speed", 20))        # 0 = max: no waiting between candles
 
-            cur.update(px=float(C[i]), spread=float(SP[i]))
+            cur.update(px=float(C[i]), spread=float(SP[i]), i=i)
             bar = {"open": O[i], "high": H[i], "low": L[i], "close": C[i]}
             for x in broker.on_bar(bar, SP[i], int(T[i])):
                 print(f"{df.index[i]:%Y-%m-%d %H:%M} EXIT #{x['id']} {x['reason']} pnl {x['pnl']:+.2f}")
@@ -188,7 +201,7 @@ def main():
                 if side and broker.open_count() >= m.max_open_trades:
                     decision, reason = "holding", f"{m.max_open_trades} trades open"
                 elif side:
-                    why = None if args.no_learned else learn.block_reason(learn.load_rules(), side, prob, df.index[i].hour)
+                    why = None if args.no_learned else learn.block_reason(rules, side, prob, (df.index[i] - offset).hour)
                     okg, rsn = gate.check(df.index[i].tz_convert(None).to_pydatetime(), broker.account_equity(), SP[i],
                                           spread_med[i], atr_s[i], bot_pnl_today=broker.bot_pnl_today())
                     price = C[i] + SP[i] if side == "buy" else C[i]
@@ -213,12 +226,18 @@ def main():
             else:
                 decision = "warming up"
 
-            if time.time() - last_state > 0.2 or decision.startswith("OPENED") and decision != last_decision:
+            now = time.time()
+            if now - last_state > 0.2 or decision.startswith("OPENED") and decision != last_decision and speed and speed < 50:
+                if now - pace["t"] >= 1:
+                    pace.update(rate=(i - pace["i"]) / (now - pace["t"]), t=now, i=i)
                 write_state(i, decision, reason)
-                last_state = time.time()
+                last_state = now
             last_decision = decision
             i += 1
-            time.sleep(1.0 / speed)
+            if speed > 0:                              # pace without sleeping every candle (Windows sleeps are coarse)
+                pace["due"] = max(pace["due"], now - 0.5) + 1.0 / speed
+                if pace["due"] - now > 0.005:
+                    time.sleep(pace["due"] - now)
     finally:
         # trades still open when the history runs out never finished: drop them so they don't skew stats or lessons
         with ledger._conn() as c:

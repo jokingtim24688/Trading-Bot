@@ -89,8 +89,9 @@ function initChart() {
 }
 /* ---------- replay: bot on downloaded history ---------- */
 state.replay = { view: false, running: false };
-const speedFromSlider = v => Math.round(Math.pow(600, v / 100));           // 0..100 -> 1..600 candles/s (log)
-const sliderFromSpeed = s => Math.round(Math.log(Math.max(1, s)) / Math.log(600) * 100);
+const speedFromSlider = v => +v >= 100 ? 0 : Math.round(Math.pow(20000, v / 100));   // 0..99 -> 1..~18k candles/s (log), 100 = max
+const sliderFromSpeed = s => !s ? 100 : Math.min(99, Math.round(Math.log(Math.max(1, s)) / Math.log(20000) * 100));
+const speedText = s => !s ? "Max (as fast as the PC can)" : `${s.toLocaleString()} candles/s`;
 function setReplayView(on) {
   state.replay.view = on;
   $("#replay-toggle").classList.toggle("active", on);
@@ -100,32 +101,71 @@ function setReplayView(on) {
   loadBars();
 }
 $("#replay-toggle").onclick = () => setReplayView(!state.replay.view);
-$("#rp-speed").addEventListener("input", e => { $("#rp-speed-txt").textContent = `${speedFromSlider(e.target.value)} candles/s`; });
-$("#rp-speed").addEventListener("change", e => api("/api/replay/control", { method: "POST", body: { speed: speedFromSlider(e.target.value) } }));
+$("#rp-speed").addEventListener("input", e => { $("#rp-speed-txt").textContent = speedText(speedFromSlider(e.target.value)); });
+$("#rp-speed").addEventListener("change", e => setReplaySpeed(speedFromSlider(e.target.value)));
 $("#rp-start").onclick = async () => {
   const [from, days] = $("#rp-days").value.split("|");
   try { await api("/api/replay/start", { method: "POST", body: { from, days: Number(days), speed: speedFromSlider($("#rp-speed").value), fresh: true } }); toast("Replay started. Scoring the history first, a few seconds."); }
   catch (e) { toast(e.message, true); }
 };
 $("#rp-pause").onclick = async () => { const c = await api("/api/replay/state"); await api("/api/replay/control", { method: "POST", body: { paused: !c.control?.paused } }); };
+const setReplaySpeed = sp => {
+  $("#rp-speed").value = sliderFromSpeed(sp); $("#rp-speed-txt").textContent = speedText(sp);
+  document.querySelectorAll("#rp-presets button").forEach(b => b.classList.toggle("active", +b.dataset.speed === sp));
+  return api("/api/replay/control", { method: "POST", body: { speed: sp } });
+};
+document.querySelectorAll("#rp-presets button").forEach(b => b.onclick = () => setReplaySpeed(+b.dataset.speed));
 $("#rp-stop").onclick = () => api("/api/replay/control", { method: "POST", body: { stop: true } });
+const eta = sec => sec < 90 ? `${Math.round(sec)}s` : sec < 5400 ? `${Math.round(sec / 60)} min` : `${(sec / 3600).toFixed(1)} h`;
 async function loadReplay() {
   let r;
   try { r = await api("/api/replay/state"); } catch (e) { return; }
   state.replay.running = r.job_running; state.replay.last = r;
   $("#rp-pause").textContent = r.control?.paused ? "Resume" : "Pause";
-  if (document.activeElement !== $("#rp-speed")) { $("#rp-speed").value = sliderFromSpeed(r.control?.speed || 20); $("#rp-speed-txt").textContent = `${r.control?.speed || 20} candles/s`; }
+  if (document.activeElement !== $("#rp-speed")) { $("#rp-speed").value = sliderFromSpeed(r.control?.speed ?? 20); $("#rp-speed-txt").textContent = speedText(r.control?.speed ?? 20);
+    document.querySelectorAll("#rp-presets button").forEach(b => b.classList.toggle("active", +b.dataset.speed === (r.control?.speed ?? 20))); }
   $("#rp-prog").style.width = r.total ? `${(100 * r.index / r.total).toFixed(1)}%` : "0";
   const st = r.stats || {};
   $("#rp-status").textContent = !r.total ? (r.job_running ? "Scoring the history with the model..." : "Replays your downloaded M1 history through the bot with all its rules. Trades are recorded as \"replay\" and feed its learning.")
-    : `${(r.bar_time_utc || "").slice(0, 16)} · ${r.index.toLocaleString()} / ${r.total.toLocaleString()} candles · ${r.open}/${r.max_open} open · ${st.closed || 0} closed · win ${st.win_pct ?? "–"}% · net ${signed(st.net_pnl || 0)} · score ${pts(st.score || 0)}${r.done ? " · finished" : r.control?.paused ? " · paused" : ""}`;
-  if (state.series && r.bars?.length) {
-    state.series.setData(r.bars);
-    state.barRange = [r.bars[0].time, r.bars[r.bars.length - 1].time];
-    const last = r.bars[r.bars.length - 1];
-    $("#q-sym").textContent = `${r.symbol} · replay`; $("#q-bid").textContent = fmt(last.close, state.digits);
-    drawBotOverlay();
+    : `${(r.bar_time_utc || "").slice(0, 16)} · ${r.index.toLocaleString()} / ${r.total.toLocaleString()} candles · ${r.open}/${r.max_open} open · ${st.closed || 0} closed · win ${st.win_pct ?? "–"}% · net ${signed(st.net_pnl || 0)} · score ${pts(st.score || 0)}${!r.done && r.rate ? ` · ${r.rate.toLocaleString()}/s · ${eta((r.total - r.index) / r.rate)} left` : ""}${r.done ? " · finished" : r.control?.paused ? " · paused" : ""}`;
+  if (state.series && r.bars?.length) queueReplayBars(r);
+}
+
+// Smooth replay chart: new candles from each poll go into a queue and are drawn a few per animation frame, so the
+// chart glides at the replay's pace instead of jumping a whole snapshot every poll.
+const rpAnim = { queue: [], shown: 0, first: 0, carry: 0, lastFrame: 0, symbol: "" };
+function queueReplayBars(r) {
+  const bars = r.bars, newest = rpAnim.queue.length ? rpAnim.queue[rpAnim.queue.length - 1].time : rpAnim.shown;
+  const fresh = bars.filter(b => b.time > newest);
+  rpAnim.symbol = r.symbol;
+  // first poll, a restart, or candles were missed between polls: redraw the window and carry on from there
+  if (!rpAnim.shown || bars[bars.length - 1].time < rpAnim.shown || bars[0].time > newest
+      || rpAnim.queue.length + fresh.length > 6000) {
+    state.series.setData(bars);
+    rpAnim.queue = []; rpAnim.first = bars[0].time; rpAnim.shown = bars[bars.length - 1].time;
+    showReplayPrice(bars[bars.length - 1]);
+  } else rpAnim.queue.push(...fresh);
+  drawBotOverlay();
+  if (!rpAnim.lastFrame) requestAnimationFrame(replayFrame);
+}
+function showReplayPrice(bar) {
+  state.barRange = [rpAnim.first, bar.time];
+  $("#q-sym").textContent = `${rpAnim.symbol} · replay`; $("#q-bid").textContent = fmt(bar.close, state.digits);
+}
+function replayFrame(now) {
+  const dt = rpAnim.lastFrame ? Math.min(0.1, (now - rpAnim.lastFrame) / 1000) : 0.016;
+  rpAnim.lastFrame = now;
+  if (!state.replay.view) { rpAnim.lastFrame = 0; rpAnim.queue = []; rpAnim.shown = 0; return; }
+  // drain the queue over ~0.45 s (about one poll), so the pace follows whatever speed the replay is really running at
+  rpAnim.carry += rpAnim.queue.length * dt / 0.45;
+  let n = Math.floor(rpAnim.carry);
+  if (n > 0 && state.series) {
+    rpAnim.carry -= n;
+    let bar;
+    while (n-- > 0 && rpAnim.queue.length) { bar = rpAnim.queue.shift(); state.series.update(bar); }
+    if (bar) { rpAnim.shown = bar.time; showReplayPrice(bar); }
   }
+  requestAnimationFrame(replayFrame);
 }
 async function loadBars() {
   if (state.replay?.view) return loadReplay();
@@ -545,7 +585,7 @@ loadProgress(); setInterval(loadProgress, 5000);
 setInterval(pollStatus, 2000);
 setInterval(pollAccount, 2000);
 setInterval(() => state.tab === "dash" && !state.replay.view && (loadBars(), loadPositions()), 3000);
-setInterval(() => state.tab === "dash" && state.replay.view && loadReplay(), 700);
+setInterval(() => state.tab === "dash" && state.replay.view && loadReplay(), 400);
 setInterval(() => state.tab === "agent" && (pollAgentLog(), loadJournal()), 2000);
 setInterval(() => state.tab === "agent" && loadPlan(), 10000);
 setInterval(() => state.tab === "train" && pollTrainLog(), 1500);
