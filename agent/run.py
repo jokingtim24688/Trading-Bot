@@ -83,7 +83,7 @@ def main():
         print("NETTING account: positions on one symbol merge, so the bot won't trade while you hold this symbol.")
 
     status_path = Path(cfg.log_dir).parent / "data" / "agent_status.json"
-    probs = {"buy": None, "sell": None}
+    probs = {"buy": None, "sell": None, "need": None}
     practice = Practice() if args.practice and mode == "paper" else None
     if practice:
         print("practice mode: trading the model's top 10% setups (paper only)")
@@ -92,13 +92,15 @@ def main():
         """One line per closed candle in the live log + data/agent_status.json for the Market tab."""
         hhmm = str(bar_time)[11:16]
         pb, ps = probs["buy"], probs["sell"]
-        conf = f"buy {pb:.0%} / sell {ps:.0%} (needs {cfg.threshold:.0%})" if pb is not None else "model warming up"
+        need = probs["need"] if practice is not None and probs["need"] else cfg.threshold
+        conf = f"buy {pb:.1%} / sell {ps:.1%} (needs {need:.1%})" if pb is not None else "model warming up"
         print(f"{hhmm} {conf} -> {decision}{': ' + reason if reason else ''}", flush=True)
         try:
             status_path.parent.mkdir(exist_ok=True)
             status_path.write_text(json.dumps({
                 "time_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "bar": hhmm, "mode": mode,
-                "symbol": cfg.symbol, "p_buy": pb, "p_sell": ps, "threshold": cfg.threshold, "decision": decision,
+                "symbol": cfg.symbol, "p_buy": pb, "p_sell": ps, "threshold": cfg.threshold, "need": need,
+                "practice": practice is not None, "decision": decision,
                 "reason": reason, "open": broker.open_count(), "max_open": max_open}))
         except OSError:
             pass
@@ -166,12 +168,14 @@ def main():
                 side, prob = "sell", p_short
             if practice is not None:
                 side, prob, cut = practice.decide(p_long, p_short)
+                probs["need"] = cut
                 if side is None:
-                    say(bar_time, "no signal", f"practice: waiting for a top-10% setup (needs {cut:.1%})" if cut else
-                        "practice: collecting an hour of readings first")
+                    say(bar_time, "waiting for a strong setup",
+                        "practice mode enters on the best ~10% of readings (about 1 candle in 10)" if cut else
+                        f"practice mode: learning what a strong reading looks like ({len(practice.seen)}/60 candles)")
                     continue
             if side is None:
-                say(bar_time, "no signal")
+                say(bar_time, "waiting for a strong setup", "no side reached the needed confidence on this candle")
                 continue
 
             if not args.no_learned:

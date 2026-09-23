@@ -115,3 +115,17 @@
   the Market tab's Bot trade card shows it live.
 - Spread/ATR filter relaxed 0.15 -> 0.35 (stops are stake-based now; spread-vs-stop check remains).
 - Bugs found in testing: replay timestamps wrong for ms-resolution parquet (fixed); end-of-replay force-closes skewed stats (now dropped).
+
+## 2026-09-23: Years of extra training data + "no signal" fix
+- `agent/history.py`: downloads free XAUUSD M1 history (HistData, 2009 to Jan 2026, public HF dataset fokan/xauusd-2009-2026,
+  ~24 MB/year), converts EST to broker server time (+7h), fills spread from the MT5 median, caches in data/histdata.
+  `load_bars()` merges it with the MT5 download (MT5 wins on overlap); train and replay use it automatically.
+- Train tab: "Add years of extra history" (1/3/5/8/All) + Download history button (`POST /api/history/download`, job "history").
+- Features: dropped the volume feature (history has no volume) and store float32 to halve RAM.
+  Measured: 2 years (720k candles) trained in 32 s on CPU at 0.9 GB peak, so 5 years ≈ 2.5 GB and All ≈ 8 GB.
+- "no signal" fix: in practice mode the card compared confidence with the 80% threshold even though practice enters at
+  the top-10% cutoff. The agent and replay now report the cutoff as `need`; the card shows "Needs X% (practice: its best
+  ~10% of readings)", and "no signal" is now "waiting for a strong setup" with a reason. Expect ~9 of 10 candles to wait.
+- Fixed pandas 3 timestamp-resolution crash in replay (index normalised to ns).
+- Checked: dataset file names/CSV format via the HF connector; import+merge, train, replay, API endpoint with synthetic
+  data (huggingface.co downloads are blocked in the cloud sandbox, so the real download runs on the PC).

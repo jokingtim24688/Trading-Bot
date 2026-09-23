@@ -66,7 +66,7 @@ class Job:
 
 class JobManager:
     def __init__(self):
-        self.jobs = {n: Job(n) for n in ("agent", "train", "fetch", "mcp", "replay")}
+        self.jobs = {n: Job(n) for n in ("agent", "train", "fetch", "history", "mcp", "replay")}
         self.lock = threading.Lock()
 
     def py(self, *args) -> list[str]:

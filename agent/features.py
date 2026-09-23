@@ -52,15 +52,14 @@ def build_features(df: pd.DataFrame, point: float) -> pd.DataFrame:
     f["body"] = body
     f["upper_wick"] = (df["high"] - df[["open", "close"]].max(axis=1)) / a_safe
     f["lower_wick"] = (df[["open", "close"]].min(axis=1) - df["low"]) / a_safe
-    v = df["tick_volume"].astype(float)
-    f["vol_z"] = (v - v.rolling(60).mean()) / v.rolling(60).std().replace(0, np.nan)
+    # (no volume feature: the long free history has no volume, so live and history stay comparable)
     spread_px = df["spread"].astype(float) * point
     f["spread_atr"] = spread_px / a_safe
     minute = df.index.hour * 60 + df.index.minute
     f["tod_sin"] = np.sin(2 * np.pi * minute / 1440)
     f["tod_cos"] = np.cos(2 * np.pi * minute / 1440)
     f["dow"] = df.index.dayofweek
-    return f.replace([np.inf, -np.inf], np.nan)
+    return f.replace([np.inf, -np.inf], np.nan).astype("float32")
 
 
 def triple_barrier(df: pd.DataFrame, point: float, cfg: LabelConfig, sl_dist=None, tp_dist=None):

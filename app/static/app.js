@@ -213,12 +213,13 @@ function renderBotCard() {
     $("#bot-card").classList.remove("live");
     const rp = state.replay?.view && state.replay.last?.total ? state.replay.last : null;
     const a = rp ? { ...rp, mode: "replay", bar: (rp.bar_time_utc || "").slice(11, 16) } : d.agent;
-    const pct = v => v == null ? "–" : `${Math.round(v * 100)}%`;
+    const pct = v => v == null ? "–" : `${v < 0.1 ? (v * 100).toFixed(1) : Math.round(v * 100)}%`;
+    const need = a ? (a.need ?? a.threshold) : 1;
     box.innerHTML = a ? `<div class="watch">
         <div class="watch-head"><span class="live-dot"></span><strong>Watching ${state.settings?.symbol || ""} · ${a.mode || ""}</strong><span class="muted small">${a.bar ? "candle " + a.bar : ""}</span></div>
-        ${a.p_buy != null ? `<div class="conf"><span>Buy</span><div class="bar"><i style="width:${Math.min(100, a.p_buy / Math.max(a.threshold, .01) * 100)}%"></i></div><span class="num">${pct(a.p_buy)}</span></div>
-        <div class="conf"><span>Sell</span><div class="bar"><i style="width:${Math.min(100, a.p_sell / Math.max(a.threshold, .01) * 100)}%"></i></div><span class="num">${pct(a.p_sell)}</span></div>
-        <p class="muted small" style="margin:4px 0 0">Needs ${pct(a.threshold)} to enter · ${a.open ?? 0}/${a.max_open ?? "–"} open</p>` : ""}
+        ${a.p_buy != null ? `<div class="conf"><span>Buy</span><div class="bar"><i style="width:${Math.min(100, a.p_buy / Math.max(need, .001) * 100)}%"></i></div><span class="num">${pct(a.p_buy)}</span></div>
+        <div class="conf"><span>Sell</span><div class="bar"><i style="width:${Math.min(100, a.p_sell / Math.max(need, .001) * 100)}%"></i></div><span class="num">${pct(a.p_sell)}</span></div>
+        <p class="muted small" style="margin:4px 0 0">Needs ${pct(need)} to enter${a.practice ? " (practice: its best ~10% of readings)" : ""} · ${a.open ?? 0}/${a.max_open ?? "–"} open</p>` : ""}
         <p class="small" style="margin:8px 0 0"><b>${a.decision}</b>${a.reason ? ` · <span class="muted">${a.reason}</span>` : ""}</p></div>`
       : `<p class="empty">The bot isn't running. Start it on the Agent tab. When it enters you'll get an alert, and its entry, stop and target are drawn on the chart.</p>`;
     return;
@@ -451,6 +452,7 @@ async function loadJournal() {
 /* ---------- train ---------- */
 let lastTrainJob = "train";
 $("#btn-fetch").onclick = async () => { try { await api("/api/fetch", { method: "POST" }); lastTrainJob = "fetch"; pollTrainLog(); pollStatus(); } catch (e) { toast(e.message, true); } };
+$("#btn-history").onclick = async () => { try { await api("/api/history/download", { method: "POST", body: JSON.stringify({ years: +$("#hist-years").value }) }); lastTrainJob = "history"; pollTrainLog(); pollStatus(); } catch (e) { toast(e.message, true); } };
 $("#btn-train").onclick = async () => { try { await api("/api/train", { method: "POST" }); lastTrainJob = "train"; pollTrainLog(); pollStatus(); } catch (e) { toast(e.message, true); } };
 async function pollTrainLog() {
   try { const r = await api(`/api/jobs/${lastTrainJob}/log?lines=400`); if (r.log) { const c = $("#train-log"); c.textContent = r.log; c.scrollTop = c.scrollHeight; } } catch (e) {}

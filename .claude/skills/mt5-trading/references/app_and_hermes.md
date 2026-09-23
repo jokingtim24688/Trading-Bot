@@ -90,6 +90,9 @@ stake the trade would need at 1:100; lot size still from the real margin). At go
 ## Practice mode and Replay
 - Practice (Settings, default on): on Paper and Replay the bot takes its top-10% confidence setups instead of the threshold,
   because 8:1 exits keep raw confidence low (a few %). Demo/Real use the threshold.
+- Train tab → Add years of extra history: downloads free XAUUSD M1 candles back to 2009 (HistData) and merges them
+  with the MT5 download for training and replay (MT5 candles win on overlap). 5 years ≈ 1.8M candles, ~2.5 GB RAM to train.
+- Bot card "Needs X%": in practice mode this is the top-10% cutoff of recent readings, not the Demo/Real threshold.
 - Market tab → Replay history: runs the bot over downloaded M1 history (model's unseen period or the most recent days) at
   1-600 candles/s with pause/stop. Trades are mode "replay": they feed stats and learning, not the Paper → Demo gate.
 - The Bot trade card and the Agent log show every candle's buy/sell confidence and decision (or skip reason).

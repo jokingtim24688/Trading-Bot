@@ -6,3 +6,9 @@
 - **settings.py**: DEFAULTS + load/save to `data/settings.json`.
 - **static/**: `index.html` (tabs Market, Agent, Train, Hermes, Settings), `app.css` (graphite + brass gold palette, IBM Plex, glass only on rail/strip/toast), `app.js` (polling, bot trade card with Size mine / Copy levels, chart price lines + markers for bot trades, open/close alerts with WebAudio beep, Bot trades table + stats, chart via vendored lightweight-charts 4.2.0, hold-to-flatten, sizing calculator, chat, memory).
 - Tested: API via TestClient; UI screenshots with mocked MT5 data.
+
+## Extra history + clearer bot card (2026-09-23)
+- Train tab: "Add years of extra history" step (1/3/5/8/All) -> `POST /api/history/download {years}` -> job "history"
+  (`agent.history`); log shows in Train output. Train accepts history alone (no MT5 file needed).
+- Bot card: the needed % is the practice cutoff (`need` in agent_status.json / replay_state.json) instead of the 0.8
+  threshold; "no signal" renamed "waiting for a strong setup" with a reason.

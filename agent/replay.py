@@ -84,11 +84,8 @@ def main():
     spec = SymbolSpec(point=args.point, tick_size=args.tick_size, tick_value=args.tick_value,
                       volume_min=args.volume_min, volume_step=args.volume_step, volume_max=100)
 
-    df = pd.read_parquet(args.bars) if args.bars.endswith(".parquet") else pd.read_csv(args.bars)
-    if "time" in df.columns:
-        df["time"] = pd.to_datetime(df["time"], utc=True)
-        df = df.set_index("time")
-    df = df.sort_index()
+    from .history import load_bars
+    df = load_bars(args.symbol, args.bars)
     model = SignalModel.load(cfg.model_dir, cfg.symbol, cfg.hardware)
 
     # choose the window
@@ -102,6 +99,7 @@ def main():
     else:
         start = pd.Timestamp(args.start, tz="UTC") if args.start not in ("test", "end") else df.index[0]
         where = f"from {start.date()}"
+    start = pd.Timestamp(start).as_unit("ns").floor("min")
     end = start + pd.Timedelta(days=args.days)
     i0 = max(int(df.index.searchsorted(start)), 3000)          # features need 3000 bars of warm-up
     i1 = min(int(df.index.searchsorted(end)), len(df))
@@ -134,6 +132,7 @@ def main():
     last_state = 0.0
     last_decision = ""
     stats = {"opened": 0}
+    need = {"v": None}
 
     def write_state(i, decision, reason, done=False):
         lo = max(0, i - 299)
@@ -144,7 +143,8 @@ def main():
             "running": not done, "done": done, "symbol": cfg.symbol, "index": i - i0 + 1, "total": i1 - i0,
             "bar_time_utc": str(df.index[i]), "bars": bars, "speed": read_control().get("speed", 20),
             "p_buy": None if np.isnan(p[2]) else float(p[2]), "p_sell": None if np.isnan(p[0]) else float(p[0]),
-            "threshold": cfg.threshold, "practice": bool(practice), "decision": decision, "reason": reason,
+            "threshold": cfg.threshold, "need": need["v"] if practice and need["v"] else cfg.threshold,
+            "practice": bool(practice), "decision": decision, "reason": reason,
             "open": broker.open_count(), "max_open": m.max_open_trades, "balance": round(broker.account_balance(), 2),
             "stats": ledger.stats("replay"), "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}))
 
@@ -168,7 +168,7 @@ def main():
             for x in broker.on_bar(bar, SP[i], int(T[i])):
                 print(f"{df.index[i]:%Y-%m-%d %H:%M} EXIT #{x['id']} {x['reason']} pnl {x['pnl']:+.2f}")
 
-            decision, reason = "no signal", ""
+            decision, reason = "waiting for a strong setup", ""
             p = proba[i]
             if not np.isnan(p).any():
                 p_short, p_long = float(p[0]), float(p[2])
@@ -180,6 +180,7 @@ def main():
                 side = prob = None
                 if practice is not None:
                     side, prob, cut = practice.decide(p_long, p_short)
+                    need["v"] = cut
                 elif p_long >= cfg.threshold and p_long > p_short:
                     side, prob = "buy", p_long
                 elif p_short >= cfg.threshold and p_short > p_long:

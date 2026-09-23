@@ -396,12 +396,24 @@ def fetch():
     return jobs.status()["fetch"]
 
 
+@app.post("/api/history/download")
+def history_download(body: dict | None = None):
+    """Years of free XAUUSD M1 candles (HistData) so the model trains on far more than MT5 keeps."""
+    s = settings.load()
+    years = max(1, min(17, int((body or {}).get("years", 5))))
+    try:
+        jobs.start("history", ["-m", "agent.history", "--symbol", s["symbol"], "--years", str(years)])
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    return jobs.status()["history"]
+
+
 @app.post("/api/train")
 def train():
     s = settings.load()
     data = ROOT / "data" / f"{s['symbol']}_M1.parquet"
-    if not data.exists():
-        raise HTTPException(400, f"No M1 history for {s['symbol']} yet. Click Fetch data first.")
+    if not data.exists() and not (ROOT / "data" / f"{s['symbol']}_M1_history.parquet").exists():
+        raise HTTPException(400, f"No M1 history for {s['symbol']} yet. Click Fetch data or Download history first.")
     args = ["-m", "agent.train", str(data), "--symbol", s["symbol"], "--point", str(s["point"]),
             "--sl-pct", str(s["sl_pct_of_stake"]), "--horizon", str(int(s["label_horizon"]))]
     try:   # label with the same exits the bot will trade: needs this account's margin rate and current TP %

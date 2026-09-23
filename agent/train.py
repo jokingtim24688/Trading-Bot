@@ -12,16 +12,9 @@ PLAN = hardware.apply()
 import numpy as np  # noqa: E402  (after thread env vars are set)
 import pandas as pd  # noqa: E402
 
+from . import history  # noqa: E402
 from .features import build_features, triple_barrier  # noqa: E402
 from .model import SignalModel  # noqa: E402
-
-
-def load_bars(path: str) -> pd.DataFrame:
-    df = pd.read_parquet(path) if path.endswith(".parquet") else pd.read_csv(path)
-    if "time" in df.columns:
-        df["time"] = pd.to_datetime(df["time"], utc=True)
-        df = df.set_index("time")
-    return df.sort_index()
 
 
 THRESHOLDS = (0.08, 0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.7)
@@ -54,11 +47,13 @@ def main():
     ap.add_argument("--sl-pct", type=float, default=25.0, help="stop = this %% of the stake lost")
     ap.add_argument("--tp-pct", type=float, default=200.0, help="target = this %% of the stake gained")
     ap.add_argument("--horizon", type=int, default=None, help="max bars a label may take (default from config)")
+    ap.add_argument("--no-history", action="store_true", help="ignore the extra downloaded history")
     args = ap.parse_args()
 
     cfg = AgentConfig(symbol=args.symbol)
     print("hardware plan:", PLAN)
-    df = load_bars(args.bars)
+    df = history.load_bars(args.symbol, args.bars, include_history=not args.no_history)
+    print(f"training data: {len(df):,} M1 candles {df.index[0]:%Y-%m-%d} -> {df.index[-1]:%Y-%m-%d}", flush=True)
     if args.horizon:
         cfg.labels.horizon_bars = args.horizon
     X = build_features(df, args.point)

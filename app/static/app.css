@@ -271,3 +271,4 @@ label.inline select { width: auto; padding: 4px 8px; }
 .rp-speed { margin-top: 2px; }
 .rp-progress { display: grid; gap: 4px; }
 .rp-progress .bar { width: 100%; }
+.row-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
