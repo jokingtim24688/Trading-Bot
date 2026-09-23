@@ -14,7 +14,7 @@ flattered by memorised data.
 import argparse
 import json
 import time
-from collections import namedtuple
+from collections import Counter, namedtuple
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -73,6 +73,9 @@ def main():
     ap.add_argument("--no-learned", action="store_true")
     ap.add_argument("--sl-score-mult", type=float, default=None)
     ap.add_argument("--fresh", action="store_true", help="clear previous replay trades first")
+    ap.add_argument("--strict-filters", action="store_true",
+                    help="also apply the live spread-vs-ATR filter (off by default: history spreads are estimates, and on "
+                         "cheaper/quieter years it blocks nearly every candle; the spread-vs-stop cost check always applies)")
     args = ap.parse_args()
 
     cfg = AgentConfig(symbol=args.symbol, threshold=args.threshold)
@@ -131,7 +134,10 @@ def main():
     offset = pd.Timedelta(hours=SERVER_UTC_OFFSET_H)
     utc_iso = lambda k: (df.index[k] - offset).strftime("%Y-%m-%dT%H:%M:%S+00:00")    # noqa: E731
     broker.clock = lambda: utc_iso(cur["i"])  # trades get the replayed candle's date/hour, not today's
+    if not args.strict_filters:
+        cfg.risk.max_spread_to_atr = float("inf")
     gate = RiskGate(cfg.risk)
+    skips = Counter()                                  # why candles with a signal didn't become trades
     practice = Practice() if args.practice else None
     O, H, L, C = (df[k].to_numpy() for k in ("open", "high", "low", "close"))
     SP = df["spread"].to_numpy(dtype=float) * args.point
@@ -155,7 +161,7 @@ def main():
             "threshold": cfg.threshold, "need": need["v"] if practice and need["v"] else cfg.threshold,
             "practice": bool(practice), "decision": decision, "reason": reason,
             "open": broker.open_count(), "max_open": m.max_open_trades, "balance": round(broker.account_balance(), 2),
-            "rate": round(pace["rate"]), "stats": ledger.stats("replay"), "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}))
+            "rate": round(pace["rate"]), "skips": [[k, n] for k, n in skips.most_common(4)], "opened": stats["opened"], "stats": ledger.stats("replay"), "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}))
 
     rules = learn.load_rules()                         # fixed for the run: reading files per candle limits max speed
     ctl, ctl_read = read_control(), time.time()
@@ -200,6 +206,7 @@ def main():
                     side, prob = "sell", p_short
                 if side and broker.open_count() >= m.max_open_trades:
                     decision, reason = "holding", f"{m.max_open_trades} trades open"
+                    skips["max open trades"] += 1
                 elif side:
                     why = None if args.no_learned else learn.block_reason(rules, side, prob, (df.index[i] - offset).hour)
                     okg, rsn = gate.check(df.index[i].tz_convert(None).to_pydatetime(), broker.account_equity(), SP[i],
@@ -209,10 +216,13 @@ def main():
                                       spec, m, price)
                     if why:
                         decision, reason = f"skipped {side}", why
+                        skips["learned rule"] += 1
                     elif not okg:
                         decision, reason = f"skipped {side}", rsn
+                        skips[rsn] += 1
                     elif SP[i] > plan["sl_dist"] * m.max_spread_to_stop:
                         decision, reason = f"skipped {side}", "spread too wide for the stop"
+                        skips["spread too wide for the stop"] += 1
                     else:
                         sl = price - plan["sl_dist"] if side == "buy" else price + plan["sl_dist"]
                         tp = price + plan["tp_dist"] if side == "buy" else price - plan["tp_dist"]
@@ -247,6 +257,8 @@ def main():
             print(f"{dropped} trade(s) were still open when the history ended; not counted.")
         write_state(min(i, i1 - 1), "finished", "", done=True)
         st = ledger.stats("replay")
+        if skips:
+            print("signals skipped: " + ", ".join(f"{k} {n:,}" for k, n in skips.most_common()))
         print(f"\nreplay finished: {stats['opened']} trades opened this run | all replay trades: {st['closed']} closed, "
               f"win {st['win_pct']}%, net {st['net_pnl']:+.2f}, score {st['score']:+.1f} pts, PF {st['profit_factor']} "
               f"| took {time.time() - start_wall:.0f}s", flush=True)

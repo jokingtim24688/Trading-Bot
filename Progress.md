@@ -143,3 +143,7 @@
   losses and stopped the bot for the rest of a long replay (and learn.py's hour rules saw every replay trade in the
   current hour). Replay trades now carry the replayed candle's UTC date/time (server time -2h); daily P/L is a per-day
   SQL sum (indexed) instead of loading every trade per signal. Same test period: 304 -> 1019 trades taken.
+- Bot now trades in Replay: the live "spread too large vs ATR" filter blocked every in-session signal on quieter/cheaper
+  years (user saw 0 open / 0 closed after 5,330 candles). Replay skips it by default (`--strict-filters` restores it);
+  the spread-vs-stop cost check, session hours, daily loss limit and max open still apply. Reproduced on 2021-like
+  data: strict 0 trades vs default 27. Replay status now lists the top skip reasons ("signals skipped: ...").

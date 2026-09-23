@@ -19,5 +19,5 @@ Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. R
   fokan/xauusd-2009-2026, EST +7h -> server time, spread filled) to data/<SYM>_M1_history.parquet; `load_bars()` merges it
   with the MT5 file (MT5 wins on overlap, ns index). Used by train.py (`--no-history` to skip) and replay.py.
   Features have no volume (history has none) and are float32. RAM ~0.5 GB per year of candles when training.
-- **replay.py**: history replay at slider speed (0 = Max; --days 0 = all; --from test|end|all|date); PaperBroker.clock
-  stamps trades with the replayed candle's UTC time so daily limits/learned hours are historical; (data/replay_control.json -> data/replay_state.json), mode "replay" in the ledger.
+- **replay.py**: history replay at slider speed (0 = Max; --days 0 = all; --from test|end|all|date); spread/ATR filter off unless --strict-filters;
+  skip-reason Counter in replay_state.json ("skips"); PaperBroker.clock stamps trades with the replayed candle's UTC time so daily limits/learned hours are historical; (data/replay_control.json -> data/replay_state.json), mode "replay" in the ledger.
