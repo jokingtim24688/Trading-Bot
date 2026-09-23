@@ -4,9 +4,17 @@ Double-click `Trading Bot.bat` (or run `pythonw -m app.main`). Falls back to the
 pywebview isn't installed.
 """
 import socket
+import sys
 import threading
 import time
+import traceback
 import webbrowser
+from pathlib import Path
+
+LOG = Path(__file__).resolve().parent.parent / "logs" / "app.log"
+if sys.stdout is None or sys.stderr is None:      # pythonw.exe (no console window): send output to logs/app.log
+    LOG.parent.mkdir(exist_ok=True)
+    sys.stdout = sys.stderr = open(LOG, "a", encoding="utf-8", buffering=1)
 
 import uvicorn
 
@@ -58,5 +66,18 @@ def main():
         server.should_exit = True
 
 
+def _fatal(exc: BaseException):
+    """Without a console nobody sees a traceback, so log it and say so in a message box."""
+    traceback.print_exception(exc)
+    if sys.platform == "win32":
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, f"Trading Bot couldn't start:\n\n{exc}\n\nDetails: {LOG}",
+                                         "Trading Bot", 0x10)
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:           # noqa: BLE001
+        _fatal(e)
+        raise

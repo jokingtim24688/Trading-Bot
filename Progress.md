@@ -164,3 +164,9 @@
 - Old models: a model trained before this stops with "trained with older inputs, retrain on the Train tab".
 - Tested end to end on synthetic data: train -> replay (632 trades, all filed by setup) -> learn (setup table,
   blocked setups) -> app screenshots.
+
+## 2026-09-23: App opens without a command prompt
+- `Trading Bot.bat`: updates (git pull), installs packages only when requirements.txt changed, launches with
+  pythonw.exe (no console) and exits, so the window closes once the app opens. CRLF line endings.
+- `app/main.py`: under pythonw, output goes to logs/app.log; a startup error shows a Windows message box with the log path.
+- Background jobs already run hidden (CREATE_NO_WINDOW).
