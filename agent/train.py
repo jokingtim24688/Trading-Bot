@@ -67,7 +67,7 @@ def main():
         base = args.margin_rate * df["close"].to_numpy()
         sl_d, tp_d = base * args.sl_pct / 100, base * args.tp_pct / 100
         print(f"labels: stake rules, stop -{args.sl_pct}% / target +{args.tp_pct}% of stake "
-              f"(≈ {sl_d[-1]:.2f} / {tp_d[-1]:.2f} price at the last close), horizon {cfg.labels.horizon_bars} bars")
+              f"(~ {sl_d[-1]:.2f} / {tp_d[-1]:.2f} price at the last close), horizon {cfg.labels.horizon_bars} bars")
         y, r_long, r_short = triple_barrier(df, args.point, cfg.labels, sl_d, tp_d)
     else:
         print("labels: ATR stop/target (pass --margin-rate to use the stake rules)")

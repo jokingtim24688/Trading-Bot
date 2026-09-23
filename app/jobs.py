@@ -36,7 +36,7 @@ class Job:
         log = self._log = open(self.log_path, "w", buffering=1, encoding="utf-8")
         log.write(f"$ {' '.join(args)}\n")
         self.proc = subprocess.Popen(args, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
-                                     creationflags=FLAGS, env={**os.environ, "PYTHONUNBUFFERED": "1"})
+                                     creationflags=FLAGS, env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
         self.started = time.time()
 
     def stop(self, timeout: float = 5):
