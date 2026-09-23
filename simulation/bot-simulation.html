@@ -186,8 +186,8 @@ tr.open td { background: rgba(201,162,74,.06); }
 
   /* ---- the bot's rules (same as agent/config.py MoneyConfig + RiskConfig) ---- */
   const SL_MULT = 1.5;   // score: stop-loss hits count 1.5x worse
-  const scoreOf = (pnl, stake, why) => { let v = 100 * pnl / stake; if (v < 0 && why === "sl") v *= SL_MULT; return +v.toFixed(1); };
-  const pts = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}`;
+  const scoreOf = (pnl, stake, why) => { let v = pnl; if (v < 0 && why === "sl") v *= SL_MULT; return +v.toFixed(2); };   // 1 point = $1
+  const pts = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
   const RULES = { stakePct: 0.1, slPct: 25, tpSmall: 200, tpLarge: 50, maxOpen: 25, maxSpreadToStop: 0.35,
                   threshold: 0.15, dailyLossPct: 3, contract: 100, volMin: 0.01, volStep: 0.01 };
   RULES.maxOpen = 10;    // max bot trades open at the same time
@@ -430,7 +430,7 @@ tr.open td { background: rgba(201,162,74,.06); }
       ["Stop loss", `−${RULES.slPct}% of stake = −$${fmt(p.slMoney)}, ${p.slDist.toFixed(2)} from entry`],
       ["Take profit", `+${p.tpPct.toFixed(0)}% of stake = +$${fmt(p.tpMoney)}, ${p.tpDist.toFixed(2)} from entry`],
       ["Max open", `${RULES.maxOpen} trades · worst case all stop: −$${fmt(p.slMoney * RULES.maxOpen)} (${(100 * p.slMoney * RULES.maxOpen / cfg.balance).toFixed(2)}%)`],
-      ["Score", `+% of stake earned (full target +${p.tpPct.toFixed(0)}) · stop hit −${RULES.slPct} × ${SL_MULT} = −${(RULES.slPct * SL_MULT).toFixed(1)} · closed early = only what it lost`],
+      ["Score", `1 point = $1 · this setup: target +${fmt(p.tpMoney)} pts · stop hit −${fmt(p.slMoney)} × ${SL_MULT} = −${fmt(p.slMoney * SL_MULT)} pts · closed early = only what it lost`],
     ];
     $("#rules").innerHTML = rows.map(([k, v]) => `<div class="rule"><b>${k}</b><span class="muted">${v}</span></div>`).join("");
   }

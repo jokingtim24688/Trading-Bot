@@ -79,3 +79,8 @@
   (open→low→high→close or open→high→low→close); spread estimated (0.22–0.30, wider around the NY open); Restart at the end.
 - Max open trades changed 25 → 10 (clarified: trades open at the same time, not a per-session total) in agent config,
   app settings, simulation and docs.
+
+## 2026-09-23: Score = dollars
+- 1 point = $1: score = trade P/L in account currency; stop-loss hits ×1.5, early/manual/kill closes ×1.
+  Example: −$20 stop hit (−30) then +$100 (+100) = +70; if the −$20 was an early close, +80.
+- Updated agent/score.py, app text/formatting, simulation, skill docs.

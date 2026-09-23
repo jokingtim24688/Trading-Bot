@@ -138,7 +138,7 @@ document.addEventListener("pointerdown", () => audioCtx && audioCtx.state === "s
 const px = (v, sym) => v == null ? "—" : Number(v).toFixed(sym === state.symbol ? state.digits : (v < 20 ? 5 : 2));
 const signed = v => v == null ? "—" : `${v >= 0 ? "+" : ""}${fmt(v)}`;
 const cls = v => v > 0 ? "up" : v < 0 ? "down" : "";
-const pts = v => v == null ? "" : `${v >= 0 ? "+" : ""}${Number(v).toFixed(1)}`;
+const pts = v => v == null ? "" : `${v >= 0 ? "+" : ""}${Number(v).toFixed(2)}`;   // 1 point = $1
 
 async function pollBot() {
   let d;
