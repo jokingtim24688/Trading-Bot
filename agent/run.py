@@ -17,6 +17,7 @@ PLAN = hardware.apply()
 
 from .broker import Journal, LiveBroker, MT5Data, PaperBroker  # noqa: E402
 from .features import atr, build_features  # noqa: E402
+from . import ledger, score as scoring  # noqa: E402
 from .model import SignalModel  # noqa: E402
 from .risk import RiskGate, stake_plan  # noqa: E402
 
@@ -32,6 +33,8 @@ def main():
     ap.add_argument("--small-stake", type=float, default=None, help="stake (account currency) at/below which --tp-small applies")
     ap.add_argument("--large-stake", type=float, default=None, help="stake at/above which --tp-large applies")
     ap.add_argument("--max-open", type=int, default=None, help="max bot trades open at once (default 25)")
+    ap.add_argument("--no-early-exit", action="store_true", help="always hold trades until SL or TP")
+    ap.add_argument("--sl-score-mult", type=float, default=None, help="score penalty multiplier when a stop loss hits (default 1.5)")
     ap.add_argument("--terminal", default=None, help="path to terminal64.exe (optional)")
     ap.add_argument("--live", action="store_true", help="send real orders (demo account unless --allow-real)")
     ap.add_argument("--allow-real", action="store_true")
@@ -45,6 +48,10 @@ def main():
                       ("max_open", "max_open_trades")):
         if getattr(args, arg) is not None:
             setattr(m, attr, getattr(args, arg))
+    if args.no_early_exit:
+        m.early_exit = False
+    if args.sl_score_mult is not None:
+        scoring.SL_MULT = args.sl_score_mult
 
     data = MT5Data(cfg.symbol, args.terminal)
     spec = data.spec()
@@ -70,9 +77,12 @@ def main():
 
     def report_exits(exits, bar_time=""):
         for x in exits:
+            row = next((r for r in ledger.recent(50) if r["id"] == x["id"]), {})
+            pts = row.get("score")
             journal.log(event="exit", bar_time=bar_time, symbol=cfg.symbol, price=x["exit"],
-                        equity=broker.account_equity(), note=f"#{x['id']} {x['reason']} pnl={x['pnl']:.2f}")
-            print(f"EXIT #{x['id']} {x['reason']} @ {x['exit']} pnl {x['pnl']:+.2f}")
+                        equity=broker.account_equity(), note=f"#{x['id']} {x['reason']} pnl={x['pnl']:.2f} score={pts}")
+            print(f"EXIT #{x['id']} {x['reason']} @ {x['exit']} pnl {x['pnl']:+.2f}"
+                  + (f" score {pts:+.1f}" if pts is not None else ""))
     journal.log(event="start", symbol=cfg.symbol, note=f"mode={mode} thr={cfg.threshold}")
     last_bar = None
 
@@ -97,14 +107,23 @@ def main():
 
             report_exits(broker.on_bar(bar, spread_px, bar_epoch), bar_time)
 
-            if broker.open_count() >= max_open:
-                continue
-
             feats = build_features(bars, spec.point)
             row = feats.iloc[[-1]]
             if row.isna().any(axis=1).iloc[0]:
                 continue
             p_short, _, p_long = model.predict_proba(row)[0]
+
+            # early exit: close a trade before its stop when the model has clearly turned against it
+            if m.early_exit:
+                for t in broker.open_list():
+                    own, opp = (p_long, p_short) if t["side"] == "buy" else (p_short, p_long)
+                    if opp >= cfg.threshold and opp >= m.early_exit_ratio * own:
+                        x = broker.close_one(t, "early")
+                        if x:
+                            report_exits([x], bar_time)
+
+            if broker.open_count() >= max_open:
+                continue
             a = float(atr(bars, L.atr_period).iloc[-1])
             median_spread_px = float(bars["spread"].tail(1440).median()) * spec.point
             equity = broker.account_equity()
@@ -144,7 +163,7 @@ def main():
             sl = price - plan["sl_dist"] if side == "buy" else price + plan["sl_dist"]
             tp = price + plan["tp_dist"] if side == "buy" else price - plan["tp_dist"]
             filled, note = broker.open(side, lots, price, sl, tp, prob=round(float(prob), 3),
-                                       risk_money=plan["sl_money"], open_bar=bar_epoch + 60)
+                                       risk_money=plan["sl_money"], open_bar=bar_epoch + 60, stake=plan["stake"])
             note += (f" | stake {plan['stake']} ({'min lot' if plan['forced_min'] else str(m.stake_pct_of_balance) + '% of balance'})"
                      f" SL -{plan['sl_money']} TP +{plan['tp_money']} ({plan['tp_pct']}%) open {broker.open_count()}/{max_open}")
             journal.log(event="order" if filled else "reject", bar_time=bar_time, symbol=cfg.symbol, side=side,

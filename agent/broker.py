@@ -117,8 +117,8 @@ class PaperBroker:
     def foreign_position(self) -> bool:
         return False
 
-    def open(self, side, lots, price, sl, tp, prob=None, risk_money=None, open_bar=None, **_):
-        tid = ledger.open_trade("paper", self.symbol, side, lots, price, sl, tp, prob, risk_money, None, open_bar)
+    def open(self, side, lots, price, sl, tp, prob=None, risk_money=None, open_bar=None, stake=None, **_):
+        tid = ledger.open_trade("paper", self.symbol, side, lots, price, sl, tp, prob, risk_money, None, open_bar, stake)
         self.positions = ledger.open_trades("paper", self.symbol)
         return True, f"paper fill #{tid}"
 
@@ -141,6 +141,18 @@ class PaperBroker:
 
     def sync(self):
         return []
+
+    def open_list(self) -> list[dict]:
+        return list(self.positions)
+
+    def close_one(self, trade: dict, reason: str = "early") -> dict:
+        """Close one paper trade at the current market price (bot's own decision, before SL/TP)."""
+        t = self.tick_fn()
+        px = t.bid if trade["side"] == "buy" else t.ask
+        pnl = self._pnl(trade["side"], trade["entry"], px, trade["lots"])
+        ledger.close_trade(trade["id"], px, reason, pnl)
+        self.positions = [p for p in self.positions if p["id"] != trade["id"]]
+        return {"id": trade["id"], "exit": px, "pnl": pnl, "reason": reason}
 
     def close_all(self, reason="kill"):
         t = self.tick_fn()
@@ -180,6 +192,8 @@ def sync_ledger(modes=("demo", "real"), symbol: str | None = None) -> list[dict]
             last = outs[-1]
             pnl = sum(d.profit + d.commission + d.swap + getattr(d, "fee", 0.0) for d in deals)
             reason = _reason(last.reason)
+            if t.get("close_hint") and last.reason == mt5.DEAL_REASON_EXPERT:
+                reason = t["close_hint"]          # "early" / "kill": why the bot or app closed it
             ledger.close_trade(t["id"], last.price, reason, pnl, close_bar=int(last.time))
             closed.append({"id": t["id"], "exit": last.price, "pnl": pnl, "reason": reason})
     return closed
@@ -239,7 +253,7 @@ class LiveBroker:
             return mt5.ORDER_FILLING_IOC
         return mt5.ORDER_FILLING_RETURN
 
-    def open(self, side, lots, price, sl, tp, prob=None, risk_money=None, open_bar=None, comment="m1-agent"):
+    def open(self, side, lots, price, sl, tp, prob=None, risk_money=None, open_bar=None, stake=None, comment="m1-agent"):
         digits = mt5.symbol_info(self.symbol).digits
         req = {
             "action": mt5.TRADE_ACTION_DEAL, "symbol": self.symbol, "volume": float(lots),
@@ -256,7 +270,7 @@ class LiveBroker:
             return False, f"order_send retcode {getattr(res, 'retcode', None)} {getattr(res, 'comment', mt5.last_error())}"
         # for a new market position the position ticket equals the opening order ticket
         tid = ledger.open_trade(self.mode, self.symbol, side, res.volume, res.price or price, req["sl"], req["tp"],
-                                prob, risk_money, res.order, open_bar)
+                                prob, risk_money, res.order, open_bar, stake)
         return True, f"filled {res.volume} @ {res.price} (ticket {res.order}, ledger #{tid})"
 
     def on_bar(self, bar, spread_px, bar_epoch=None):
@@ -265,7 +279,33 @@ class LiveBroker:
     def sync(self) -> list[dict]:
         return sync_ledger((self.mode,), self.symbol)
 
+    def open_list(self) -> list[dict]:
+        return ledger.open_trades(self.mode, self.symbol)
+
+    def _close_ticket(self, ticket: int) -> bool:
+        pos = mt5.positions_get(ticket=ticket)
+        if not pos:
+            return False
+        p, t = pos[0], mt5.symbol_info_tick(self.symbol)
+        buy = p.type == mt5.POSITION_TYPE_BUY
+        res = mt5.order_send({
+            "action": mt5.TRADE_ACTION_DEAL, "symbol": self.symbol, "position": p.ticket, "volume": p.volume,
+            "type": mt5.ORDER_TYPE_SELL if buy else mt5.ORDER_TYPE_BUY,
+            "price": t.bid if buy else t.ask, "deviation": 30, "magic": self.magic, "type_filling": self._filling(),
+        })
+        return res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
+
+    def close_one(self, trade: dict, reason: str = "early") -> dict | None:
+        """Close one bot position at market before SL/TP; the ledger records `reason` (scored as a smaller loss)."""
+        ledger.set_close_hint(trade["id"], reason)
+        if not self._close_ticket(trade["ticket"]):
+            return None
+        done = [x for x in self.sync() if x["id"] == trade["id"]]
+        return done[0] if done else None
+
     def close_all(self, reason="kill"):
+        for t in ledger.open_trades(self.mode, self.symbol):
+            ledger.set_close_hint(t["id"], reason)
         for p in self._positions():
             t = mt5.symbol_info_tick(self.symbol)
             buy = p.type == mt5.POSITION_TYPE_BUY

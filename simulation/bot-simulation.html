@@ -134,6 +134,7 @@ tr.open td { background: rgba(201,162,74,.06); }
     <span><span class="k">Floating</span><span id="floating" class="num">—</span></span>
     <span><span class="k">Free margin</span><span id="free" class="num">—</span></span>
     <span><span class="k">Bot today</span><span id="today" class="num">—</span></span>
+    <span><span class="k">Score</span><strong id="score" class="num">0</strong></span>
   </div>
   <span id="agent-pill" class="pill live">agent running · demo · 0/25 open</span>
 </header>
@@ -168,7 +169,7 @@ tr.open td { background: rgba(201,162,74,.06); }
   <section class="panel">
     <div class="panel-head"><h3>Bot trades</h3><span class="muted small" id="be"></span></div>
     <div class="stats" id="stats"></div>
-    <div class="table-wrap"><table><thead><tr><th>#</th><th>Opened</th><th>Side</th><th>Lots</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>P/L</th><th>R</th><th>Conf.</th></tr></thead><tbody id="trades"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>#</th><th>Opened</th><th>Side</th><th>Lots</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>P/L</th><th>R</th><th>Score</th><th>Conf.</th></tr></thead><tbody id="trades"></tbody></table></div>
   </section>
 </div>
 
@@ -183,6 +184,9 @@ tr.open td { background: rgba(201,162,74,.06); }
   const cls = v => v > 0 ? "up" : v < 0 ? "down" : "";
 
   /* ---- the bot's rules (same as agent/config.py MoneyConfig + RiskConfig) ---- */
+  const SL_MULT = 1.5;   // score: stop-loss hits count 1.5x worse
+  const scoreOf = (pnl, stake, why) => { let v = 100 * pnl / stake; if (v < 0 && why === "sl") v *= SL_MULT; return +v.toFixed(1); };
+  const pts = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}`;
   const RULES = { stakePct: 0.1, slPct: 25, tpSmall: 200, tpLarge: 50, maxOpen: 25, maxSpreadToStop: 0.35,
                   threshold: 0.15, dailyLossPct: 3, contract: 100, volMin: 0.01, volStep: 0.01 };
   const cfg = { balance: 10000, leverage: 500, speed: 4 };
@@ -250,11 +254,16 @@ tr.open td { background: rgba(201,162,74,.06); }
     const n = S.bars.length, mom = n > 15 ? (S.bars[n - 1].close - S.bars[n - 16].close) / 1.5 : 0;
     const pLong = Math.max(0.01, 0.09 + 0.06 * Math.tanh(mom) + gauss() * 0.04);
     const pShort = Math.max(0.01, 0.09 - 0.06 * Math.tanh(mom) + gauss() * 0.04);
+    // early exit: close trades the model has clearly turned against, before they reach the stop
+    for (const t of open) {
+      const own = t.side === "buy" ? pLong : pShort, opp = t.side === "buy" ? pShort : pLong;
+      if (opp >= RULES.threshold && opp >= 2 * own) closeTrade(t, t.side === "buy" ? S.price : S.price + S.spread, "early");
+    }
     const side = pLong >= RULES.threshold && pLong > pShort ? "buy" : pShort >= RULES.threshold && pShort > pLong ? "sell" : null;
     if (!side) return;
     const prob = side === "buy" ? pLong : pShort;
     const tstr = hhmm(b.time);
-    if (open.length >= RULES.maxOpen) { logLine(`${tstr} ${side} signal p=${prob.toFixed(2)} skipped: ${RULES.maxOpen}/${RULES.maxOpen} trades already open`, "skip"); return; }
+    if (openTrades().length >= RULES.maxOpen) { logLine(`${tstr} ${side} signal p=${prob.toFixed(2)} skipped: ${RULES.maxOpen}/${RULES.maxOpen} trades already open`, "skip"); return; }
     if (botTodayPnl() <= -S.startBal * RULES.dailyLossPct / 100) { logLine(`${tstr} skip: bot daily loss limit`, "skip"); return; }
     const price = side === "buy" ? S.price + S.spread : S.price;
     const p = stakePlan(S.balance, price);
@@ -281,10 +290,11 @@ tr.open td { background: rgba(201,162,74,.06); }
     t.status = "closed"; t.exit = exit; t.why = why; t.closeBar = S.t;
     t.pnl = (t.side === "buy" ? exit - t.entry : t.entry - exit) * t.lots * RULES.contract;
     t.r = (t.side === "buy" ? exit - t.entry : t.entry - exit) / t.sl0dist;
+    t.score = scoreOf(t.pnl, t.plan.stake, why);
     S.balance += t.pnl;
     const win = t.pnl >= 0;
-    logLine(`EXIT #${t.id} ${why} @ ${fmt(exit)} pnl ${signed(t.pnl)} (${t.r >= 0 ? "+" : ""}${t.r.toFixed(2)}R)`, win ? "win" : "loss");
-    if (why !== "kill") { toast(`Bot closed #${t.id} · ${why} · ${signed(t.pnl)} (${t.r >= 0 ? "+" : ""}${t.r.toFixed(1)}R)`, win ? "win" : "loss"); beep(win ? [700, 940, 1180] : [520, 390]); }
+    logLine(`EXIT #${t.id} ${why} @ ${fmt(exit)} pnl ${signed(t.pnl)} (${t.r >= 0 ? "+" : ""}${t.r.toFixed(2)}R) score ${pts(t.score)}`, win ? "win" : "loss");
+    if (why !== "kill") { toast(`Bot closed #${t.id} · ${why === "early" ? "closed early" : why} · ${signed(t.pnl)} · ${pts(t.score)} pts`, win ? "win" : "loss"); beep(win ? [700, 940, 1180] : [520, 390]); }
   }
 
   /* ---- chart ---- */
@@ -363,7 +373,11 @@ tr.open td { background: rgba(201,162,74,.06); }
     const wins = closed.filter(x => x.pnl > 0), net = closed.reduce((a, x) => a + x.pnl, 0), totR = closed.reduce((a, x) => a + x.r, 0);
     const gw = wins.reduce((a, x) => a + x.pnl, 0), gl = -closed.filter(x => x.pnl < 0).reduce((a, x) => a + x.pnl, 0);
     const stat = (k, v, c = "") => `<div class="stat"><span>${k}</span><strong class="${c}">${v}</strong></div>`;
-    $("#stats").innerHTML = stat("Closed", closed.length) + stat("Open", `${open.length}/${RULES.maxOpen}`)
+    const score = closed.reduce((a, x) => a + x.score, 0);
+    $("#score").textContent = pts(score); $("#score").className = "num " + cls(score);
+    $("#stats").innerHTML = stat("Score", pts(score), cls(score)) + stat("Avg pts / trade", closed.length ? pts(score / closed.length) : "—")
+      + stat("Stops / early exits", `${closed.filter(x => x.why === "sl").length} / ${closed.filter(x => x.why === "early").length}`)
+      + stat("Closed", closed.length) + stat("Open", `${open.length}/${RULES.maxOpen}`)
       + stat("Win rate", closed.length ? `${(100 * wins.length / closed.length).toFixed(1)}%` : "—")
       + stat("Net P/L", signed(net), cls(net)) + stat("Total R", `${totR >= 0 ? "+" : ""}${totR.toFixed(1)}`, cls(totR))
       + stat("Profit factor", gl ? (gw / gl).toFixed(2) : "—");
@@ -371,8 +385,8 @@ tr.open td { background: rgba(201,162,74,.06); }
     $("#be").textContent = `break-even win rate ${(100 / (1 + rr)).toFixed(1)}%`;
     $("#trades").innerHTML = S.trades.slice(-60).reverse().map(x => `<tr class="${x.status}"><td>${x.id}</td><td>${hhmm(x.openBar)}</td><td class="${x.side === "buy" ? "up" : "down"}">${x.side}</td><td>${x.lots}</td>
       <td>${fmt(x.entry)}</td><td>${fmt(x.sl)}</td><td>${fmt(x.tp)}</td><td>${x.status === "open" ? "open" : fmt(x.exit)}</td><td>${x.why || ""}</td>
-      <td class="${cls(x.pnl)}">${x.status === "open" ? "" : signed(x.pnl)}</td><td class="${cls(x.r)}">${x.status === "open" ? "" : (x.r >= 0 ? "+" : "") + x.r.toFixed(2)}</td><td>${Math.round(x.prob * 100)}%</td></tr>`).join("")
-      || `<tr><td colspan="12" class="muted">No trades yet. The first signal usually arrives within a few candles.</td></tr>`;
+      <td class="${cls(x.pnl)}">${x.status === "open" ? "" : signed(x.pnl)}</td><td class="${cls(x.r)}">${x.status === "open" ? "" : (x.r >= 0 ? "+" : "") + x.r.toFixed(2)}</td><td class="${cls(x.score)}">${x.status === "open" ? "" : pts(x.score)}</td><td>${Math.round(x.prob * 100)}%</td></tr>`).join("")
+      || `<tr><td colspan="13" class="muted">No trades yet. The first signal usually arrives within a few candles.</td></tr>`;
     drawOverlay();
   }
   function renderRules() {
@@ -382,6 +396,7 @@ tr.open td { background: rgba(201,162,74,.06); }
       ["Stop loss", `−${RULES.slPct}% of stake = −$${fmt(p.slMoney)}, ${p.slDist.toFixed(2)} from entry`],
       ["Take profit", `+${p.tpPct.toFixed(0)}% of stake = +$${fmt(p.tpMoney)}, ${p.tpDist.toFixed(2)} from entry`],
       ["Max open", `${RULES.maxOpen} trades · worst case all stop: −$${fmt(p.slMoney * RULES.maxOpen)} (${(100 * p.slMoney * RULES.maxOpen / cfg.balance).toFixed(2)}%)`],
+      ["Score", `+% of stake earned (full target +${p.tpPct.toFixed(0)}) · stop hit −${RULES.slPct} × ${SL_MULT} = −${(RULES.slPct * SL_MULT).toFixed(1)} · closed early = only what it lost`],
     ];
     $("#rules").innerHTML = rows.map(([k, v]) => `<div class="rule"><b>${k}</b><span class="muted">${v}</span></div>`).join("");
   }

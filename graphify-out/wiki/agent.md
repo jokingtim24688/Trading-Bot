@@ -5,9 +5,10 @@
 - **model.py**: `SignalModel`, XGBoost multi:softprob 3-class, GPU train, CPU predict, save/load JSON + meta (best_iteration).
 - **train.py**: labels with the stake exits (`--margin-rate --sl-pct --tp-pct --horizon`, default horizon 240), chronological split with a horizon gap, prints break-even win rate and the out-of-sample threshold table, and saves `suggested_threshold` + `exit_rule` in model meta.
 - **risk.py**: `stake_plan` (lots/stake/SL/TP money + price distances, forced_min, worst case), `tp_pct_for_stake`, `lots_for_risk`, `RiskGate` (bot-only daily stop 3% from `bot_pnl_today`, account-wide stop 6%, trade cap, session, rollover, spread filters).
-- **ledger.py**: bot trade ledger `data/trades.db` (open_trade, close_trade with R from original stop `sl0`, update_levels, open_trades, recent, realized_pnl, stats). Shared by agent and app.
+- **score.py**: `trade_score(pnl, stake, r, reason)`: % of stake, stop hits × `SL_MULT` (1.5).
+- **ledger.py**: (+ stake, score, close_hint columns; `set_close_hint`; score stats) bot trade ledger `data/trades.db` (open_trade, close_trade with R from original stop `sl0`, update_levels, open_trades, recent, realized_pnl, stats). Shared by agent and app.
 - **broker.py**: `Journal` CSV, `MT5Data`, `PaperBroker` (bar-based SL/TP, ledger-backed, restores open trade + equity after restart), `sync_ledger()` (reconciles ledger with MT5 positions/deals: exit price, P/L incl. commission/swap, reason sl/tp/manual/stop_out, SL/TP edits), `LiveBroker` (magic-filtered, adopts orphan bot positions, `foreign_position()` for netting accounts).
-- **run.py**: loop; `broker.sync()` every second; cheap poll for a new closed bar; paper default; `--live` demo only unless `--allow-real`; modes paper/demo/real; netting guard; records prob, risk_money and open_bar per trade; STOP file kill switch.
+- **run.py**: loop; `broker.sync()` every second; cheap poll for a new closed bar; paper default; `--live` demo only unless `--allow-real`; modes paper/demo/real; netting guard; early exit when the model flips (`close_one(..., "early")`); records prob, risk_money and open_bar per trade; STOP file kill switch.
 
 ## Hardware
 Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. RTX 4060 8 GB: XGBoost CUDA training, optional small PyTorch nets (bf16), and a local Hermes 3 8B Q4 (~5 GB).

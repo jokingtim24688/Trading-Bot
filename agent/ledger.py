@@ -9,6 +9,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import score as scoring
+
 DB = Path(__file__).resolve().parent.parent / "data" / "trades.db"
 
 COLUMNS = ("id", "mode", "symbol", "side", "lots", "entry", "sl", "sl0", "tp", "prob", "risk_money", "ticket",
@@ -23,6 +25,10 @@ def _conn():
         id INTEGER PRIMARY KEY, mode TEXT, symbol TEXT, side TEXT, lots REAL, entry REAL, sl REAL, sl0 REAL, tp REAL,
         prob REAL, risk_money REAL, ticket INTEGER, status TEXT, open_utc TEXT, open_bar INTEGER,
         exit REAL, exit_reason TEXT, pnl REAL, r_multiple REAL, close_utc TEXT, close_bar INTEGER, updated REAL)""")
+    have = {r[1] for r in c.execute("PRAGMA table_info(trades)")}
+    for col, typ in (("stake", "REAL"), ("score", "REAL"), ("close_hint", "TEXT")):
+        if col not in have:                         # upgrade ledgers created before scoring existed
+            c.execute(f"ALTER TABLE trades ADD COLUMN {col} {typ}")
     return c
 
 
@@ -30,27 +36,36 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def open_trade(mode, symbol, side, lots, entry, sl, tp, prob=None, risk_money=None, ticket=None, open_bar=None) -> int:
+def open_trade(mode, symbol, side, lots, entry, sl, tp, prob=None, risk_money=None, ticket=None, open_bar=None,
+               stake=None) -> int:
     with _conn() as c:
         cur = c.execute("""INSERT INTO trades (mode, symbol, side, lots, entry, sl, sl0, tp, prob, risk_money, ticket, status,
-                           open_utc, open_bar, updated) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'open', ?,?,?)""",
-                        (mode, symbol, side, lots, entry, sl, sl, tp, prob, risk_money, ticket, _now(), open_bar, time.time()))
+                           open_utc, open_bar, updated, stake) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'open', ?,?,?,?)""",
+                        (mode, symbol, side, lots, entry, sl, sl, tp, prob, risk_money, ticket, _now(), open_bar, time.time(),
+                         stake))
         return cur.lastrowid
 
 
 def close_trade(trade_id: int, exit_price: float, reason: str, pnl: float, close_bar: int | None = None,
                 close_utc: str | None = None):
     with _conn() as c:
-        t = c.execute("SELECT side, entry, sl0 FROM trades WHERE id = ?", (trade_id,)).fetchone()
+        t = c.execute("SELECT side, entry, sl0, stake FROM trades WHERE id = ?", (trade_id,)).fetchone()
         # R from price distance vs the ORIGINAL stop (side-aware), so paper and live compare regardless of lot size
         risk_px = abs(t["entry"] - t["sl0"]) if t and t["sl0"] else 0
         r = None
         if risk_px and exit_price:
             move = (exit_price - t["entry"]) if t["side"] == "buy" else (t["entry"] - exit_price)
             r = round(move / risk_px, 3)
+        pts = scoring.trade_score(pnl, t["stake"] if t else None, r, reason)
         c.execute("UPDATE trades SET status='closed', exit=?, exit_reason=?, pnl=?, r_multiple=?, close_utc=?, "
-                  "close_bar=?, updated=? WHERE id=?",
-                  (exit_price, reason, round(pnl, 2), r, close_utc or _now(), close_bar, time.time(), trade_id))
+                  "close_bar=?, updated=?, score=? WHERE id=?",
+                  (exit_price, reason, round(pnl, 2), r, close_utc or _now(), close_bar, time.time(), pts, trade_id))
+
+
+def set_close_hint(trade_id: int, reason: str):
+    """Say why the bot/app is about to close a live trade ("early", "kill"), since MT5 only records it as an EA close."""
+    with _conn() as c:
+        c.execute("UPDATE trades SET close_hint=? WHERE id=?", (reason, trade_id))
 
 
 def update_levels(trade_id: int, sl: float | None = None, tp: float | None = None):
@@ -106,4 +121,9 @@ def stats(mode: str | None = None, symbol: str | None = None) -> dict:
         "total_r": round(sum(rs), 2),
         "avg_r": round(sum(rs) / len(rs), 3) if rs else None,
         "profit_factor": round(gross_win / gross_loss, 2) if gross_loss else None,
+        "score": round(sum(r["score"] or 0 for r in rows), 1),
+        "today_score": round(sum(r["score"] or 0 for r in rows if (r["close_utc"] or "").startswith(today)), 1),
+        "avg_score": round(sum(r["score"] or 0 for r in rows) / len(rows), 1) if rows else None,
+        "sl_hits": sum(1 for r in rows if r["exit_reason"] in scoring.STOP_REASONS),
+        "early_exits": sum(1 for r in rows if r["exit_reason"] == "early"),
     }

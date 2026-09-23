@@ -58,3 +58,15 @@
   lines and markers, live log, trade table + stats, 25-open cap, spread-spike skips, hold-to-flatten.
 - Controls: speed 1/4/15×, balance $1k/$10k/$100k, leverage 1:100/1:500, sound.
 - First draft trended straight up (98% wins, misleading); rebalanced to a choppy market so results sit near break-even.
+
+## 2026-09-23: Trade score + early exits
+- `agent/score.py`: points = % gained/lost on the stake (full +200% target = +200); stop-loss hits ×1.5 (−25% → −37.5);
+  trades closed early (bot, kill switch, manual) cost only what they lost. No stake recorded → R × 25 fallback.
+- Ledger: new `stake`, `score`, `close_hint` columns (auto-migrates old DBs); stats add score, today's score, avg points,
+  stop hits vs early exits.
+- Early exit (default on, Settings toggle): close a trade when the opposite side's probability ≥ threshold and ≥ 2× its own.
+  Live early/kill/app-closes are labelled via `close_hint` because MT5 reports them only as EA closes.
+- App: Score / Today's score / Avg points / Stops vs early exits cards, Score column, points in close alerts,
+  Settings for the stop-loss penalty and early exit. Hermes `get_bot_trades` includes score.
+- Simulation page republished with score + early exits.
+- Note: training labels still assume trades are held to SL/TP; early exit is a live rule on top.

@@ -41,6 +41,8 @@ class MoneyConfig:
     large_stake: float = 0.0            # account currency; 0 = auto (100x the minimum lot's stake)
     max_open_trades: int = 25           # bot positions open at the same time (1 on netting accounts)
     max_spread_to_stop: float = 0.35    # skip if the spread alone would eat 35%+ of the stop distance
+    early_exit: bool = True             # close a trade before its stop when the model turns clearly against it
+    early_exit_ratio: float = 2.0       # ...i.e. opposite side >= threshold AND >= this x the trade's own side
 
 
 @dataclass

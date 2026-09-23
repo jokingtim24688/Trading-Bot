@@ -21,6 +21,8 @@ DEFAULTS = {
     "small_stake": 0.0,                    # 0 = auto: the minimum lot's stake gets tp_pct_small
     "large_stake": 0.0,                    # 0 = auto: 100x minimum (1.00 lot on XAUUSD) gets tp_pct_large
     "max_open_trades": 25,
+    "early_exit": True,                    # bot may close a trade before its stop when the model turns against it
+    "sl_score_mult": 1.5,                  # score: a stop-loss hit counts this many times worse than an early close
     "paper_balance": 10000.0,
     "label_horizon": 240,                  # bars a training label may take to hit its stop/target
     "days_history": 365,

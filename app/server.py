@@ -9,7 +9,7 @@ from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from agent import ledger
+from agent import ledger, score as scoring
 
 from . import brain, memory, mt5_service, settings
 from .jobs import LOGS, jobs
@@ -98,6 +98,9 @@ def size(symbol: str, entry: float, stop: float, risk: float = 0.5):
 
 @app.post("/api/positions/{ticket}/close")
 def close(ticket: int):
+    for t in ledger.open_trades():                  # a bot trade you close from the app is scored as a manual close
+        if t["ticket"] == ticket:
+            ledger.set_close_hint(t["id"], "manual (app)")
     return mt5_service.close_position(ticket)
 
 
@@ -113,6 +116,9 @@ def kill_switch():
             time.sleep(0.5)
         jobs.stop("agent")
     stop.unlink(missing_ok=True)
+    for t in ledger.open_trades():
+        if t["mode"] != "paper":
+            ledger.set_close_hint(t["id"], "kill")
     try:
         closed = mt5_service.close_all(AGENT_MAGIC)
         time.sleep(0.5)
@@ -124,6 +130,7 @@ def kill_switch():
 
 # ---------- the bot's own trades ----------
 def bot_trades_payload(limit: int = 100, symbol: str | None = None) -> dict:
+    scoring.SL_MULT = float(settings.load().get("sl_score_mult", 1.5))
     try:
         mt5_service.sync_bot_ledger()
     except Exception:
@@ -150,7 +157,10 @@ def agent_args(s: dict, mode: str) -> list[str]:
             "--stake-pct", str(s["stake_pct"]), "--sl-pct", str(s["sl_pct_of_stake"]),
             "--tp-small", str(s["tp_pct_small"]), "--tp-large", str(s["tp_pct_large"]),
             "--small-stake", str(s["small_stake"]), "--large-stake", str(s["large_stake"]),
-            "--max-open", str(int(s["max_open_trades"])), "--paper-equity", str(s["paper_balance"])]
+            "--max-open", str(int(s["max_open_trades"])), "--paper-equity", str(s["paper_balance"]),
+            "--sl-score-mult", str(s["sl_score_mult"])]
+    if not s.get("early_exit", True):
+        args.append("--no-early-exit")
     if s.get("terminal_path"):
         args += ["--terminal", s["terminal_path"]]
     if mode in ("demo", "real"):

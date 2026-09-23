@@ -138,6 +138,7 @@ document.addEventListener("pointerdown", () => audioCtx && audioCtx.state === "s
 const px = (v, sym) => v == null ? "—" : Number(v).toFixed(sym === state.symbol ? state.digits : (v < 20 ? 5 : 2));
 const signed = v => v == null ? "—" : `${v >= 0 ? "+" : ""}${fmt(v)}`;
 const cls = v => v > 0 ? "up" : v < 0 ? "down" : "";
+const pts = v => v == null ? "" : `${v >= 0 ? "+" : ""}${Number(v).toFixed(1)}`;
 
 async function pollBot() {
   let d;
@@ -152,7 +153,7 @@ async function pollBot() {
         beep([660, 880]);
         $("#bot-card").classList.remove("live"); void $("#bot-card").offsetWidth; $("#bot-card").classList.add("live");
       } else if (before === "open" && t.status === "closed") {
-        toast(`Bot closed #${t.id} ${t.symbol} · ${t.exit_reason} · ${signed(t.pnl)}${t.r_multiple != null ? ` (${t.r_multiple >= 0 ? "+" : ""}${t.r_multiple}R)` : ""}`, t.pnl < 0);
+        toast(`Bot closed #${t.id} ${t.symbol} · ${t.exit_reason} · ${signed(t.pnl)}${t.score != null ? ` · ${pts(t.score)} pts` : ""}`, t.pnl < 0);
         beep(t.pnl >= 0 ? [700, 940, 1180] : [520, 390]);
       }
     }
@@ -166,7 +167,7 @@ function renderBotCard() {
   const d = state.bot.data; if (!d) return;
   const box = $("#bot-now"), open = d.open;
   const running = [...document.querySelectorAll("#agent-pill")].some(p => p.classList.contains("live"));
-  const today = Object.entries(d.stats).filter(([, s]) => s.closed || s.open).map(([m, s]) => `${m} ${signed(s.today_pnl)}`).join(" · ");
+  const today = Object.entries(d.stats).filter(([, s]) => s.closed || s.open).map(([m, s]) => `${m} ${signed(s.today_pnl)} · ${pts(s.today_score)} pts`).join(" · ");
   $("#bot-today").textContent = today ? `today: ${today}` : "";
   if (!open.length) {
     $("#bot-card").classList.remove("live");
@@ -221,11 +222,16 @@ function renderBotTable() {
   const m = state.bot.filter, rows = d.recent.filter(t => !m || t.mode === m);
   const S = m ? d.stats[m] : Object.values(d.stats).reduce((a, s) => ({ closed: a.closed + s.closed, open: a.open + s.open,
     net_pnl: a.net_pnl + s.net_pnl, today_pnl: a.today_pnl + s.today_pnl, total_r: a.total_r + s.total_r,
-    wins: a.wins + (s.win_pct || 0) * s.closed / 100 }), { closed: 0, open: 0, net_pnl: 0, today_pnl: 0, total_r: 0, wins: 0 });
+    wins: a.wins + (s.win_pct || 0) * s.closed / 100, score: a.score + (s.score || 0), today_score: a.today_score + (s.today_score || 0),
+    sl_hits: a.sl_hits + (s.sl_hits || 0), early_exits: a.early_exits + (s.early_exits || 0) }),
+    { closed: 0, open: 0, net_pnl: 0, today_pnl: 0, total_r: 0, wins: 0, score: 0, today_score: 0, sl_hits: 0, early_exits: 0 });
   const win = m ? S.win_pct : (S.closed ? (100 * S.wins / S.closed).toFixed(1) : null);
   const avgR = m ? S.avg_r : (S.closed ? (S.total_r / S.closed).toFixed(2) : null);
   const card = (label, val, c = "") => `<div class="stat"><span>${label}</span><strong class="${c}">${val ?? "—"}</strong></div>`;
-  $("#bt-stats").innerHTML = card("Closed trades", S.closed) + card("Open", S.open) + card("Win rate", win != null ? `${win}%` : "—")
+  const avgScore = S.closed ? (S.score / S.closed).toFixed(1) : "—";
+  $("#bt-stats").innerHTML = card("Score", pts(S.score), cls(S.score)) + card("Today's score", pts(S.today_score), cls(S.today_score))
+    + card("Avg points / trade", avgScore) + card("Stops hit / early exits", `${S.sl_hits} / ${S.early_exits}`)
+    + card("Closed trades", S.closed) + card("Open", S.open) + card("Win rate", win != null ? `${win}%` : "—")
     + card("Net P/L", signed(S.net_pnl), cls(S.net_pnl)) + card("Today", signed(S.today_pnl), cls(S.today_pnl))
     + card("Total R", S.total_r != null ? `${S.total_r >= 0 ? "+" : ""}${Number(S.total_r).toFixed(2)}` : "—", cls(S.total_r))
     + card("Avg R / trade", avgR) + (m ? card("Profit factor", S.profit_factor) : "");
@@ -233,8 +239,8 @@ function renderBotTable() {
     <td>${(t.open_utc || "").replace("T", " ").slice(0, 16)}</td><td>${t.symbol}</td><td class="${t.side === "buy" ? "up" : "down"}">${t.side}</td><td>${t.lots}</td>
     <td>${px(t.entry, t.symbol)}</td><td>${px(t.sl, t.symbol)}</td><td>${px(t.tp, t.symbol)}</td>
     <td>${t.status === "open" ? "open" : px(t.exit, t.symbol)}</td><td>${t.exit_reason || ""}</td>
-    <td class="${cls(t.pnl)}">${t.status === "open" ? "" : signed(t.pnl)}</td><td class="${cls(t.r_multiple)}">${t.r_multiple ?? ""}</td><td>${t.prob ? Math.round(t.prob * 100) + "%" : ""}</td></tr>`).join("")
-    || `<tr><td colspan="14" class="muted">No bot trades yet${m ? ` in ${m} mode` : ""}. Start the agent and every trade it takes is recorded here, including ones that hit stop or target while the app was closed.</td></tr>`;
+    <td class="${cls(t.pnl)}">${t.status === "open" ? "" : signed(t.pnl)}</td><td class="${cls(t.r_multiple)}">${t.r_multiple ?? ""}</td><td class="${cls(t.score)}">${t.status === "open" ? "" : pts(t.score)}</td><td>${t.prob ? Math.round(t.prob * 100) + "%" : ""}</td></tr>`).join("")
+    || `<tr><td colspan="15" class="muted">No bot trades yet${m ? ` in ${m} mode` : ""}. Start the agent and every trade it takes is recorded here, including ones that hit stop or target while the app was closed.</td></tr>`;
 }
 $("#bt-filter").addEventListener("click", e => {
   const b = e.target.closest("[data-m]"); if (!b) return;

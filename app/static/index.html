@@ -113,7 +113,7 @@
         <div class="chips" id="bt-filter"><button class="chip active" data-m="">All</button><button class="chip" data-m="paper">Paper</button><button class="chip" data-m="demo">Demo</button><button class="chip" data-m="real">Real</button></div>
       </div>
       <div class="stats" id="bt-stats"></div>
-      <div class="table-wrap"><table id="bt-table"><thead><tr><th>#</th><th>Mode</th><th>Opened (UTC)</th><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>P/L</th><th>R</th><th>Conf.</th></tr></thead><tbody></tbody></table></div>
+      <div class="table-wrap"><table id="bt-table"><thead><tr><th>#</th><th>Mode</th><th>Opened (UTC)</th><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>P/L</th><th>R</th><th>Score</th><th>Conf.</th></tr></thead><tbody></tbody></table></div>
     </div>
     <div class="panel">
       <div class="panel-head"><h3>Journal</h3><span class="muted small">every signal, skip, order and exit, saved to logs/</span></div>
@@ -188,6 +188,9 @@
         <label>"Small" stake is at or below (0 = minimum lot)<input name="small_stake" type="number" step="1" min="0"></label>
         <label>"Large" stake is at or above (0 = 100× minimum)<input name="large_stake" type="number" step="1" min="0"></label>
         <label>Training look-ahead (M1 bars)<input name="label_horizon" type="number" step="30" min="30"></label>
+        <label>Score penalty when a stop loss hits (×)<input name="sl_score_mult" type="number" step="0.1" min="1"></label>
+        <label class="check"><input type="checkbox" name="early_exit"> Let the bot close a trade before its stop when the model turns against it</label>
+        <p class="muted small span2">Score: each trade earns the % it made or lost on its stake (a full +200% target = +200 points). A stop-loss hit costs the penalty × its loss (−25% × 1.5 = −37.5). A trade the bot closes early only costs what it actually lost.</p>
         <p class="muted small span2">Stake is the margin the trade uses. If the stake is below the symbol's minimum lot, the minimum lot is used. Take profit eases from the small-stake % to the large-stake % as stakes grow. Retrain after changing the stop or take-profit rules so the model learns the new exits.</p>
       </fieldset>
       <fieldset><legend>Hermes</legend>

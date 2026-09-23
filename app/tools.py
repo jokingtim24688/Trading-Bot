@@ -79,7 +79,7 @@ def _bot_trades(limit: int = 10) -> dict:
     from .server import bot_trades_payload
     d = bot_trades_payload(limit)
     keep = ("id", "mode", "symbol", "side", "lots", "entry", "sl", "tp", "prob", "status", "open_utc", "exit",
-            "exit_reason", "pnl", "r_multiple", "close_utc", "price")
+            "exit_reason", "pnl", "r_multiple", "score", "close_utc", "price")
     return {"open": [{k: t.get(k) for k in keep} for t in d["open"]],
             "recent": [{k: t.get(k) for k in keep} for t in d["recent"] if t["status"] == "closed"][:limit],
             "stats": d["stats"]}

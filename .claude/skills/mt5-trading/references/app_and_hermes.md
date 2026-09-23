@@ -69,3 +69,9 @@ The bot keeps its own ledger in `data/trades.db` (`agent/ledger.py`). It covers 
 - Agent tab → *Each trade right now* shows balance, leverage, stake, lots, SL/TP in money and price, reward:risk, and the
   worst case if all open trades stop out (warns above 5% of balance or when the minimum lot is forced).
 - Real mode is locked by default: tick *Unlock Real mode* in Settings (per session), then confirm on Start.
+
+## Score system
+Each closed bot trade scores the % it gained or lost on its stake (full +200% target = +200 points). A stop-loss hit costs
+1.5× (−25% → −37.5); a trade the bot closes early (model turned against it), the kill switch, or a manual close costs only
+what it actually lost. Shown on the Agent tab (Score, Today's score, Avg points, Stops / early exits) and in close alerts.
+Early exit: opposite-side probability ≥ threshold and ≥ 2× the trade's own side. Toggle in Settings.
