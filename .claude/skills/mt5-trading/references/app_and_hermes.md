@@ -96,3 +96,10 @@ stake the trade would need at 1:100; lot size still from the real margin). At go
 - Market tab → Replay history: runs the bot over downloaded M1 history (model's unseen period or the most recent days) at
   1-600 candles/s with pause/stop. Trades are mode "replay": they feed stats and learning, not the Paper → Demo gate.
 - The Bot trade card and the Agent log show every candle's buy/sell confidence and decision (or skip reason).
+
+## Quiz school (Quiz tab)
+Builds 40+ questions from real gold history (pro setups that worked, plus stay-out spots), then trains a small
+reinforcement-learning agent whose only reward is points (+10 right, -10 wrong way, -5 trading when it should wait,
+-3 missing a good trade) until it answers every practice question right 5 times in a row. It then sits an exam of
+unseen questions; that score shows whether it learned the pattern or memorised answers. "What would you do now?" asks
+it about the live chart; Settings can make it a second opinion before the bot enters.

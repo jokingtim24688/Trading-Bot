@@ -24,6 +24,7 @@ function showTab(name) {
   if (name === "chat") { loadHistory(); loadFacts(); }
   if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); loadProgress(); }
   if (name === "train") pollTrainLog();
+  if (name === "quiz") loadQuiz();
 }
 $$(".rail-btn").forEach(b => b.onclick = () => showTab(b.dataset.tab));
 document.addEventListener("click", e => { const g = e.target.closest("[data-goto]"); if (g) showTab(g.dataset.goto); });
@@ -593,4 +594,82 @@ setInterval(() => state.tab === "dash" && state.replay.view && loadReplay(), 400
 setInterval(() => state.tab === "agent" && (pollAgentLog(), loadJournal()), 2000);
 setInterval(() => state.tab === "agent" && loadPlan(), 10000);
 setInterval(() => state.tab === "train" && pollTrainLog(), 1500);
+setInterval(() => state.tab === "quiz" && loadQuiz(), 400);
 setInterval(brainStatus, 15000);
+
+/* ---------- quiz school (reinforcement learning on pro setups) ---------- */
+const quiz = { chart: null, series: null, lastQ: null, lastAsked: -1, questions: [] };
+const ACT = { buy: "BUY", sell: "SELL", wait: "STAY OUT" };
+function quizChart() {
+  if (quiz.chart || !window.LightweightCharts) return;
+  quiz.chart = LightweightCharts.createChart($("#quiz-chart"), {
+    autoSize: true,
+    layout: { background: { color: "transparent" }, textColor: "#8c9098", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
+    grid: { vertLines: { color: "rgba(255,255,255,.035)" }, horzLines: { color: "rgba(255,255,255,.035)" } },
+    rightPriceScale: { borderColor: "#262c34" }, timeScale: { borderColor: "#262c34", timeVisible: true, secondsVisible: false },
+  });
+  quiz.series = quiz.chart.addCandlestickSeries({ upColor: "#3fb68b", downColor: "#e0574f", borderVisible: false, wickUpColor: "#3fb68b", wickDownColor: "#e0574f" });
+}
+function drawQuizBars(bars, after, trade) {
+  quizChart(); if (!quiz.series) return;
+  const faded = (after || []).map(b => ({ ...b, color: "rgba(140,144,152,.35)", wickColor: "rgba(140,144,152,.35)" }));
+  quiz.series.setData([...bars, ...faded]);
+  (quiz.lines || []).forEach(l => quiz.series.removePriceLine(l)); quiz.lines = [];
+  if (trade) quiz.lines = [["Entry", trade.entry, "#c9a24a"], ["Stop", trade.stop, "#e0574f"], ["Target", trade.target, "#3fb68b"]]
+    .map(([t, p, c]) => quiz.series.createPriceLine({ price: p, color: c, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: t }));
+  const now = bars[bars.length - 1];
+  quiz.series.setMarkers(now ? [{ time: now.time, position: "aboveBar", color: "#c9a24a", shape: "arrowDown", text: "now" }] : []);
+  quiz.chart.timeScale().fitContent();
+}
+function probBars(probs, pick) {
+  return `<div class="probs">${["buy", "sell", "wait"].map(a => `<span class="${a === pick ? "pick" : ""}">${a === "wait" ? "wait" : a}</span><div class="bar"><i style="width:${Math.round((probs?.[a] || 0) * 100)}%"></i></div><span class="num">${Math.round((probs?.[a] || 0) * 100)}%</span>`).join("")}</div>`;
+}
+async function loadQuiz() {
+  let r; try { r = await api("/api/quiz/state"); } catch (e) { return; }
+  const st = r.state || {}, qz = r.quiz, pol = r.policy;
+  quiz.questions = qz?.questions || [];
+  const sp = r.control?.speed ?? 20;
+  document.querySelectorAll("#quiz-speed button").forEach(b => b.classList.toggle("active", +b.dataset.speed === sp));
+  $("#quiz-status").textContent = r.job_running ? (st.round ? `round ${st.round} · running` : "working...") : st.done ? (st.stopped ? "stopped" : "finished") : qz ? `${qz.count} questions ready` : "no quiz yet";
+  const card = (l, v, c = "") => `<div class="stat"><span>${l}</span><strong class="${c}">${v}</strong></div>`;
+  const P = st.points ?? pol?.points;
+  $("#quiz-stats").innerHTML = card("Points (reward)", P != null ? `${P >= 0 ? "+" : ""}${Number(P).toLocaleString()}` : "–", cls(P || 0))
+    + card("Mastered", st.practice ? `${st.mastered}/${st.practice}` : pol ? `${pol.mastered}/${pol.practice}` : "–")
+    + card("Round", st.round ?? pol?.rounds ?? "–") + card("Answers", (st.asked ?? pol?.asked ?? 0).toLocaleString());
+  const streaks = st.streaks || [], need = st.mastery || 5, curId = st.question?.id;
+  $("#quiz-mastery").innerHTML = streaks.length ? streaks.map(q => `<div class="mq ${q.streak >= need ? "done" : ""} ${q.id === curId ? "now" : ""}" title="Q${q.id}: ${q.right}/${q.asked} right, best streak ${q.best}">Q${q.id}<div class="dots">${Array.from({ length: need }, (_, k) => `<i class="${k < Math.min(q.streak, need) ? "on" : ""}"></i>`).join("")}</div></div>`).join("")
+    : `<p class="muted small">Starts when the quiz runs.</p>`;
+  const ex = st.exam || pol?.exam;
+  $("#quiz-exam").innerHTML = ex ? `<h4 class="quiz-h">${st.exam ? "Exam" : "Last exam"}: questions it never trained on</h4>
+    <p class="small" style="margin:0 0 6px"><b>${ex.right}/${ex.total} right (${ex.pct}%)</b> · ${ex.points >= 0 ? "+" : ""}${ex.points} points · guessing would get about 33%.
+    ${ex.pct >= 60 ? "It picked up the pattern, not just the answers." : ex.pct >= 45 ? "Some of it carried over to new situations." : "It memorised the practice answers more than it learned the pattern. More questions help (build 60 or 100)."}</p>` : "";
+  const byId = Object.fromEntries(streaks.map(q => [q.id, q]));
+  $("#quiz-table tbody").innerHTML = quiz.questions.map(q => `<tr><td>${q.id}</td><td>${q.set}</td><td>${q.time.slice(0, 16)}</td><td>${q.setup_name}</td><td>${ACT[q.answer]}</td><td>${byId[q.id] ? `${byId[q.id].streak}` : ""}</td><td>${byId[q.id] ? `${byId[q.id].right}/${byId[q.id].asked}` : ""}</td></tr>`).join("")
+    || `<tr><td colspan="7" class="muted">No quiz yet. Click Build quiz (needs downloaded history: Train tab).</td></tr>`;
+  const q = st.question, a = st.agent;
+  if (q && a && st.asked !== quiz.lastAsked) {
+    quiz.lastAsked = st.asked;
+    $("#quiz-q-title").textContent = `Question ${q.id}`;
+    $("#quiz-q-meta").textContent = `${q.time.slice(0, 16)} server time · ${q.setup_name}`;
+    drawQuizBars(q.bars, q.after, q.trade);
+    const ok = a.correct;
+    $("#quiz-answer").innerHTML = `<p class="small" style="margin:0 0 6px">Agent's answer: <b>${ACT[a.action]}</b></p>${probBars(a.probs, a.action)}
+      <p class="quiz-verdict ${ok ? "up" : "down"}">${ok ? "✓ Right" : "✗ " + a.verdict[0].toUpperCase() + a.verdict.slice(1)} · ${a.points >= 0 ? "+" : ""}${a.points} points${ok ? " · reward!" : ""}</p>
+      <p class="small" style="margin:0"><b>Pro answer: ${ACT[q.answer]}.</b> <span class="muted">${q.explanation}</span></p>`;
+  }
+  if (!q && !st.done && quiz.questions.length && !r.job_running) {
+    $("#quiz-answer").innerHTML = `<p class="empty">${quiz.questions.length} questions ready. Click Start quiz.</p>`;
+  }
+}
+$("#quiz-build").onclick = async () => { try { await api("/api/quiz/build", { method: "POST", body: { questions: +$("#quiz-n").value } }); toast("Finding pro setups in your history..."); } catch (e) { toast(e.message, true); } };
+$("#quiz-start").onclick = async () => { try { await api("/api/quiz/train", { method: "POST", body: {} }); quiz.lastAsked = -1; toast("Quiz started. Points are its reward."); } catch (e) { toast(e.message, true); } };
+$("#quiz-stop").onclick = () => api("/api/quiz/control", { method: "POST", body: { stop: true } });
+document.querySelectorAll("#quiz-speed button").forEach(b => b.onclick = () => api("/api/quiz/control", { method: "POST", body: { speed: +b.dataset.speed } }).then(loadQuiz));
+$("#quiz-ask").onclick = async () => {
+  $("#quiz-live").textContent = "Asking...";
+  try {
+    const r = await api("/api/quiz/ask", { method: "POST" });
+    $("#quiz-live").innerHTML = `<p class="small" style="margin:0 0 6px">At ${fmt(r.price, state.digits)}: the quiz agent would <b>${ACT[r.action]}</b>.</p>${probBars(r.probs, r.action)}
+      ${r.setups.length ? `<div class="setups"><span class="muted small">Pro read:</span>${r.setups.map(x => `<span class="setup-chip">${x}</span>`).join("")}</div>` : `<p class="muted small" style="margin:6px 0 0">No pro setup on the current candle.</p>`}`;
+  } catch (e) { $("#quiz-live").textContent = e.message; }
+};

@@ -24,6 +24,7 @@
   <button class="rail-btn active" data-tab="dash" title="Dashboard"><svg viewBox="0 0 24 24"><path d="M3 20h18M5 16l4-5 4 3 6-8"/></svg><span>Market</span></button>
   <button class="rail-btn" data-tab="agent" title="Agent"><svg viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="11" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9 15.5h6"/></svg><span>Agent</span></button>
   <button class="rail-btn" data-tab="train" title="Train"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-3 3 2 5-6"/><circle cx="19" cy="8" r="1.5"/></svg><span>Train</span></button>
+  <button class="rail-btn" data-tab="quiz" title="Quiz school"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.5.2-.8.6-.8 1.1v.5M12 16.5h.01"/></svg><span>Quiz</span></button>
   <button class="rail-btn" data-tab="chat" title="Assistant"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Hermes</span></button>
   <button class="rail-btn" data-tab="settings" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Settings</span></button>
 </nav>
@@ -164,6 +165,45 @@
     </div>
   </section>
 
+  <!-- QUIZ SCHOOL -->
+  <section id="tab-quiz" class="tab">
+    <div class="quiz-grid">
+      <div class="panel">
+        <div class="panel-head"><h3>Quiz school</h3><span id="quiz-status" class="muted small"></span></div>
+        <p class="muted small" style="margin:4px 0 10px">The agent is shown real gold charts at moments where a professional setup worked (or where pros would stay out) and asked <b>what do you do?</b> Points are its reward and its only goal: right <b class="up">+10</b>, wrong way <b class="down">&minus;10</b>, traded when it should wait <b class="down">&minus;5</b>, missed a good trade <b class="down">&minus;3</b>. It keeps going until it gets every question right 5 times in a row, then sits an exam of questions it has never seen.</p>
+        <div class="row-inline">
+          <select id="quiz-n"><option value="40" selected>40 questions (30 + 10 exam)</option><option value="60">60 questions</option><option value="100">100 questions</option></select>
+          <button id="quiz-build" class="btn">Build quiz</button>
+          <button id="quiz-start" class="btn primary">Start quiz</button>
+          <button id="quiz-stop" class="btn">Stop</button>
+        </div>
+        <div class="chips rp-presets" id="quiz-speed"><span class="muted small">Speed</span>
+          <button class="chip" data-speed="1">1/s</button><button class="chip" data-speed="5">5/s</button>
+          <button class="chip" data-speed="20">20/s</button><button class="chip" data-speed="100">100/s</button><button class="chip" data-speed="0">Max</button></div>
+        <div class="stats" id="quiz-stats"></div>
+        <h4 class="quiz-h">Mastery <span class="muted small">(each box = a practice question; dots = right in a row)</span></h4>
+        <div id="quiz-mastery" class="mastery"></div>
+        <div id="quiz-exam"></div>
+      </div>
+      <div>
+        <div class="panel">
+          <div class="panel-head"><h3 id="quiz-q-title">Question</h3><span id="quiz-q-meta" class="muted small"></span></div>
+          <p class="quiz-prompt">What do you do in this situation?</p>
+          <div id="quiz-chart" class="quiz-chart"></div>
+          <div id="quiz-answer" class="quiz-answer"><p class="empty">Build the quiz from your downloaded history, then start it.</p></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Ask it about the live market</h3><button id="quiz-ask" class="btn xs">What would you do now?</button></div>
+          <div id="quiz-live" class="muted small">Shows the quiz agent the current XAUUSD M1 chart from MT5 and asks what it would do.</div>
+        </div>
+        <div class="panel">
+          <h3>Questions</h3>
+          <div class="table-wrap"><table id="quiz-table"><thead><tr><th>#</th><th>Set</th><th>When</th><th>Setup</th><th>Answer</th><th>Streak</th><th>Right</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- HERMES -->
   <section id="tab-chat" class="tab">
     <div class="chat-grid">
@@ -204,6 +244,7 @@
         <label class="check"><input type="checkbox" name="practice"> Practice mode: on Paper and Replay, trade the model's top-10% setups instead of the confidence threshold</label>
         <label class="check"><input type="checkbox" name="auto_promote_demo"> Move from Paper to Demo automatically when the Paper gate is passed</label>
         <label class="check"><input type="checkbox" name="use_learned"> Apply the rules the bot learned from its own trades</label>
+        <label class="check"><input type="checkbox" name="quiz_filter"> Second opinion from the quiz agent: only enter when it picks the same side (Quiz tab)</label>
       </fieldset>
       <fieldset><legend>Bot money rules</legend>
         <label>Stake per trade (% of balance)<input name="stake_pct" type="number" step="0.01" min="0.01"></label>

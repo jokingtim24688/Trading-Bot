@@ -170,3 +170,19 @@
   pythonw.exe (no console) and exits, so the window closes once the app opens. CRLF line endings.
 - `app/main.py`: under pythonw, output goes to logs/app.log; a startup error shows a Windows message box with the log path.
 - Background jobs already run hidden (CREATE_NO_WINDOW).
+
+## 2026-09-23: Quiz school (reinforcement learning on pro setups)
+- `agent/quiz.py build`: finds questions in real downloaded XAUUSD M1 history (no public record of individual pro
+  trades exists, so: moments where a pro setup from agent/pro.py appeared AND a pro-style trade (stop beyond the sweep
+  wick or 1.5 ATR, target 2R, 4h) hit its target -> answer buy/sell; plus clean no-trade spots where both sides failed
+  -> answer "stay out"). One question per day, round-robin over 10 setup types; 40 by default = 30 practice + 10 exam.
+  Each stores the chart (90 candles + the 60 after, revealed), the inputs, and a pro explanation with entry/stop/target.
+- `agent/quiz.py train`: softmax policy over buy/sell/wait trained with REINFORCE + baseline; reward = points
+  (+10 right, -10 wrong way, -5 traded when it should wait, -3 missed a good trade); points are its only objective.
+  Answers are sampled, runs until every practice question is right 5 times in a row, then a greedy exam on unseen
+  questions. Saved to models/quiz_policy.json. Synthetic test: 30/30 mastered in 92 rounds, exam 6/10 (chance ~33%).
+- App: Quiz tab (build, start/stop, speed 1/5/20/100/Max, points/mastered/round, mastery grid with 5 dots per question,
+  chart with entry/stop/target and the outcome faded in, agent's answer + probabilities + points + pro answer, exam
+  result, question table), "What would you do now?" on the live MT5 chart, Settings: quiz agent second opinion
+  (`--quiz-filter` in agent and replay: only enter when the quiz agent picks the same side).
+- Note: the policy gets very confident (e.g. 99%) after mastering; the exam score is the honest measure.

@@ -14,3 +14,5 @@
   threshold; "no signal" renamed "waiting for a strong setup" with a reason.
 - Replay bar: period optgroups (unseen / recent / everything), speed presets incl. 2000/s and Max, ETA; smooth chart via
   `rpAnim` queue + requestAnimationFrame (`queueReplayBars`, `replayFrame`), poll 400 ms.
+- Quiz tab: /api/quiz/build, /api/quiz/train, /api/quiz/control, /api/quiz/state, /api/quiz/ask (live MT5 chart ->
+  quiz agent answer); job "quiz"; setting `quiz_filter`.

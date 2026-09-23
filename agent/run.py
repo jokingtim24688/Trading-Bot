@@ -41,6 +41,7 @@ def main():
     ap.add_argument("--ref-leverage", type=float, default=None, help="size stop/target as if leverage were 1:N (0 = real)")
     ap.add_argument("--no-early-exit", action="store_true", help="always hold trades until SL or TP")
     ap.add_argument("--no-learned", action="store_true", help="ignore the bot's learned rules (data/learned_rules.json)")
+    ap.add_argument("--quiz-filter", action="store_true", help="only enter when the quiz agent picks the same side")
     ap.add_argument("--practice", action="store_true", help="paper only: trade the model's top 10%% setups instead of the threshold")
     ap.add_argument("--sl-score-mult", type=float, default=None, help="score penalty multiplier when a stop loss hits (default 1.5)")
     ap.add_argument("--terminal", default=None, help="path to terminal64.exe (optional)")
@@ -85,6 +86,11 @@ def main():
 
     status_path = Path(cfg.log_dir).parent / "data" / "agent_status.json"
     probs = {"buy": None, "sell": None, "need": None, "setups": []}
+    quiz_pol = None
+    if args.quiz_filter:
+        from .quiz import load_policy
+        quiz_pol = load_policy()
+        print("quiz agent second opinion: " + ("on" if quiz_pol else "off (no trained quiz agent yet)"))
     practice = Practice() if args.practice and mode == "paper" else None
     if practice:
         print("practice mode: trading the model's top 10% setups (paper only)")
@@ -180,6 +186,12 @@ def main():
             if side is None:
                 say(bar_time, "waiting for a strong setup", "no side reached the needed confidence on this candle")
                 continue
+
+            if quiz_pol is not None:
+                qa = quiz_pol.answer_row(row.iloc[0].to_dict())
+                if qa["action"] != side:
+                    say(bar_time, f"skipped {side}", f"quiz agent says {qa['action']}")
+                    continue
 
             if not args.no_learned:
                 why = learn.block_reason(learn.load_rules(), "buy" if side == "buy" else "sell", float(prob),

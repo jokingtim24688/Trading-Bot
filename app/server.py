@@ -172,6 +172,8 @@ def agent_args(s: dict, mode: str, max_open: int | None = None) -> list[str]:
         args.append("--no-early-exit")
     if not s.get("use_learned", True):
         args.append("--no-learned")
+    if s.get("quiz_filter"):
+        args.append("--quiz-filter")
     if s.get("practice", True) and mode == "paper":
         args.append("--practice")
     if s.get("terminal_path"):
@@ -336,6 +338,8 @@ def replay_start(body: dict = Body(default={})):
         args.append("--no-early-exit")
     if not s.get("use_learned", True):
         args.append("--no-learned")
+    if s.get("quiz_filter"):
+        args.append("--quiz-filter")
     if body.get("fresh"):
         args.append("--fresh")
     REPLAY_STATE.unlink(missing_ok=True)
@@ -396,6 +400,87 @@ def fetch():
     except RuntimeError as e:
         raise HTTPException(409, str(e))
     return jobs.status()["fetch"]
+
+
+# ---------- quiz school: reinforcement learning on real pro setups ----------
+QUIZ_DIR = ROOT / "data"
+
+
+@app.post("/api/quiz/build")
+def quiz_build(body: dict = Body(default={})):
+    s = settings.load()
+    n = max(34, min(200, int(body.get("questions", 40))))
+    try:
+        jobs.start("quiz", ["-m", "agent.quiz", "build", "--symbol", s["symbol"], "--questions", str(n), "--point", str(s["point"])])
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    return {"started": True}
+
+
+@app.post("/api/quiz/train")
+def quiz_train(body: dict = Body(default={})):
+    s = settings.load()
+    if not (QUIZ_DIR / "quiz.json").exists():
+        raise HTTPException(400, "Build the quiz first.")
+    speed = body.get("speed", s.get("quiz_speed", 20))
+    (QUIZ_DIR / "quiz_control.json").write_text(json.dumps({"speed": speed, "stop": False}))
+    (QUIZ_DIR / "quiz_state.json").unlink(missing_ok=True)
+    try:
+        jobs.start("quiz", ["-m", "agent.quiz", "train"])
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    return {"started": True}
+
+
+@app.post("/api/quiz/control")
+def quiz_control(body: dict = Body(default={})):
+    p = QUIZ_DIR / "quiz_control.json"
+    try:
+        ctl = json.loads(p.read_text())
+    except (OSError, ValueError):
+        ctl = {"speed": 20, "stop": False}
+    ctl.update({k: v for k, v in body.items() if k in ("speed", "stop")})
+    p.parent.mkdir(exist_ok=True)
+    p.write_text(json.dumps(ctl))
+    if "speed" in body:
+        settings.save({"quiz_speed": body["speed"]})
+    return ctl
+
+
+@app.get("/api/quiz/state")
+def quiz_state():
+    from agent import quiz as q
+    st = q._load_json(q.STATE, {})
+    qz = q._load_json(q.QUIZ, None)
+    pol = q.load_policy()
+    return {"state": st, "control": q.read_control(), "job_running": jobs.jobs["quiz"].running,
+            "quiz": None if not qz else {"built": qz["built"], "count": len(qz["questions"]), "points": qz["points"],
+                                         "questions": [{k: x[k] for k in ("id", "time", "setup_name", "answer", "set", "explanation")}
+                                                       for x in qz["questions"]]},
+            "policy": pol.meta if pol else None}
+
+
+@app.post("/api/quiz/ask")
+def quiz_ask():
+    """Show the quiz agent the live market and ask what it would do."""
+    import pandas as pd
+    from agent import quiz as q
+    from agent.features import build_features
+    from agent.pro import SETUP_NAMES, active_setups
+    pol = q.load_policy()
+    if not pol:
+        raise HTTPException(400, "Train the quiz agent first.")
+    s = settings.load()
+    d = mt5_service.m1_bars(s["symbol"], 4000)
+    df = pd.DataFrame(d["bars"])
+    if len(df) < 300:
+        raise HTTPException(400, "Not enough M1 candles from MT5 yet.")
+    df.index = pd.to_datetime(df["time"], unit="s", utc=True)
+    df = df.rename(columns={"volume": "tick_volume"})
+    row = build_features(df, d["point"]).iloc[-1].to_dict()
+    ans = pol.answer_row(row)
+    return {**ans, "setups": [SETUP_NAMES[k] for k in active_setups(row)], "bar_time": int(df["time"].iloc[-1]),
+            "price": d["bid"], "bars": d["bars"][-90:]}
 
 
 @app.post("/api/history/download")

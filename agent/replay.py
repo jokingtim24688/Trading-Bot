@@ -72,6 +72,7 @@ def main():
     ap.add_argument("--volume-step", type=float, default=0.01)
     ap.add_argument("--no-early-exit", action="store_true")
     ap.add_argument("--no-learned", action="store_true")
+    ap.add_argument("--quiz-filter", action="store_true", help="only enter when the quiz agent picks the same side")
     ap.add_argument("--sl-score-mult", type=float, default=None)
     ap.add_argument("--fresh", action="store_true", help="clear previous replay trades first")
     ap.add_argument("--strict-filters", action="store_true",
@@ -165,6 +166,10 @@ def main():
             "open": broker.open_count(), "max_open": m.max_open_trades, "balance": round(broker.account_balance(), 2),
             "rate": round(pace["rate"]), "skips": [[k, n] for k, n in skips.most_common(4)], "opened": stats["opened"], "stats": ledger.stats("replay"), "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}))
 
+    quiz_pol = None
+    if args.quiz_filter:
+        from .quiz import load_policy
+        quiz_pol = load_policy()
     rules = learn.load_rules()                         # fixed for the run: reading files per candle limits max speed
     ctl, ctl_read = read_control(), time.time()
     i = i0
@@ -217,7 +222,11 @@ def main():
                     price = C[i] + SP[i] if side == "buy" else C[i]
                     plan = stake_plan(broker.account_balance(), price * (spec.tick_value / spec.tick_size) * args.margin_rate,
                                       spec, m, price)
-                    if why:
+                    qa = quiz_pol.answer_row(feats.iloc[i].to_dict()) if quiz_pol is not None else None
+                    if qa and qa["action"] != side:
+                        decision, reason = f"skipped {side}", f"quiz agent says {qa['action']}"
+                        skips["quiz agent disagreed"] += 1
+                    elif why:
                         decision, reason = f"skipped {side}", why
                         skips["learned rule"] += 1
                     elif not okg:
