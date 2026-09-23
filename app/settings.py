@@ -20,6 +20,7 @@ DEFAULTS = {
     "tp_pct_large": 50.0,                  # ...easing to +50% for large stakes
     "small_stake": 0.0,                    # 0 = auto: the minimum lot's stake gets tp_pct_small
     "large_stake": 0.0,                    # 0 = auto: 100x minimum (1.00 lot on XAUUSD) gets tp_pct_large
+    "ref_leverage": 100,                   # stop/target distances as if leverage were 1:100 (0 = broker's real)
     "max_open_trades": 10,                  # bot trades open at the same time (not a per-session total)
     "early_exit": True,
     "auto_promote_demo": True,             # move Paper -> Demo by itself once the Paper gate is passed

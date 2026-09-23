@@ -35,6 +35,7 @@ def main():
     ap.add_argument("--small-stake", type=float, default=None, help="stake (account currency) at/below which --tp-small applies")
     ap.add_argument("--large-stake", type=float, default=None, help="stake at/above which --tp-large applies")
     ap.add_argument("--max-open", type=int, default=None, help="max bot trades open at once (default 10)")
+    ap.add_argument("--ref-leverage", type=float, default=None, help="size stop/target as if leverage were 1:N (0 = real)")
     ap.add_argument("--no-early-exit", action="store_true", help="always hold trades until SL or TP")
     ap.add_argument("--no-learned", action="store_true", help="ignore the bot's learned rules (data/learned_rules.json)")
     ap.add_argument("--sl-score-mult", type=float, default=None, help="score penalty multiplier when a stop loss hits (default 1.5)")
@@ -48,7 +49,7 @@ def main():
     m = cfg.money
     for arg, attr in (("stake_pct", "stake_pct_of_balance"), ("sl_pct", "sl_pct_of_stake"), ("tp_small", "tp_pct_small_stake"),
                       ("tp_large", "tp_pct_large_stake"), ("small_stake", "small_stake"), ("large_stake", "large_stake"),
-                      ("max_open", "max_open_trades")):
+                      ("max_open", "max_open_trades"), ("ref_leverage", "ref_leverage")):
         if getattr(args, arg) is not None:
             setattr(m, attr, getattr(args, arg))
     if args.no_early_exit:
@@ -156,7 +157,7 @@ def main():
 
             t = data.tick()
             price = t.ask if side == "buy" else t.bid
-            plan = stake_plan(broker.account_balance(), data.margin_per_lot(side, price), spec, m)
+            plan = stake_plan(broker.account_balance(), data.margin_per_lot(side, price), spec, m, price)
             if plan is None:
                 journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side, note="no margin data")
                 continue

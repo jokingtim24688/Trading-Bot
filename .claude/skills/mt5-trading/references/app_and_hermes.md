@@ -83,3 +83,6 @@ Real·2 100 / 10 / +50 / 1.2 / 3%; Real·5 150 / 10 / +100 / 1.2 / 3%. Paper →
 need the user to type REAL; breaching a stage's drawdown drops the bot back one stage. The Start button uses the current stage.
 The bot writes lessons to the `m1-bot-lessons` skill and `data/learned_rules.json` and applies them as entry filters
 (skip losing UTC hours, minimum confidence, disable a losing side) unless turned off in Settings.
+
+Note: the user's broker gives 1:20 on gold, so exits are sized with `ref_leverage` = 100 (stop/target measured against the
+stake the trade would need at 1:100; lot size still from the real margin). At gold ~$4,450 on 0.01 lot: stop ~$11, target ~$89.

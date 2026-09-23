@@ -182,6 +182,7 @@
       <fieldset><legend>Bot money rules</legend>
         <label>Stake per trade (% of balance)<input name="stake_pct" type="number" step="0.01" min="0.01"></label>
         <label>Max bot trades open at once<input name="max_open_trades" type="number" min="1" max="200"></label>
+        <label>Size stop/target as if leverage were 1:<input name="ref_leverage" type="number" step="10" min="0"></label>
         <label>Stop loss (% of stake lost)<input name="sl_pct_of_stake" type="number" step="1" min="1"></label>
         <label>Paper account balance<input name="paper_balance" type="number" step="100"></label>
         <label>Take profit on small stakes (% of stake)<input name="tp_pct_small" type="number" step="5"></label>

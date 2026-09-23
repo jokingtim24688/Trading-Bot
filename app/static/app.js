@@ -362,7 +362,7 @@ async function loadPlan() {
   const c = p.currency || "", d = p.digits ?? 2, money = v => `${fmt(v)} ${c}`;
   const cell = (label, val, wide) => `<div class="${wide ? "wide" : ""}"><span>${label}</span><strong>${val}</strong></div>`;
   box.innerHTML = `<h3>Each ${p.symbol} trade right now (${p.mode})</h3><div class="plan-grid">
-    ${cell("Balance", money(p.balance))}${cell("Leverage", `1:${p.leverage}`)}
+    ${cell("Balance", money(p.balance))}${cell("Leverage", p.ref_leverage ? `1:${p.leverage} real · exits at 1:${p.ref_leverage}` : `1:${p.leverage}`)}
     ${cell("Stake (margin)", money(p.stake))}${cell("Lots", p.lots)}
     ${cell(`Stop: −${p.sl_pct}% of stake`, `−${money(p.sl_money)}<small>${Number(p.sl_dist).toFixed(d)} from entry</small>`)}
     ${cell(`Target: +${p.tp_pct}% of stake`, `+${money(p.tp_money)}<small>${Number(p.tp_dist).toFixed(d)} from entry</small>`)}

@@ -158,7 +158,7 @@ def agent_args(s: dict, mode: str, max_open: int | None = None) -> list[str]:
             "--tp-small", str(s["tp_pct_small"]), "--tp-large", str(s["tp_pct_large"]),
             "--small-stake", str(s["small_stake"]), "--large-stake", str(s["large_stake"]),
             "--max-open", str(int(max_open or s["max_open_trades"])), "--paper-equity", str(s["paper_balance"]),
-            "--sl-score-mult", str(s["sl_score_mult"])]
+            "--sl-score-mult", str(s["sl_score_mult"]), "--ref-leverage", str(s.get("ref_leverage", 100))]
     if not s.get("early_exit", True):
         args.append("--no-early-exit")
     if not s.get("use_learned", True):
@@ -319,7 +319,8 @@ def train():
             "--sl-pct", str(s["sl_pct_of_stake"]), "--horizon", str(int(s["label_horizon"]))]
     try:   # label with the same exits the bot will trade: needs this account's margin rate and current TP %
         p = mt5_service.trade_plan(s["symbol"], "paper", s)
-        args += ["--margin-rate", f"{p['margin_rate']:.8f}", "--tp-pct", str(p["tp_pct"])]
+        rate = 1 / float(s["ref_leverage"]) if s.get("ref_leverage") else p["margin_rate"]
+        args += ["--margin-rate", f"{rate:.8f}", "--tp-pct", str(p["tp_pct"])]
     except mt5_service.MT5Unavailable:
         raise HTTPException(400, "Open MT5 first: training uses your account's margin to set the 25% stop / TP distances.")
     try:

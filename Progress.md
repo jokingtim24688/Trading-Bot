@@ -95,3 +95,10 @@
   Settings toggles (auto Paper→Demo, apply learned rules). Start uses the earned stage. Hermes tool `bot_progress`.
 - Tested end to end with simulated trades: auto promotion, learned 21:00 UTC block, REAL gate, max-open 2 at Real·2,
   drawdown demotion back to Demo.
+
+## 2026-09-23: First run on the user's PC
+- App launched on Windows; connected to a demo account (~$108,986); M1 history fetched.
+- Fixed: training crashed with UnicodeEncodeError (cp1252 console) -> jobs now run with PYTHONIOENCODING/PYTHONUTF8=utf-8.
+- Found: broker leverage on gold is 1:20 (margin rate 0.05), which made stake-based exits ~$55 stop / ~$445 target.
+  User chose to size exits as if leverage were 1:100 (`ref_leverage`, Settings): stop ~$11, target ~$89 on 0.01 lot;
+  lot size still from the real margin. Training labels use margin rate 1/ref_leverage.

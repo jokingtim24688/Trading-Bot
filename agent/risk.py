@@ -40,7 +40,8 @@ def tp_pct_for_stake(stake: float, m: MoneyConfig, small: float, large: float) -
     return m.tp_pct_small_stake + f * (m.tp_pct_large_stake - m.tp_pct_small_stake)
 
 
-def stake_plan(balance: float, margin_per_lot: float, spec: SymbolSpec, m: MoneyConfig) -> dict | None:
+def stake_plan(balance: float, margin_per_lot: float, spec: SymbolSpec, m: MoneyConfig,
+               price: float | None = None) -> dict | None:
     """Lots, stake and exit distances for one trade under the stake rules. Price distances don't depend on side.
 
     Returns None if the symbol data is unusable. `forced_min` means 0.1% of balance was below the minimum lot,
@@ -55,14 +56,20 @@ def stake_plan(balance: float, margin_per_lot: float, spec: SymbolSpec, m: Money
     decimals = max(0, -int(math.floor(math.log10(spec.volume_step)))) if spec.volume_step < 1 else 0
     lots = round(lots, decimals)
     stake = lots * margin_per_lot
-    min_stake = spec.volume_min * margin_per_lot
+    # exits are measured against the stake the trade would need at the reference leverage (default 1:100)
+    exit_mpl = margin_per_lot
+    if m.ref_leverage and price:
+        exit_mpl = price * (spec.tick_value / spec.tick_size) / m.ref_leverage
+    exit_stake = lots * exit_mpl
+    min_stake = spec.volume_min * exit_mpl
     small = m.small_stake or min_stake
     large = m.large_stake or 100 * min_stake
-    tp_pct = tp_pct_for_stake(stake, m, small, large)
+    tp_pct = tp_pct_for_stake(exit_stake, m, small, large)
     money_per_price = lots * spec.tick_value / spec.tick_size        # P/L for a 1.0 move in price
-    sl_money = stake * m.sl_pct_of_stake / 100.0
-    tp_money = stake * tp_pct / 100.0
+    sl_money = exit_stake * m.sl_pct_of_stake / 100.0
+    tp_money = exit_stake * tp_pct / 100.0
     return {"lots": lots, "stake": round(stake, 2), "stake_target": round(target, 2), "forced_min": forced_min,
+            "exit_stake": round(exit_stake, 2), "ref_leverage": m.ref_leverage or None,
             "sl_pct": m.sl_pct_of_stake, "tp_pct": round(tp_pct, 1),
             "sl_money": round(sl_money, 2), "tp_money": round(tp_money, 2),
             "sl_dist": sl_money / money_per_price, "tp_dist": tp_money / money_per_price,

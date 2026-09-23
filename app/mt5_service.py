@@ -179,8 +179,9 @@ def trade_plan(symbol: str, mode: str, s: dict) -> dict:
                       volume_step=sp["volume_step"], volume_max=sp["volume_max"], stops_level_points=sp["stops_level"])
     money = MoneyConfig(stake_pct_of_balance=s["stake_pct"], sl_pct_of_stake=s["sl_pct_of_stake"],
                         tp_pct_small_stake=s["tp_pct_small"], tp_pct_large_stake=s["tp_pct_large"],
-                        small_stake=s["small_stake"], large_stake=s["large_stake"], max_open_trades=int(s["max_open_trades"]))
-    plan = stake_plan(balance, mp["margin_per_lot"], spec, money) or {}
+                        small_stake=s["small_stake"], large_stake=s["large_stake"], max_open_trades=int(s["max_open_trades"]),
+                        ref_leverage=float(s.get("ref_leverage", 100) or 0))
+    plan = stake_plan(balance, mp["margin_per_lot"], spec, money, mp["price"]) or {}
     plan.update(balance=round(balance, 2), currency=acct["currency"], leverage=acct["leverage"], mode=mode, symbol=symbol,
                 margin_per_lot=round(mp["margin_per_lot"], 2), margin_rate=mp["margin_rate"], digits=sp["digits"],
                 spread_px=sp["spread"] * sp["point"], volume_min=sp["volume_min"],
