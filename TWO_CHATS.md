@@ -28,8 +28,8 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: idle. Last (2026-09-24): chart auto-align + lazy history, P/L calendar, Train dropdowns, copy-only Weak spots,
-animations, empty states, Hermes set-up UI. Next: waiting for the user to pick from 3 design proposals.
+Status: working on it (2026-09-24): building the 3 approved designs (Market top bar + session bands, Agent control
+bar + leaderboard + log drawer, Settings menu + save bar), the Manual tab UI, and your Quiz bank handoff.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -94,6 +94,33 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
+- 2026-09-24, from the user: **build the backend for the new Manual tab** (UI done by Chat B: `#tab-manual` in
+  `index.html`, "manual trading" block in `app.js`). The user wants everything the MT5 mobile app does: one-click
+  trading, market and pending orders, SL/TP edits, close all / all profitable / all losing, and so on. Today the tab
+  already works for watching prices (`/api/bars`) and closing (`POST /api/positions/{ticket}/close`, looped for
+  bulk closes). Everything else switches on by itself once these answer (a 404 on `/api/manual/quote` means "not
+  built yet"). Suggested shapes (change them if you must, then note it here):
+  - `GET /api/manual/quote?symbol=` → `{symbol, bid, ask, digits, point, volume_min, volume_max, volume_step,
+    tick_value, tick_size, contract_size, stops_level, trade_allowed, day_high, day_low}` (the UI shows money at
+    risk from `tick_value`/`tick_size`, and steps lots by `volume_step`).
+  - `GET /api/manual/quotes?symbols=A,B,C` → `[{symbol, bid, ask, digits, point}]` for the Quotes list.
+  - `POST /api/manual/order {symbol, side: "buy"|"sell", type: "market"|"limit"|"stop", volume, price?, sl?, tp?,
+    deviation?, expiration?: "gtc"|"today", confirm_real?: true}` → `{ok, retcode, comment, ticket, price}`.
+    Pending = buy/sell limit/stop at `price`. Please refuse a real account unless `confirm_real` is true (the UI sends
+    it only after the user confirmed), check SL/TP are on the right side and outside `stops_level`, clamp volume to
+    the symbol's limits, and use a magic of your choice so these show as "you" (or add an owner like "manual").
+  - `POST /api/manual/close {tickets?: [..], volume?, filter?: "all"|"profit"|"loss"|"buys"|"sells", owner?:
+    "any"|"you"|"bot"|"hermes", symbol?}` → `{closed: [{ticket, profit}], failed: [{ticket, comment}]}`. `volume`
+    with one ticket = partial close (the ½ button). Bot positions closed here should land in the ledger as manual
+    closes (your `sync_ledger` probably already does this).
+  - `POST /api/manual/modify {ticket, sl, tp}` (0 = remove) → `{ok, retcode, comment}`; the BE button sends sl = open.
+  - `GET /api/manual/orders` → `[{ticket, symbol, type: "buy_limit"|"sell_limit"|"buy_stop"|"sell_stop", volume,
+    price, sl, tp, time_setup}]`; `POST /api/manual/orders/cancel {tickets?: [..], all?: true}` →
+    `{cancelled: [..], failed: [..]}`.
+  - `GET /api/manual/history?days=1` → `[{time, symbol, side, volume, open, close, profit, owner}]` (today's closed
+    deals, newest first).
+  - Nice to have: `mt5_service.account()` already gives balance/equity/margin/free margin/level, which the tab shows.
+
 - 2026-09-24, from the user: **make the model learn from each mistake.** Today `agent/learn.py` only writes lessons
   after 50 closed trades and every 50 after that. The user wants every losing trade (stop hit, wrong way, losing early
   exit) to teach it something right away. Ideas, yours to choose: update the lessons on every losing close; turn each
