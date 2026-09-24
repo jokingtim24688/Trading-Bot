@@ -24,6 +24,7 @@
     </svg>
   </div>
   <button class="rail-btn active" data-tab="dash" title="Dashboard"><svg viewBox="0 0 24 24"><path d="M3 20h18M5 16l4-5 4 3 6-8"/></svg><span>Market</span></button>
+  <button class="rail-btn" data-tab="manual" title="Trade by hand"><svg viewBox="0 0 24 24"><path d="M7 17V7M7 7l-3 3M7 7l3 3M17 7v10M17 17l-3-3M17 17l3-3"/></svg><span>Manual</span></button>
   <button class="rail-btn" data-tab="agent" title="Agent"><svg viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="11" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9 15.5h6"/></svg><span>Agent</span></button>
   <button class="rail-btn" data-tab="train" title="Train"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-3 3 2 5-6"/><circle cx="19" cy="8" r="1.5"/></svg><span>Train</span></button>
   <button class="rail-btn" data-tab="quiz" title="Quiz school"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.5.2-.8.6-.8 1.1v.5M12 16.5h.01"/></svg><span>Quiz</span></button>
@@ -33,15 +34,24 @@
 
 <header class="strip glass">
   <div class="acct">
-    <span id="acct-mode" class="badge">offline</span>
-    <span class="acct-line"><span class="muted">Equity</span> <strong id="equity" class="num flashable">—</strong></span>
-    <span class="acct-line"><span class="muted">Floating</span> <span id="floating" class="num flashable">—</span></span>
-    <span class="acct-line"><span class="muted">Free margin</span> <span id="free-margin" class="num flashable">—</span></span>
+    <span id="acct-mode" class="acct-chip offline"><i></i><b id="acct-kind">MT5 offline</b><span id="acct-server"></span></span>
+    <span class="kv big"><small>Equity</small><strong id="equity" class="num flashable">—</strong></span>
+    <span class="kv"><small id="today-label">Bot today</small><span id="bot-today-top" class="num flashable">—</span></span>
+    <span class="kv"><small>Floating</small><span id="floating" class="num flashable">—</span></span>
+    <span class="kv"><small>Open</small><span id="open-count" class="num">—</span></span>
   </div>
-  <div class="meters">
-    <div class="meter" title="System RAM"><span class="muted">RAM</span><div class="bar"><i id="ram-bar"></i></div><span id="ram-txt" class="num">—</span></div>
-    <div class="meter" title="RTX 4060 VRAM"><span class="muted">VRAM</span><div class="bar"><i id="vram-bar"></i></div><span id="vram-txt" class="num">—</span></div>
+  <div class="sessions" id="sessions" title="Market sessions in broker server time, the hours the bot's inputs use"></div>
+  <div class="strip-right">
     <span id="agent-pill" class="pill">agent idle</span>
+    <div class="sys-wrap">
+      <button class="sys-btn" id="sys-btn" type="button" aria-expanded="false" aria-controls="sys-pop" title="PC resources">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M9 20h6M12 16v4M8 9h8M8 12h5"/></svg></button>
+      <div class="sys-pop glass" id="sys-pop" hidden>
+        <div class="meter" title="System RAM"><span class="muted">RAM</span><div class="bar"><i id="ram-bar"></i></div><span id="ram-txt" class="num">—</span></div>
+        <div class="meter" title="RTX 4060 VRAM"><span class="muted">VRAM</span><div class="bar"><i id="vram-bar"></i></div><span id="vram-txt" class="num">—</span></div>
+        <div class="meter"><span class="muted">Free margin</span><span id="free-margin" class="num">—</span></div>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -51,11 +61,14 @@
     <div class="dash-grid">
       <div class="panel chart-panel">
         <div class="chart-head">
-          <div class="row gap"><div id="symbols" class="chips"></div><button class="chip replay-chip" id="replay-toggle" title="Run the bot on downloaded history, fast">Replay history</button></div>
+          <div id="symbols" class="chips"></div>
           <div class="quote"><span id="q-sym">—</span><span class="num flashable" id="q-bid">—</span><span class="muted">spread</span><span class="num" id="q-spr">—</span><span class="tf">M1</span>
             <button class="auto-btn on" id="chart-auto" type="button" aria-pressed="true">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>Auto</span><i class="count"></i>
-            </button></div>
+            </button>
+            <span class="head-sep" aria-hidden="true"></span>
+            <button class="replay-btn" id="replay-toggle" type="button" title="Run the bot on downloaded history, fast">
+              <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z"/></svg>Replay</button></div>
         </div>
         <div class="replay-bar hidden" id="replay-bar">
           <div class="row gap wrap">
@@ -81,7 +94,7 @@
           <label class="slider-label rp-speed">Custom <span id="rp-speed-txt" class="num"></span><input id="rp-speed" type="range" min="0" max="100" step="1"></label>
           <div class="rp-progress"><div class="bar"><i id="rp-prog"></i></div><span id="rp-status" class="muted small">Replays your downloaded M1 history through the bot with all its rules. Trades are recorded as "replay" and feed its learning.</span></div>
         </div>
-        <div id="chart"></div>
+        <div class="chart-wrap"><div id="chart"></div><div id="chart-layer" class="chart-layer" aria-hidden="true"></div></div>
         <p id="chart-msg" class="chart-msg hidden"></p>
       </div>
 
@@ -94,7 +107,7 @@
         </div>
 
         <div class="panel bot-card" id="bot-card">
-          <div class="panel-head"><h3>Bot trade</h3><span id="bot-today" class="muted small"></span></div>
+          <div class="panel-head"><h3>Bot trade</h3><span id="bot-today" class="bot-today"></span></div>
           <div id="bot-now"><p class="empty">Loading the bot…</p></div>
         </div>
 
@@ -111,34 +124,104 @@
     </div>
   </section>
 
-  <!-- AGENT -->
-  <section id="tab-agent" class="tab">
-    <div class="two-col">
-      <div class="panel">
-        <h3>Run the M1 agent</h3>
-        <p class="muted small">It waits for each 1-minute candle to close, scores it with your trained model and only trades when every risk check passes.</p>
-        <ol class="ladder" id="ladder" aria-label="Stages"></ol>
-        <div class="gate" id="gate"><p class="empty">Loading the bot's stage…</p></div>
-        <label class="slider-label">Confidence threshold <span id="thr-txt" class="num"></span><input id="thr" type="range" min="0.05" max="0.8" step="0.01"></label>
-        <p id="thr-hint" class="muted small" style="margin:4px 0 0"></p>
-        <label class="slider-label">Stake per trade <span id="stake-txt" class="num"></span><input id="stake" type="range" min="0.01" max="1" step="0.01"></label>
-        <div class="row gap">
-          <button id="agent-start" class="btn primary">Start agent</button>
-          <button id="agent-stop" class="btn">Stop</button>
+  <!-- MANUAL TRADING -->
+  <section id="tab-manual" class="tab">
+    <div id="man-backend" class="empty-state man-banner" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>
+      <div><b>Placing orders needs its backend</b>Chat A is building it from the spec in TWO_CHATS.md. Until then you can already watch prices and close positions (one at a time or in bulk) from here.</div></div>
+    <div class="man-grid">
+      <div class="man-left">
+        <div class="panel ticket">
+          <div class="panel-head"><h3>New order</h3>
+            <label class="switch" title="On: Buy and Sell send the order straight away. Off: click twice to confirm."><input type="checkbox" id="man-oneclick"><span>One-click trading</span></label></div>
+          <div class="chips" id="man-symbols"></div>
+          <div class="quote-row">
+            <button class="side-btn sell" id="man-sell" type="button"><small>SELL</small><b class="num flashable" id="man-bid">—</b><em id="man-sell-note"></em></button>
+            <div class="spread"><span class="num" id="man-spread">—</span><small>spread</small></div>
+            <button class="side-btn buy" id="man-buy" type="button"><small>BUY</small><b class="num flashable" id="man-ask">—</b><em id="man-buy-note"></em></button>
+          </div>
+          <div class="vol-row">
+            <span class="muted small">Lots</span>
+            <div class="stepper"><button type="button" data-vol="-1" aria-label="Less">−</button><input id="man-vol" type="number" step="0.01" min="0.01" value="0.01" inputmode="decimal"><button type="button" data-vol="1" aria-label="More">+</button></div>
+            <div class="chips" id="man-vol-presets"><button class="chip" data-v="min" type="button">min</button><button class="chip" data-v="0.05" type="button">0.05</button><button class="chip" data-v="0.1" type="button">0.10</button><button class="chip" data-v="0.5" type="button">0.50</button><button class="chip" data-v="1" type="button">1.00</button></div>
+          </div>
+          <div class="seg-row" id="man-type" role="radiogroup" aria-label="Order type">
+            <button class="seg-opt on" data-type="market" type="button">Market</button><button class="seg-opt" data-type="limit" type="button">Limit</button><button class="seg-opt" data-type="stop" type="button">Stop</button></div>
+          <label class="man-price" hidden>Price for the pending order<input id="man-price" type="number" step="any"><small id="man-price-hint" class="muted"></small></label>
+          <div class="form-row">
+            <label>Stop loss<input id="man-sl" type="number" step="any" placeholder="none"></label>
+            <label>Take profit<input id="man-tp" type="number" step="any" placeholder="none"></label>
+          </div>
+          <div class="man-risk"><span id="man-risk-txt" class="muted small">Add a stop loss to see what's at risk.</span>
+            <span class="row gap"><input id="man-risk" type="number" step="0.1" min="0.1" max="5" value="0.5" title="% of equity"><span class="muted small">%</span><button class="btn xs" id="man-size" type="button" title="Set the lots so the stop loss risks this % of equity">Size from stop</button></span></div>
+          <details class="man-more"><summary>More options<span class="chev"></span></summary>
+            <div class="form-row">
+              <label>Max slippage<span class="u" data-u="points"><input id="man-dev" type="number" min="0" step="1" value="20"></span></label>
+              <label>Pending order lasts<select id="man-exp"><option value="gtc">Until cancelled</option><option value="today">Today only</option></select></label>
+            </div></details>
+          <p id="man-msg" class="note"></p>
         </div>
-        <p id="agent-msg" class="note"></p>
-        <div class="plan" id="plan"><p class="empty">Open MT5 to see the per-trade plan.</p></div>
+        <div class="panel quotes">
+          <div class="panel-head"><h3>Quotes</h3><span class="muted small">click to trade</span></div>
+          <table id="man-quotes"><thead><tr><th>Symbol</th><th>Bid</th><th>Ask</th><th>Spread</th></tr></thead><tbody></tbody></table>
+        </div>
       </div>
-      <div class="panel console-panel">
-        <div class="panel-head"><h3>Live log</h3><span id="agent-state" class="muted small"></span></div>
-        <div id="agent-empty" class="empty-state"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></svg>
-          <div><b>Not started yet</b>Press Start agent. It acts when the next M1 candle closes, and its output streams here.</div></div>
-        <pre id="agent-log" class="console" hidden></pre>
+      <div class="man-right">
+        <div class="panel">
+          <div class="panel-head"><h3>Positions</h3><span id="man-acct" class="man-acct"></span></div>
+          <div class="bulk">
+            <div class="chips" id="man-owner" role="radiogroup" aria-label="Whose positions"><button class="chip active" data-o="any" type="button">Everyone's</button><button class="chip" data-o="you" type="button">Mine</button><button class="chip" data-o="bot" type="button">Bot</button><button class="chip" data-o="hermes" type="button">Hermes</button></div>
+            <div class="bulk-btns">
+              <button class="btn xs" data-bulk="profit" type="button">Close profitable</button>
+              <button class="btn xs" data-bulk="loss" type="button">Close losing</button>
+              <button class="btn xs" data-bulk="buys" type="button">Close buys</button>
+              <button class="btn xs" data-bulk="sells" type="button">Close sells</button>
+              <button class="btn xs danger-outline" data-bulk="all" type="button">Close all</button>
+            </div>
+          </div>
+          <div class="table-wrap"><table id="man-pos"><thead><tr><th>Symbol</th><th>Who</th><th>Side</th><th>Lots</th><th>Open</th><th>Now</th><th>SL</th><th>TP</th><th>P/L</th><th></th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Pending orders</h3><button class="btn xs" id="man-cancel-all" type="button">Cancel all</button></div>
+          <div class="table-wrap"><table id="man-orders"><thead><tr><th>Symbol</th><th>Type</th><th>Lots</th><th>Price</th><th>SL</th><th>TP</th><th>Placed</th><th></th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>History today</h3><span id="man-hist-meta" class="muted small"></span></div>
+          <div class="table-wrap"><table id="man-hist"><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Lots</th><th>Open</th><th>Close</th><th>P/L</th><th>Who</th></tr></thead><tbody></tbody></table></div>
+        </div>
       </div>
     </div>
-    <div class="panel">
-      <div class="panel-head"><h3>What the bot has learned</h3><button class="btn xs" id="learn-now">Learn now</button></div>
-      <div id="learned"><p class="empty">Nothing yet. The bot writes its first lessons after 50 closed trades and updates them every 50 after that. They're saved as a skill in <code>.claude/skills/m1-bot-lessons/</code>.</p></div>
+  </section>
+
+  <!-- AGENT -->
+  <section id="tab-agent" class="tab">
+    <div class="panel ctl">
+      <div class="ctl-top">
+        <ol class="path" id="ladder" aria-label="Stages: Paper, Demo, then real money in three steps"></ol>
+        <div class="ctl-actions">
+          <button id="agent-start" class="btn primary">Start agent</button>
+          <button id="agent-stop" class="btn">Stop</button>
+          <button id="log-toggle" class="btn ghost" type="button" aria-expanded="false" aria-controls="log-drawer">Live log<span class="log-dot" hidden></span></button>
+        </div>
+      </div>
+      <div class="ctl-sliders">
+        <label class="slider-label">Confidence threshold <span id="thr-txt" class="num"></span><input id="thr" type="range" min="0.05" max="0.8" step="0.01"></label>
+        <label class="slider-label">Stake per trade <span id="stake-txt" class="num"></span><input id="stake" type="range" min="0.01" max="1" step="0.01"></label>
+        <div class="ctl-hint"><p class="muted small">Waits for each M1 candle to close and trades only when every risk check passes.</p><p id="thr-hint" class="muted small"></p><p id="agent-msg" class="note"></p></div>
+      </div>
+    </div>
+    <div class="two-even">
+      <div class="panel"><div class="gate" id="gate"><p class="empty">Loading the bot's stage…</p></div></div>
+      <div class="panel"><div class="plan" id="plan"><p class="empty">Open MT5 to see the per-trade plan.</p></div></div>
+    </div>
+    <div class="two-even">
+      <div class="panel">
+        <div class="panel-head"><h3>Which setups make money</h3><span id="lb-meta" class="muted small"></span></div>
+        <div id="leaderboard" class="lb"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>What the bot has learned</h3><button class="btn xs" id="learn-now">Learn now</button></div>
+        <div id="learned"><p class="empty">Nothing yet. The bot writes its first lessons after 50 closed trades and updates them every 50 after that. They're saved as a skill in <code>.claude/skills/m1-bot-lessons/</code>.</p></div>
+      </div>
     </div>
     <div class="panel">
       <div class="panel-head"><h3>Bot trades</h3>
@@ -195,10 +278,12 @@
           <p class="muted small" style="margin:4px 0 10px">Real gold charts where one of 18 pro setups worked, where one failed (a trap: stay out), or where pros would stay out. The agent answers <b>what do you do?</b> and points are its only reward: right <b class="up">+10</b>, wrong way <b class="down">&minus;10</b>, traded when it should stay out <b class="down">&minus;5</b>, missed a good trade <b class="down">&minus;3</b>. A question is finished once it's right 5 times in a row.</p>
           <div class="row-inline">
             <label class="quiz-n-label" for="quiz-n"><span class="muted small">Questions</span>
-              <input id="quiz-n" type="number" min="40" max="100000" step="10" value="1000" list="quiz-n-list" inputmode="numeric"></label>
-            <datalist id="quiz-n-list"><option value="100"></option><option value="1000"></option><option value="5000"></option><option value="10000"></option><option value="25000"></option><option value="50000"></option><option value="100000"></option></datalist>
+              <input id="quiz-n" type="number" min="40" step="10" value="1000" list="quiz-n-list" inputmode="numeric"></label>
+            <button id="quiz-all" class="chip" type="button" aria-pressed="false" title="Every usable question in the bank">All</button>
+            <datalist id="quiz-n-list"><option value="100"></option><option value="1000"></option><option value="5000"></option><option value="10000"></option><option value="25000"></option><option value="50000"></option><option value="100000"></option><option value="250000"></option></datalist>
             <button id="quiz-build" class="btn">Build quiz</button>
           </div>
+          <div id="quiz-bank" class="bank" hidden><div class="bank-line"><span class="live-dot" hidden></span><span id="quiz-bank-txt" class="small"></span></div><div id="quiz-bank-bars" class="finders"></div></div>
           <div id="quiz-build-prog" class="build-prog" hidden>
             <div class="build-line"><span id="quiz-build-stage" class="small"></span><span id="quiz-build-time" class="muted small num"></span></div>
             <div class="bar"><i id="quiz-build-bar"></i></div>
@@ -300,57 +385,87 @@
 
   <!-- SETTINGS -->
   <section id="tab-settings" class="tab">
-    <form id="settings-form" class="panel settings">
-      <fieldset><legend>Trading</legend>
-        <label>Symbol the agent trades<input name="symbol"></label>
-        <label>Watchlist (comma separated)<input name="symbols_watch"></label>
-        <label>MT5 terminal path (optional)<input name="terminal_path" placeholder="C:\Program Files\MetaTrader 5\terminal64.exe"></label>
-        <label>Point size of symbol<input name="point" type="number" step="any"></label>
-        <label>History to download (days)<input name="days_history" type="number"></label>
-        <label class="check"><input type="checkbox" name="alert_sound"> Play a sound when the bot opens or closes a trade</label>
-        <label class="check"><input type="checkbox" name="practice"> Practice mode: on Paper and Replay, trade the model's top-10% setups instead of the confidence threshold</label>
-        <label class="check"><input type="checkbox" name="auto_promote_demo"> Move from Paper to Demo automatically when the Paper gate is passed</label>
-        <label class="check"><input type="checkbox" name="use_learned"> Apply the rules the bot learned from its own trades</label>
-        <label>Quiz: question finders working at once (0 = automatic, from your CPU cores and free RAM; about 1 GB each)<input name="quiz_workers" type="number" min="0" max="16"></label>
-        <label class="check"><input type="checkbox" name="quiz_refresh"> Quiz: silently refresh finished questions so it doesn't forget them (recommended; they're never asked or shown)</label>
-        <label class="check"><input type="checkbox" name="quiz_filter"> Second opinion from the quiz agent: only enter when it picks the same side (Quiz tab)</label>
-      </fieldset>
-      <fieldset><legend>Bot money rules</legend>
-        <label>Stake per trade (% of balance)<input name="stake_pct" type="number" step="0.01" min="0.01"></label>
-        <label>Max bot trades open at once<input name="max_open_trades" type="number" min="1" max="200"></label>
-        <label>Size stop/target as if leverage were 1:<input name="ref_leverage" type="number" step="10" min="0"></label>
-        <label>Stop loss (% of stake lost)<input name="sl_pct_of_stake" type="number" step="1" min="1"></label>
-        <label>Paper account balance<input name="paper_balance" type="number" step="100"></label>
-        <label>Take profit on small stakes (% of stake)<input name="tp_pct_small" type="number" step="5"></label>
-        <label>Take profit on large stakes (% of stake)<input name="tp_pct_large" type="number" step="5"></label>
-        <label>"Small" stake is at or below (0 = minimum lot)<input name="small_stake" type="number" step="1" min="0"></label>
-        <label>"Large" stake is at or above (0 = 100× minimum)<input name="large_stake" type="number" step="1" min="0"></label>
-        <label>Training look-ahead (M1 bars)<input name="label_horizon" type="number" step="30" min="30"></label>
-        <label>Score penalty when a stop loss hits (×)<input name="sl_score_mult" type="number" step="0.1" min="1"></label>
-        <label class="check"><input type="checkbox" name="early_exit"> Let the bot close a trade before its stop when the model turns against it</label>
-        <p class="muted small span2">Score: 1 point = $1. Each trade earns or loses its dollar result (a +$100 trade = +100 points). A stop-loss hit costs the penalty × its loss (−$20 × 1.5 = −30). A trade the bot closes early only costs what it actually lost (−$20 = −20).</p>
-        <p class="muted small span2">Stake is the margin the trade uses. If the stake is below the symbol's minimum lot, the minimum lot is used. Take profit eases from the small-stake % to the large-stake % as stakes grow. Retrain after changing the stop or take-profit rules so the model learns the new exits.</p>
-      </fieldset>
-      <fieldset><legend>Hermes</legend>
-        <label>Assistant backend
-          <select name="assistant_backend"><option value="auto">Auto (Hermes Agent if running, else local)</option><option value="hermes_agent">Hermes Agent (WSL)</option><option value="local">Local Hermes model (Ollama)</option></select>
-        </label>
-        <label>Hermes Agent URL<input name="hermes_url"></label>
-        <label>Hermes Agent API key<input name="hermes_key" type="password"></label>
-        <label>Ollama URL<input name="ollama_url"></label>
-        <label>Local model<input name="ollama_model"></label>
-        <label>Unload the model after idle (0 = right after each reply)<input name="ollama_keep_alive"></label>
-        <label class="check"><input type="checkbox" name="ollama_cpu_only"> Run the local model on the CPU only, so the RTX 4060 stays free for training</label>
-        <label class="check"><input type="checkbox" name="allow_web"> Let Hermes read web pages</label>
-        <label class="check"><input type="checkbox" name="mcp_autostart"> Start the MT5 bridge for Hermes Agent when the app opens</label>
-      </fieldset>
-      <fieldset><legend>Display</legend>
-        <label class="check"><input type="checkbox" id="pref-motion"> Reduce animations (this PC only, saved in the app window)</label>
-      </fieldset>
-      <div class="row gap"><button class="btn primary" type="submit">Save settings</button><span id="settings-msg" class="muted small"></span></div>
-    </form>
+    <div class="set-layout">
+      <nav class="set-nav" id="set-nav" aria-label="Settings sections">
+        <a href="#set-trading" class="on">Trading<span class="dot"></span></a>
+        <a href="#set-money">Bot money rules<span class="dot"></span></a>
+        <a href="#set-quiz">Quiz school<span class="dot"></span></a>
+        <a href="#set-hermes">Hermes<span class="dot"></span></a>
+        <a href="#set-display">Display<span class="dot"></span></a>
+      </nav>
+      <form id="settings-form" class="settings">
+        <fieldset class="panel" id="set-trading"><legend>Trading<small>what the bot trades and how it behaves</small></legend>
+          <label>Symbol the agent trades<input name="symbol"></label>
+          <label>Watchlist (comma separated)<input name="symbols_watch"></label>
+          <label>MT5 terminal path (optional)<input name="terminal_path" placeholder="C:\Program Files\MetaTrader 5\terminal64.exe"></label>
+          <label>Point size of symbol<input name="point" type="number" step="any"></label>
+          <label>History to download<span class="u" data-u="days"><input name="days_history" type="number"></span></label>
+          <label class="check"><input type="checkbox" name="alert_sound"> Play a sound when the bot opens or closes a trade</label>
+          <label class="check"><input type="checkbox" name="practice"> Practice mode on Paper and Replay</label>
+          <span class="help">Trades the model's best ~10% of readings instead of the confidence threshold, so Paper and Replay produce trades to learn from.</span>
+          <label class="check"><input type="checkbox" name="auto_promote_demo"> Move from Paper to Demo automatically when the Paper gate is passed</label>
+          <label class="check"><input type="checkbox" name="use_learned"> Apply the rules the bot learned from its own trades</label>
+          <span class="help">Blocks the hours, sides and setups that kept losing. See "What the bot has learned" on the Agent tab.</span>
+        </fieldset>
+        <fieldset class="panel" id="set-money"><legend>Bot money rules<small>stake, stop and target for every bot trade</small></legend>
+          <label>Stake per trade<span class="u" data-u="% of balance"><input name="stake_pct" type="number" step="0.01" min="0.01"></span></label>
+          <label>Max bot trades open at once<span class="u" data-u="trades"><input name="max_open_trades" type="number" min="1" max="200"></span></label>
+          <label>Size stop and target as if leverage were<span class="u pre" data-u="1 :"><input name="ref_leverage" type="number" step="10" min="0"></span></label>
+          <label>Stop loss<span class="u" data-u="% of stake"><input name="sl_pct_of_stake" type="number" step="1" min="1"></span></label>
+          <label>Take profit, small stakes<span class="u" data-u="% of stake"><input name="tp_pct_small" type="number" step="5"></span></label>
+          <label>Take profit, large stakes<span class="u" data-u="% of stake"><input name="tp_pct_large" type="number" step="5"></span></label>
+          <label>"Small" stake at or below (0 = minimum lot)<span class="u" data-u="USD"><input name="small_stake" type="number" step="1" min="0"></span></label>
+          <label>"Large" stake at or above (0 = 100× minimum)<span class="u" data-u="USD"><input name="large_stake" type="number" step="1" min="0"></span></label>
+          <label>Paper account balance<span class="u" data-u="USD"><input name="paper_balance" type="number" step="100"></span></label>
+          <label>Training look-ahead<span class="u" data-u="M1 bars"><input name="label_horizon" type="number" step="30" min="30"></span></label>
+          <label>Score penalty when a stop loss hits<span class="u" data-u="×"><input name="sl_score_mult" type="number" step="0.1" min="1"></span></label>
+          <label class="check"><input type="checkbox" name="early_exit"> Let the bot close a trade before its stop when the model turns against it</label>
+          <span class="help">Closing early only costs what it actually lost; a stop-loss hit costs the penalty × the loss.</span>
+          <p class="muted small span-all">Score: 1 point = $1. Each trade earns or loses its dollar result (a +$100 trade = +100 points). A stop-loss hit costs the penalty × its loss (−$20 × 1.5 = −30). A trade the bot closes early only costs what it actually lost (−$20 = −20).</p>
+          <p class="muted small span-all">Stake is the margin the trade uses. If the stake is below the symbol's minimum lot, the minimum lot is used. Take profit eases from the small-stake % to the large-stake % as stakes grow. Retrain after changing the stop or take-profit rules so the model learns the new exits.</p>
+        </fieldset>
+        <fieldset class="panel" id="set-quiz"><legend>Quiz school<small>how the practice quiz runs</small></legend>
+          <label>Question creators when Build quiz is pressed (0 = up to 10)<span class="u" data-u="creators"><input name="quiz_workers" type="number" min="0" max="16"></span></label>
+          <label class="check"><input type="checkbox" name="quiz_bank_auto"> Keep making questions in the background</label>
+          <span class="help">One creator keeps adding questions to the bank (stored as markdown) while the app is open.</span>
+          <label class="check"><input type="checkbox" name="quiz_refresh"> Silently refresh finished questions so it doesn't forget them</label>
+          <span class="help">Recommended. Refreshed questions are never asked or shown.</span>
+          <label class="check"><input type="checkbox" name="quiz_filter"> Second opinion from the quiz agent: only enter when it picks the same side</label>
+        </fieldset>
+        <fieldset class="panel" id="set-hermes"><legend>Hermes<small>your assistant</small></legend>
+          <label>Assistant backend
+            <select name="assistant_backend"><option value="auto">Auto (Hermes Agent if running, else local)</option><option value="hermes_agent">Hermes Agent (WSL)</option><option value="local">Local Hermes model (Ollama)</option></select>
+          </label>
+          <label>Hermes Agent URL<input name="hermes_url"></label>
+          <label>Hermes Agent API key<input name="hermes_key" type="password"></label>
+          <label>Ollama URL<input name="ollama_url"></label>
+          <label>Local model<input name="ollama_model"></label>
+          <label>Unload the model after idle (0 = right after each reply)<input name="ollama_keep_alive"></label>
+          <label class="check"><input type="checkbox" name="ollama_cpu_only"> Run the local model on the CPU only, so the RTX 4060 stays free for training</label>
+          <label class="check"><input type="checkbox" name="allow_web"> Let Hermes read web pages</label>
+          <label class="span-all">Hermes may only open these trading and market sites (one per line; "site/path" keeps it to one section, e.g. reuters.com/markets)<textarea name="web_sites" rows="4" spellcheck="false"></textarea></label>
+          <label class="check"><input type="checkbox" name="mcp_autostart"> Start the MT5 bridge for Hermes Agent when the app opens</label>
+        </fieldset>
+        <fieldset class="panel" id="set-display"><legend>Display<small>this PC only</small></legend>
+          <label class="check"><input type="checkbox" id="pref-motion"> Reduce animations</label>
+          <label class="check"><input type="checkbox" id="pref-sessions"> Show session bands and prior-day levels on the chart</label>
+          <span class="help">Saved in the app window, not in data/settings.json.</span>
+        </fieldset>
+        <div class="savebar glass" id="savebar">
+          <span class="dirty" id="set-dirty"><i></i><span id="set-dirty-txt">All changes saved</span></span>
+          <span class="row gap"><span id="settings-msg" class="muted small"></span><button class="btn" type="button" id="set-discard" disabled>Discard</button><button class="btn primary" type="submit" id="set-save" disabled>Save settings</button></span>
+        </div>
+      </form>
+    </div>
   </section>
 </main>
+
+<aside class="log-drawer glass" id="log-drawer" aria-label="Live log">
+  <div class="panel-head"><h3>Live log</h3><span class="row gap"><span id="agent-state" class="muted small"></span><button class="icon-btn" id="log-close" type="button" aria-label="Close the live log">×</button></span></div>
+  <div id="agent-empty" class="empty-state"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></svg>
+    <div><b>Not started yet</b>Press Start agent. It acts when the next M1 candle closes, and its output streams here.</div></div>
+  <pre id="agent-log" class="console" hidden></pre>
+</aside>
 
 <div id="toast" class="toast glass" role="status" aria-live="polite"></div>
 <script src="/static/app.js"></script>

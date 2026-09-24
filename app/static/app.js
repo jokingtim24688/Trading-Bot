@@ -53,12 +53,15 @@ $$(".tab").forEach(t => $$(".panel", t).forEach((p, i) => p.style.setProperty("-
 function showTab(name) {
   // leaving the Hermes tab puts the local model to sleep (frees RAM/VRAM; the next message reloads it)
   if (state.tab === "chat" && name !== "chat") api("/api/assistant/sleep", { method: "POST" }).catch(() => {});
+  if (name !== "agent") closeLog();
+  if (name === "settings" && state.settings && !$("#savebar").classList.contains("is-dirty")) { fillSettings(); updateDirty(); }
   state.tab = name;
   $$(".rail-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   $$(".tab").forEach(t => t.classList.toggle("active", t.id === `tab-${name}`));
   moveRailInd();
   if (name === "dash" && state.chart && state.chartAuto && !state.autoT) realignChart(true);
   if (name === "chat") { loadHistory(); loadFacts(); }
+  if (name === "manual") openManual();
   if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); loadProgress(); loadCalendar(); }
   if (name === "train") pollTrainLog();
   if (name === "quiz") { loadQuiz(); loadReport(false); }
@@ -84,7 +87,9 @@ async function pollStatus() {
     if (r.vram_total_gb) { $("#vram-bar").style.width = `${(r.vram_used_gb / r.vram_total_gb) * 100}%`; $("#vram-txt").textContent = `${r.vram_used_gb}/${r.vram_total_gb} GB`; }
     else $("#vram-txt").textContent = "n/a";
     const a = s.jobs.agent, pill = $("#agent-pill");
-    setHTML(pill, a.running ? `<span class="live-dot"></span>agent running · ${a.args.includes("--live") ? (a.args.includes("--allow-real") ? "REAL" : "demo") : "paper"}` : "agent idle");
+    const runMode = a.args.includes("--live") ? (a.args.includes("--allow-real") ? "REAL" : "demo") : "paper";
+    const inTrades = (state.bot.data?.open || []).filter(t => t.mode === runMode.toLowerCase()).length;
+    setHTML(pill, a.running ? `<span class="live-dot"></span>Agent · ${runMode} · ${inTrades ? `in ${inTrades} trade${inTrades > 1 ? "s" : ""}` : "watching"}` : "Agent idle");
     pill.classList.toggle("live", a.running);
     $("#agent-state").textContent = a.running ? "running" : (a.exit_code != null ? `stopped (exit ${a.exit_code})` : "not started");
     $("#step-fetch").classList.toggle("done", s.data_ready);
@@ -100,9 +105,12 @@ async function pollStatus() {
 }
 async function pollAccount() {
   try {
-    const a = await api("/api/account");
-    const badge = $("#acct-mode");
-    badge.textContent = a.demo ? "demo" : "real"; badge.className = "badge " + (a.demo ? "demo" : "real");
+    const a = await api("/api/account"); state.acct = a;
+    const chip = $("#acct-mode");
+    chip.className = "acct-chip " + (a.demo ? "demo" : "real");
+    $("#acct-kind").textContent = a.demo ? "DEMO" : "REAL";
+    $("#acct-server").textContent = `${a.server} · #${a.login}`;
+    chip.title = `${a.name || ""} · ${a.server} · leverage 1:${a.leverage} · margin level ${a.margin_level ? Math.round(a.margin_level) + "%" : "–"} · ping ${a.ping_ms} ms`;
     const eq = $("#equity");
     if (!state.equityShown) { countUp(eq, a.equity); Object.assign(eq, { _v: a.equity, _set: true }); state.equityShown = true; }
     else setNum(eq, a.equity, v => fmt(v));
@@ -110,10 +118,36 @@ async function pollAccount() {
     setNum($("#free-margin"), a.margin_free, v => fmt(v), { flashIt: false });
     if (!a.algo_trading) $("#agent-pill").classList.add("warn");
   } catch (e) {
-    $("#acct-mode").textContent = "MT5 offline"; $("#acct-mode").className = "badge";
+    $("#acct-mode").className = "acct-chip offline"; $("#acct-kind").textContent = "MT5 offline"; $("#acct-server").textContent = "";
     $("#equity").textContent = "—";
   }
 }
+
+/* ---------- sessions clock (broker server time = New York time + 7 h, the hours agent/pro.py uses) ---------- */
+const SESSIONS = [["London", 10 * 60, 18 * 60 + 30], ["New York", 16 * 60 + 30, 23 * 60], ["Asia", 60, 9 * 60]];
+function serverClock() {
+  const ny = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const sv = new Date(ny.getTime() + 7 * 3600e3);
+  return { day: sv.getDay(), min: sv.getHours() * 60 + sv.getMinutes() };
+}
+const hm = m => m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m` : `${m}m`;
+function renderSessions() {
+  const { day, min } = serverClock(), weekend = day === 6 || day === 0;
+  setHTML($("#sessions"), SESSIONS.map(([name, a, b]) => {
+    let cls = "", txt;
+    if (weekend) txt = "closed (weekend)";
+    else if (min >= a && min < b) { cls = "on"; txt = `open · ${hm(b - min)} left`; }
+    else if (min < a) { cls = a - min <= 60 ? "soon" : ""; txt = `opens in ${hm(a - min)}`; }
+    else txt = day === 5 ? "closed till Monday" : `opens in ${hm(24 * 60 - min + a)}`;
+    return `<span class="sess ${cls}"><i></i>${name} <small>${txt}</small></span>`;
+  }).join(""));
+}
+renderSessions(); setInterval(renderSessions, 20000);
+
+/* PC resources live behind a small button */
+$("#sys-btn").onclick = e => { e.stopPropagation(); const p = $("#sys-pop"), open = p.hidden; p.hidden = !open; $("#sys-btn").setAttribute("aria-expanded", String(open)); };
+document.addEventListener("click", e => { if (!e.target.closest(".sys-wrap")) { $("#sys-pop").hidden = true; $("#sys-btn").setAttribute("aria-expanded", "false"); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { $("#sys-pop").hidden = true; $("#sys-btn").setAttribute("aria-expanded", "false"); closeLog(); } });
 
 /* ---------- chart ---------- */
 function initChart() {
@@ -180,10 +214,10 @@ function wireChartAuto() {
   el.addEventListener("wheel", chartTouched, { passive: true });
   let start = null;
   el.addEventListener("pointerdown", e => { start = [e.clientX, e.clientY]; });
-  el.addEventListener("pointermove", e => { if (start && e.buttons && Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 3) chartTouched(); });
+  el.addEventListener("pointermove", e => { if (!e.buttons) return; scheduleSessions(); if (start && Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 3) chartTouched(); });
   addEventListener("pointerup", () => { start = null; });
   el.addEventListener("dblclick", () => realignChart());
-  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { moveRailInd(); if (state.chartAuto && !state.autoT && state.tab === "dash") realignChart(true); }, 200); });
+  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { moveRailInd(); scheduleSessions(); if (state.chartAuto && !state.autoT && state.tab === "dash") realignChart(true); }, 200); });
 }
 /* ---------- replay: bot on downloaded history ---------- */
 state.replay = { view: false, running: false };
@@ -196,7 +230,7 @@ function setReplayView(on) {
   $("#replay-bar").classList.toggle("hidden", !on);
   if (on) $("#chart-msg").classList.add("hidden");
   state.series && state.series.setData([]);
-  state.realignNext = true; state.lastBidShown = null; state.win = newWin();
+  state.realignNext = true; state.lastBidShown = null; state.win = newWin(); clearPriorDay(); scheduleSessions();
   loadBars();
 }
 $("#replay-toggle").onclick = () => setReplayView(!state.replay.view);
@@ -299,7 +333,7 @@ async function loadLatestWindow() {
   if (sym !== state.symbol || state.replay?.view) return;
   const W = state.win = Object.assign(newWin(), { symbol: sym, bars: d.bars.map(pickBar), busy: true });
   state.series.applyOptions({ priceFormat: { type: "price", precision: d.digits, minMove: d.point } });
-  showQuote(d); applyWindow();
+  showQuote(d); applyWindow(); updatePriorDay();
   requestAnimationFrame(() => requestAnimationFrame(() => { W.busy = false; }));   // ignore the scroll events of the swap itself
 }
 async function loadBars() {
@@ -324,7 +358,7 @@ async function loadBars() {
     }
     if (W.bars.length > HIST.MAX + 120) trimOldest();            // a long live session: drop candles far off to the left
     state.barRange = [W.bars[0].time, W.bars[W.bars.length - 1].time];
-    drawBotOverlay();
+    drawBotOverlay(); updatePriorDay();
   } catch (e) {
     const m = $("#chart-msg"); m.textContent = e.message; m.classList.remove("hidden");
   }
@@ -370,7 +404,72 @@ async function loadNewer() {
   } catch (e) {}
   finally { W.busy = false; }
 }
+/* ---------- session bands + prior-day levels, in broker server time like agent/pro.py ----------
+   Asia range = the 01:00–09:00 candles; London opens 10:00, New York 16:30; the prior day is the last full server day
+   before today. Drawn in a layer over the chart from the chart's own coordinates, redrawn once per frame at most and
+   only when the view or the data changes. Settings > Display can switch it off. */
+const PRO = { asia: [1 * 3600, 9 * 3600], london: 10 * 3600, ny: 16.5 * 3600 };
+state.showSessions = (() => { try { return localStorage.getItem("sessions") !== "off"; } catch (e) { return true; } })();
+state.pd = { key: "", lines: [] };
+let sessRaf = 0;
+function scheduleSessions() { if (!sessRaf) sessRaf = requestAnimationFrame(() => { sessRaf = 0; drawSessions(); }); }
+function barIndexAt(bars, t) {                   // first candle at or after time t
+  let lo = 0, hi = bars.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (bars[m].time < t) lo = m + 1; else hi = m; }
+  return lo;
+}
+function drawSessions() {
+  const layer = $("#chart-layer"); if (!layer || !state.chart) return;
+  const ts = state.chart.timeScale(), bars = state.win.bars, r = ts.getVisibleLogicalRange();
+  if (!state.showSessions || state.replay?.view || bars.length < 2 || !r) { setHTML(layer, ""); return; }
+  const w = ts.width(), h = $("#chart").clientHeight - ts.height();
+  if (layer._w !== w || layer._h !== h) { layer.style.width = w + "px"; layer.style.height = h + "px"; layer._w = w; layer._h = h; }
+  const i0 = Math.max(0, Math.floor(r.from)), i1 = Math.min(bars.length - 1, Math.ceil(r.to));
+  const t0 = bars[i0].time, t1 = bars[i1].time + Math.max(0, r.to - i1) * 60;
+  if (i1 <= i0 || t1 - t0 > 3 * 86400) { setHTML(layer, ""); return; }        // zoomed far out: bands would only clutter
+  const xa = ts.logicalToCoordinate(i0), xb = ts.logicalToCoordinate(i1); if (xa == null || xb == null) return;
+  const per = (xb - xa) / (i1 - i0), xOf = L => xa + (L - i0) * per;
+  const xOfTime = t => { const k = barIndexAt(bars, t), n = bars.length;
+    return k >= n ? xOf(n - 1 + (t - bars[n - 1].time) / 60) : k === 0 && bars[0].time > t + 60 ? null : xOf(k); };
+  const Y = p => state.series.priceToCoordinate(p);
+  let html = "";
+  for (let day = t0 - (t0 % 86400); day <= t1; day += 86400) {
+    const a = barIndexAt(bars, day + PRO.asia[0]), b = barIndexAt(bars, day + PRO.asia[1]) - 1;
+    if (a < bars.length && b >= a && bars[a].time < day + PRO.asia[1]) {
+      let hi = -Infinity, lo = Infinity;
+      for (let k = a; k <= b; k++) { if (bars[k].high > hi) hi = bars[k].high; if (bars[k].low < lo) lo = bars[k].low; }
+      const x0 = xOf(a) - per / 2, x1 = xOf(b) + per / 2, y0 = Y(hi), y1 = Y(lo);
+      if (x1 > 0 && x0 < w && y0 != null && y1 != null)
+        html += `<div class="sess-box" style="transform:translate(${x0.toFixed(1)}px,${y0.toFixed(1)}px);width:${(x1 - x0).toFixed(1)}px;height:${Math.max(2, y1 - y0).toFixed(1)}px"><span>Asia range</span></div>`;
+    }
+    for (const [t, label] of [[day + PRO.london, "London open"], [day + PRO.ny, "New York open"]]) {
+      if (t < bars[0].time) continue;
+      const x = xOfTime(t);
+      if (x != null && x > 0 && x < w - 2) html += `<div class="sess-line" style="transform:translateX(${x.toFixed(1)}px)"><span>${label}</span></div>`;
+    }
+  }
+  setHTML(layer, html);
+}
+function clearPriorDay() { state.pd.lines.forEach(l => state.series.removePriceLine(l)); state.pd = { key: "", lines: [] }; }
+async function updatePriorDay() {                // once per symbol per server day
+  const W = state.win; if (!W.bars.length || state.replay?.view || !state.showSessions) return;
+  const ref = Math.max(state.latestTime || 0, W.bars[W.bars.length - 1].time), day = ref - (ref % 86400), key = `${W.symbol}|${day}`;
+  if (state.pd.key === key) return;
+  clearPriorDay(); state.pd.key = key;
+  let d; try { d = await api(`/api/bars?symbol=${encodeURIComponent(W.symbol)}&count=1440&before=${day}`); } catch (e) { return; }
+  if (state.pd.key !== key || !d.bars.length) return;
+  const lastT = d.bars[d.bars.length - 1].time, prevDay = lastT - (lastT % 86400);   // the last day that traded (Friday on Mondays)
+  const prev = d.bars.filter(b => b.time >= prevDay); if (!prev.length) return;
+  const mk = (price, title) => state.series.createPriceLine({ price, color: "rgba(230,227,218,.5)", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title });
+  state.pd.lines = [mk(Math.max(...prev.map(b => b.high)), "prior-day high"), mk(Math.min(...prev.map(b => b.low)), "prior-day low")];
+}
+function setShowSessions(on) {
+  state.showSessions = on; try { localStorage.setItem("sessions", on ? "on" : "off"); } catch (e) {}
+  if (on) { state.pd.key = ""; updatePriorDay(); } else clearPriorDay();
+  scheduleSessions();
+}
 function onChartRange(r) {                       // called while scrolling; loads are single-flight
+  scheduleSessions();
   const W = state.win; if (!r || state.replay?.view || !W.bars.length) return;
   if (r.from < HIST.MARGIN) loadOlder();
   else if (!W.live && r.to > W.bars.length - HIST.MARGIN) loadNewer();
@@ -450,8 +549,13 @@ const ICON = {
 function renderBotCard() {
   const d = state.bot.data; if (!d) return;
   const box = $("#bot-now"), open = d.open.filter(t => (t.mode === "replay") === !!state.replay?.view);
-  const today = Object.entries(d.stats).filter(([, s]) => s.closed || s.open).map(([m, s]) => `${m} ${signed(s.today_pnl)} · ${pts(s.today_score)} pts`).join(" · ");
-  $("#bot-today").textContent = today ? `today: ${today}` : "";
+  const cap = m => m[0].toUpperCase() + m.slice(1);
+  setHTML($("#bot-today"), Object.entries(d.stats).filter(([m, s]) => m !== "replay" && (s.closed || s.open))
+    .map(([m, s]) => `<span title="${pts(s.today_score)} points today">${cap(m)} today <b class="${cls(s.today_pnl)}">${signed(s.today_pnl)}</b></span>`).join(""));
+  // top bar: the bot's money today in the stage it is working at
+  const sm = d.stats[state.mode] || {}, top = $("#bot-today-top");
+  $("#today-label").textContent = `Bot today · ${state.mode}`;
+  setNum(top, sm.today_pnl ?? 0, signed); top.className = `num flashable ${cls(sm.today_pnl)}`;
   if (!open.length) {
     state.bot.cardMax ??= d.recent.reduce((mx, t) => Math.max(mx, t.id), 0);   // so the next entry animates in
     $("#bot-card").classList.remove("live");
@@ -477,12 +581,14 @@ function renderBotCard() {
   const prevPl = state.bot.pl || {}; state.bot.pl = Object.fromEntries(open.map(t => [t.id, t.pnl]));
   setHTML(box, proRead + open.slice().reverse().map(t => {
     const risk = Math.abs(t.entry - t.sl0), rNow = t.price != null && risk ? ((t.side === "buy" ? t.price - t.entry : t.entry - t.price) / risk) : null;
-    return `<div class="bt${!firstCard && t.id > cardMax ? " enter" : ""}">
-      <div class="bt-head"><span class="bt-side ${t.side}">${t.side.toUpperCase()}</span><strong>${t.symbol}</strong><span class="muted small">${t.lots} lots · ${t.mode}${t.prob ? ` · conf ${Math.round(t.prob * 100)}%` : ""}${t.setup ? ` · ${d.setup_names?.[t.setup] || t.setup}` : ""}</span></div>
-      <div class="bt-levels"><div><span>Entry</span><strong>${px(t.entry, t.symbol)}</strong></div><div class="sl"><span>Stop</span><strong>${px(t.sl, t.symbol)}</strong></div><div class="tp"><span>Target</span><strong>${px(t.tp, t.symbol)}</strong></div></div>
-      <div class="bt-foot"><span class="num flashable ${cls(t.pnl)}" data-pl="${t.id}">${signed(t.pnl)}${rNow != null ? ` <span class="muted">(${rNow >= 0 ? "+" : ""}${rNow.toFixed(2)}R)</span>` : ""}</span>
-        <span class="row gap"><button class="btn xs" data-follow="${t.id}" title="Put the bot's stop into the sizer to size your own copy">Size mine</button><button class="btn xs" data-copy="${t.id}">Copy levels</button></span></div>
-      <p class="muted small" style="margin:6px 0 0">opened ${(t.open_utc || "").replace("T", " ").slice(0, 16)} UTC · #${t.id}</p></div>`;
+    return `<div class="bt2${!firstCard && t.id > cardMax ? " enter" : ""}">
+      <div class="bt2-head"><span class="bt2-side"><span class="dir ${t.side}">${t.side === "buy" ? "▲ BUY" : "▼ SELL"}</span>${t.symbol}<span class="who">BOT</span></span>
+        <span class="bt2-pl"><b class="flashable ${cls(t.pnl)}" data-pl="${t.id}">${signed(t.pnl)}</b><small>${rNow != null ? `${rNow >= 0 ? "+" : ""}${rNow.toFixed(2)}R now` : ""}</small></span></div>
+      <dl class="bt2-meta"><dt>Lots</dt><dd>${t.lots}</dd><dt>Mode</dt><dd>${t.mode}</dd><dt>Conf.</dt><dd>${t.prob ? Math.round(t.prob * 100) + "%" : "–"}</dd><dt>Trade</dt><dd>#${t.id}</dd>
+        ${t.setup ? `<dt>Setup</dt><dd class="wide">${d.setup_names?.[t.setup] || t.setup}</dd>` : ""}</dl>
+      <div class="bt2-levels"><div><span>Entry</span><b>${px(t.entry, t.symbol)}</b></div><div class="sl"><span>Stop</span><b>${px(t.sl, t.symbol)}</b></div><div class="tp"><span>Target</span><b>${px(t.tp, t.symbol)}</b></div></div>
+      <div class="bt2-foot"><span>opened ${(t.open_utc || "").slice(11, 16)} UTC</span>
+        <span class="row gap"><button class="btn xs" data-follow="${t.id}" title="Put the bot's stop into the sizer to size your own copy">Size mine</button><button class="btn xs" data-copy="${t.id}">Copy levels</button></span></div></div>`;
   }).join(""));
   open.forEach(t => { const p0 = prevPl[t.id]; if (p0 != null && t.pnl != null && t.pnl !== p0) flash(box.querySelector(`[data-pl="${t.id}"]`), t.pnl > p0 ? 1 : -1); });
 }
@@ -504,7 +610,7 @@ function drawBotOverlay() {
   const inView = t => (t.mode === "replay") === !!state.replay?.view;
   d.open.filter(t => t.symbol === state.symbol && inView(t)).forEach(t => {
     const mk = (price, color, title, style) => price && state.bot.lines.push(state.series.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
-    mk(t.entry, "#c9a24a", `bot ${t.side}`, 2); mk(t.sl, "#e0574f", "bot SL", 0); mk(t.tp, "#3fb68b", "bot TP", 0);
+    mk(t.entry, "#89cff0", `bot ${t.side}`, 2); mk(t.sl, "#e0574f", "bot SL", 0); mk(t.tp, "#3fb68b", "bot TP", 0);
   });
   const r = state.barRange; if (!r) { state.series.setMarkers([]); return; }
   const snap = t => t - (t % 60), inRange = t => t && t >= r[0] && t <= r[1] + 60;
@@ -517,6 +623,7 @@ function drawBotOverlay() {
   });
   marks.sort((a, b) => a.time - b.time);
   state.series.setMarkers(marks);
+  scheduleSessions();
 }
 
 function renderBotTable() {
@@ -545,7 +652,7 @@ function renderBotTable() {
     + card("Total R", S.total_r != null ? `${S.total_r >= 0 ? "+" : ""}${Number(S.total_r).toFixed(2)}` : "—", cls(S.total_r))
     + card("Avg R / trade", avgR) + (m ? card("Profit factor", S.profit_factor) : ""));
   setHTML($("#bt-table tbody"), rows.map(t => `<tr class="${t.status === "open" ? "open-row" : ""}${!firstRows && !day && t.id > rowMax ? " enter" : ""}"><td>${t.id}</td><td>${t.mode}</td>
-    <td>${(t.open_utc || "").replace("T", " ").slice(0, 16)}</td><td>${t.symbol}</td><td class="${t.side === "buy" ? "up" : "down"}">${t.side}</td><td>${t.lots}</td>
+    <td>${(t.open_utc || "").replace("T", " ").slice(0, 16)}</td><td>${t.symbol}</td><td class="${t.side === "buy" ? "up" : "down"}">${t.side === "buy" ? "▲" : "▼"} ${t.side}</td><td>${t.lots}</td>
     <td>${px(t.entry, t.symbol)}</td><td>${px(t.sl, t.symbol)}</td><td>${px(t.tp, t.symbol)}</td>
     <td>${t.status === "open" ? "open" : px(t.exit, t.symbol)}</td><td>${t.exit_reason || ""}</td>
     <td class="${cls(t.pnl)}">${t.status === "open" ? "" : signed(t.pnl)}</td><td class="${cls(t.r_multiple)}">${t.r_multiple ?? ""}</td><td class="${cls(t.score)}">${t.status === "open" ? "" : pts(t.score)}</td><td>${t.prob ? Math.round(t.prob * 100) + "%" : ""}</td><td class="small">${t.setup ? (d.setup_names?.[t.setup] || t.setup) : ""}</td></tr>`).join("")
@@ -605,6 +712,21 @@ function renderCalendar() {
     <div class="cal-grid">${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(x => `<span class="cal-dow">${x}</span>`).join("")}${cells}</div>
     ${keys.length ? "" : `<p class="cal-empty">No closed trades${mode ? ` in ${mode} mode` : ""} yet. Each day fills in as the bot's trades close: green for a winning day, red for a losing one.</p>`}
     <div class="cal-tip" hidden></div>`);
+  renderLeaderboard();
+}
+function renderLeaderboard() {                   // which setups make money: net P/L per setup, same mode filter
+  const mode = state.bot.filter, by = {}, names = state.bot.data?.setup_names || {};
+  for (const t of state.cal.trades) {
+    if (mode && t.mode !== mode) continue;
+    const k = t.setup || "none", x = by[k] ||= { pl: 0, n: 0, w: 0 }, pl = t.pnl || 0;
+    x.pl += pl; x.n++; if (pl > 0) x.w++;
+  }
+  const rows = Object.entries(by).sort((a, b) => b[1].pl - a[1].pl), mx = Math.max(1e-9, ...rows.map(([, v]) => Math.abs(v.pl)));
+  $("#lb-meta").textContent = `${mode || "all modes"} · net P/L · trades · win %`;
+  setHTML($("#leaderboard"), rows.length ? rows.slice(0, 10).map(([k, v]) => {
+    const wd = (Math.abs(v.pl) / mx * 50).toFixed(1), name = k === "none" ? "No setup tagged" : names[k] || k;
+    return `<span class="name" title="${name}">${name}</span><span class="track"><i class="${v.pl < 0 ? "neg" : ""}" style="${v.pl >= 0 ? `left:50%;width:${wd}%;background:var(--up)` : `right:50%;width:${wd}%;background:var(--down)`}"></i></span><span class="pl ${cls(v.pl)}">${signed(v.pl)}</span><span class="n">${v.n} · ${Math.round(100 * v.w / v.n)}%</span>`;
+  }).join("") : `<div class="empty-state compact lb-empty">${ICON.list}<div><b>No closed trades yet</b>Each setup the bot trades gets a bar here: green when it makes money, red when it loses.</div></div>`);
 }
 $("#bt-cal").addEventListener("click", e => {
   const nav = e.target.closest("[data-cal]:not(:disabled)");
@@ -643,11 +765,11 @@ function sizeTrade() {
 async function loadPositions() {
   try {
     const ps = await api("/api/positions"), box = $("#positions");
-    $("#pos-count").textContent = ps.length ? `${ps.length} open` : "";
+    $("#pos-count").textContent = ps.length ? `${ps.length} open` : ""; $("#open-count").textContent = ps.length;
     const seen = state.posSeen; state.posSeen = new Set(ps.map(p => p.ticket));
     if (!ps.length) { setHTML(box, `<div class="empty-state compact">${ICON.list}<div><b>Nothing open</b>Positions from the bot, Hermes or your own MT5 trades show up here.</div></div>`); return; }
     setHTML(box, ps.map(p => `<div class="pos ${p.side}${seen && !seen.has(p.ticket) ? " enter" : ""}">
-      <span><strong>${p.symbol}</strong><span class="tag ${p.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[p.owner] || "You"}</span> <span class="muted">${p.side} ${p.volume}</span></span>
+      <span><strong>${p.symbol}</strong><span class="tag ${p.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[p.owner] || "You"}</span> <span class="${p.side === "buy" ? "up" : "down"}">${p.side === "buy" ? "▲" : "▼"}</span> <span class="muted">${p.side} ${p.volume}</span></span>
       <button class="btn xs" data-close="${p.ticket}">Close</button>
       <span class="num small muted">SL ${p.sl || "none"}  TP ${p.tp || "none"}</span>
       <span class="num small"><span class="pl ${p.profit >= 0 ? "up" : "down"}">${p.profit >= 0 ? "+" : ""}${fmt(p.profit)}</span> <span class="muted">from ${p.open}</span></span></div>`).join(""));
@@ -689,7 +811,13 @@ async function loadProgress() {
   if (p.event?.type === "demoted") { toast(`Drawdown limit hit. The bot moved back to ${p.event.to}.`, true); beep([520, 390]); }
   if (prevStage && prevStage !== p.stage.id) loadPlan();
   const idx = p.stages.findIndex(x => x.id === p.stage.id);
-  $("#ladder").innerHTML = p.stages.map((x, i) => `<li class="${i < idx ? "done" : i === idx ? "current" : ""} ${x.mode === "real" ? "real" : ""}" title="${x.note}"><b>${x.label}</b>${i < idx ? "passed" : i === idx ? "now" : ""}</li>`).join("");
+  const lock = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>`;
+  const c0 = p.checks[0], prog = c0 && typeof c0.value === "number" && c0.target ? Math.min(100, 100 * c0.value / c0.target) : 0;
+  setHTML($("#ladder"), p.stages.map((x, i) => {
+    const sub = i < idx ? "passed" : i === idx ? (c0 ? `now · ${c0.value} / ${c0.target} ${c0.name.toLowerCase()}` : "now") : x.mode === "real" ? "real money" : "next";
+    return `<li class="${i < idx ? "done" : i === idx ? "current" : ""} ${x.mode === "real" ? "real" : ""}" title="${x.note}"${i === idx + 1 ? ` style="--prog:${prog.toFixed(0)}%"` : ""}>
+      <i class="dot">${i < idx ? "✓" : x.mode === "real" && i > idx ? lock : i + 1}</i><span><b>${x.label}</b><small>${sub}</small></span></li>`;
+  }).join(""));
   const rows = p.checks.map(c => {
     const v = typeof c.value === "number" ? c.value : c.target * 2;
     const pct = c.limit ? Math.min(100, (v / (c.target || 1)) * 100) : Math.min(100, c.target ? (v / c.target) * 100 : 100);
@@ -703,8 +831,9 @@ async function loadProgress() {
       : `<button class="btn primary" id="promote">Promote to ${nxt.label}</button><span class="muted small">Passed. Real money needs your OK.</span>`;
   else if (p.eligible) action = `<button class="btn primary" id="promote">Promote to ${nxt.label}</button>`;
   else action = `<span class="muted small">Next: ${nxt.label}${nxt.id === "demo" && state.settings?.auto_promote_demo ? " (automatic when every check is green)" : nxt.mode === "real" ? " (needs your OK when every check is green)" : ""}</span>`;
-  $("#gate").innerHTML = `<h4>${p.stage.label} <span class="muted small">· ${p.stage.note} · since ${p.since.replace("T", " ").slice(0, 16)} UTC</span></h4>${rows}
-    <div class="actions">${action}${idx > 0 ? `<button class="btn xs" id="demote">Move back a stage</button>` : ""}</div>`;
+  setHTML($("#gate"), `<div class="panel-head"><h3>${p.stage.label} gate</h3><span class="muted small">${nxt ? `then ${nxt.label}` : "top stage"}</span></div>
+    <p class="muted small" style="margin:0 0 6px">${p.stage.note} · since ${p.since.replace("T", " ").slice(0, 16)} UTC</p>${rows}
+    <div class="actions">${action}${idx > 0 ? `<button class="btn xs" id="demote">Move back a stage</button>` : ""}</div>`);
   renderLearned(p.learned);
 }
 $("#gate").addEventListener("click", async e => {
@@ -735,10 +864,10 @@ async function loadPlan() {
   const box = $("#plan");
   let p;
   try { p = await api(`/api/plan?mode=${state.mode === "paper" ? "paper" : state.mode}`); }
-  catch (e) { box.innerHTML = `<p class="empty">${e.status === 503 ? "Open MT5 to see the per-trade plan." : e.message}</p>`; return; }
+  catch (e) { setHTML(box, `<div class="panel-head"><h3>Each trade right now</h3></div><p class="empty">${e.status === 503 ? "Open MT5 to see the per-trade plan." : e.message}</p>`); return; }
   const c = p.currency || "", d = p.digits ?? 2, money = v => `${fmt(v)} ${c}`;
   const cell = (label, val, wide) => `<div class="${wide ? "wide" : ""}"><span>${label}</span><strong>${val}</strong></div>`;
-  box.innerHTML = `<h3>Each ${p.symbol} trade right now (${p.mode})</h3><div class="plan-grid">
+  setHTML(box, `<div class="panel-head"><h3>Each ${p.symbol} trade right now</h3><span class="muted small">${p.mode} · 1:${p.leverage}</span></div><div class="plan-grid">
     ${cell("Balance", money(p.balance))}${cell("Leverage", p.ref_leverage ? `1:${p.leverage} real · exits at 1:${p.ref_leverage}` : `1:${p.leverage}`)}
     ${cell("Stake (margin)", money(p.stake))}${cell("Lots", p.lots)}
     ${cell(`Stop: −${p.sl_pct}% of stake`, `−${money(p.sl_money)}<small>${Number(p.sl_dist).toFixed(d)} from entry</small>`)}
@@ -747,7 +876,7 @@ async function loadPlan() {
     ${cell(`If all ${state.settings.max_open_trades} open trades stop out`, `−${money(p.worst_case_all_open)} (${p.worst_case_pct}% of balance)`, true)}</div>
     ${p.forced_min ? `<p class="plan-note warn">${state.settings.stake_pct}% of balance is ${money(p.stake_target)}, below the ${p.volume_min}-lot minimum, so each trade uses the minimum lot (stake ${money(p.stake)}).</p>` : ""}
     ${p.worst_case_pct > 5 ? `<p class="plan-note warn">That worst case is more than 5% of the balance. Consider fewer open trades or a larger balance.</p>` : ""}
-    ${p.spread_px > p.sl_dist * 0.35 ? `<p class="plan-note warn">The spread is over 35% of the stop distance right now, so the bot will skip entries until it narrows.</p>` : ""}`;
+    ${p.spread_px > p.sl_dist * 0.35 ? `<p class="plan-note warn">The spread is over 35% of the stop distance right now, so the bot will skip entries until it narrows.</p>` : ""}`);
 }
 function bindSlider(id, key, suffix, digits) {
   const el = $(id), txt = $(`${id}-txt`);
@@ -758,7 +887,7 @@ function bindSlider(id, key, suffix, digits) {
 $("#agent-start").onclick = async () => {
   const msg = $("#agent-msg"); msg.className = "note";
   if (state.mode === "real" && !confirm(`Start the agent at ${state.progress?.stage?.label}? It will place REAL-money orders.`)) return;
-  try { await api("/api/agent/start", { method: "POST", body: {} }); msg.textContent = `Started at the ${state.progress?.stage?.label || state.mode} stage. It acts when the next M1 candle closes.`; pollStatus(); pollAgentLog(); }
+  try { await api("/api/agent/start", { method: "POST", body: {} }); msg.textContent = `Started at the ${state.progress?.stage?.label || state.mode} stage. It acts when the next M1 candle closes.`; pollStatus(); openLog(); }
   catch (e) { msg.textContent = e.message; msg.className = "note err"; }
 };
 $("#agent-stop").onclick = async () => { await api("/api/agent/stop", { method: "POST" }); $("#agent-msg").textContent = "Stopped. Any open position keeps its server-side stop loss and take profit."; pollStatus(); };
@@ -767,10 +896,16 @@ function showLog(which, log, stickToEnd) {
   if (!log || !log.trim()) return;
   const pre = $(`#${which}-log`); $(`#${which}-empty`).hidden = true; pre.hidden = false;
   if (pre.textContent === log) return;
+  if (which === "agent" && !$("#log-drawer").classList.contains("open")) $("#log-toggle .log-dot").hidden = false;   // new lines while it's closed
   const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
   pre.textContent = log;
   if (!stickToEnd || atEnd) pre.scrollTop = pre.scrollHeight;
 }
+/* live log: a drawer over the page, opened from the Agent control bar */
+function openLog() { $("#log-drawer").classList.add("open"); $("#log-toggle").setAttribute("aria-expanded", "true"); $("#log-toggle .log-dot").hidden = true; pollAgentLog(); }
+function closeLog() { $("#log-drawer")?.classList.remove("open"); $("#log-toggle")?.setAttribute("aria-expanded", "false"); }
+$("#log-toggle").onclick = () => $("#log-drawer").classList.contains("open") ? closeLog() : openLog();
+$("#log-close").onclick = closeLog;
 async function pollAgentLog() {
   try { const r = await api("/api/jobs/agent/log?lines=300"); showLog("agent", r.log, true); } catch (e) {}
 }
@@ -779,7 +914,7 @@ async function loadJournal() {
     const rows = await api("/api/journal?limit=200"), last = state.journalLast;
     state.journalLast = rows.reduce((mx, r) => (r.time_utc || "") > mx ? r.time_utc : mx, last || "");
     setHTML($("#journal tbody"), rows.reverse().map(r => `<tr${last != null && (r.time_utc || "") > last ? ` class="enter"` : ""}><td>${(r.time_utc || "").replace("T", " ").slice(0, 19)}</td><td>${r.mode}</td>
-      <td class="ev-${r.event}">${r.event}</td><td>${r.side || ""}</td><td>${r.lots || ""}</td><td>${r.price ? Number(r.price).toFixed(state.digits) : ""}</td>
+      <td class="ev-${r.event}">${r.event}</td><td class="${r.side === "buy" ? "up" : r.side === "sell" ? "down" : ""}">${r.side ? (r.side === "buy" ? "▲ " : "▼ ") + r.side : ""}</td><td>${r.lots || ""}</td><td>${r.price ? Number(r.price).toFixed(state.digits) : ""}</td>
       <td>${r.sl ? Number(r.sl).toFixed(state.digits) : ""}</td><td>${r.tp ? Number(r.tp).toFixed(state.digits) : ""}</td><td>${r.prob || ""}</td><td>${r.note || ""}</td></tr>`).join("")
       || `<tr><td colspan="10" class="muted">No entries yet. Start the agent in Paper mode and signals will be logged as candles close.</td></tr>`);
   } catch (e) {}
@@ -871,28 +1006,85 @@ function fillSettings() {
   for (const el of f.elements) {
     if (!el.name || !(el.name in s)) continue;
     if (el.type === "checkbox") el.checked = !!s[el.name];
-    else el.value = Array.isArray(s[el.name]) ? s[el.name].join(", ") : s[el.name];
+    else el.value = Array.isArray(s[el.name]) ? s[el.name].join(el.tagName === "TEXTAREA" ? "\n" : ", ") : s[el.name];
   }
 }
-$("#settings-form").onsubmit = async e => {
-  e.preventDefault();
+/* settings: every field is compared with the saved settings; the save bar names what changed */
+function formValues() {
   const body = {};
-  for (const el of e.target.elements) {
+  for (const el of $("#settings-form").elements) {
     if (!el.name) continue;
     if (el.type === "checkbox") body[el.name] = el.checked;
     else if (el.name === "symbols_watch") body[el.name] = el.value.split(",").map(x => x.trim()).filter(Boolean);
+    else if (el.name === "web_sites") body[el.name] = el.value.split(/[\n,]+/).map(x => x.trim()).filter(Boolean);
     else if (el.type === "number") body[el.name] = parseFloat(el.value);
     else body[el.name] = el.value.trim();
   }
-  const msg = $("#settings-msg");
+  return body;
+}
+const sameVal = (a, b) => Array.isArray(a) || Array.isArray(b) ? String(a ?? "") === String(b ?? "")
+  : typeof a === "number" || typeof b === "number" ? Number(a) === Number(b) || (Number.isNaN(Number(a)) && Number.isNaN(Number(b)))
+  : (a ?? "") === (b ?? "");
+const RETRAIN = new Set(["sl_pct_of_stake", "tp_pct_small", "tp_pct_large", "small_stake", "large_stake", "label_horizon", "ref_leverage"]);
+function labelOf(el) {
+  const l = el.closest("label"); if (!l) return el.name;
+  const txt = l.classList.contains("check") ? l.textContent : [...l.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join(" ");
+  return txt.replace(/\s+/g, " ").trim();
+}
+function updateDirty() {
+  if (!state.settings) return;
+  const body = formValues(), s = state.settings, changed = [];
+  for (const el of $("#settings-form").elements) {
+    if (!el.name) continue;
+    const dirty = !sameVal(body[el.name], s[el.name]);
+    el.closest("label")?.classList.toggle("changed", dirty);
+    if (dirty) changed.push(el);
+  }
+  $$("#set-nav a").forEach(a => a.classList.toggle("dirty", changed.some(el => el.closest("fieldset")?.id === a.getAttribute("href").slice(1))));
+  $("#savebar").classList.toggle("is-dirty", changed.length > 0);
+  $("#set-save").disabled = $("#set-discard").disabled = !changed.length;
+  const txt = $("#set-dirty-txt");
+  if (!changed.length) { txt.textContent = "All changes saved"; return; }
+  const show = (el, v) => el.type === "password" ? "••••" : Array.isArray(v) ? v.join(", ") : typeof v === "boolean" ? (v ? "on" : "off") : v === "" || v == null || Number.isNaN(v) ? "empty" : v;
+  const one = changed[0];
+  const what = changed.length === 1 ? `${labelOf(one)}: ${show(one, s[one.name])} → ${show(one, body[one.name])}`
+    : changed.slice(0, 3).map(labelOf).join(", ") + (changed.length > 3 ? ` and ${changed.length - 3} more` : "");
+  txt.textContent = `${changed.length} unsaved change${changed.length > 1 ? "s" : ""} · ${what}${changed.some(el => RETRAIN.has(el.name)) ? " · retrain after saving" : ""}`;
+}
+$("#settings-form").addEventListener("input", updateDirty);
+$("#settings-form").addEventListener("change", updateDirty);
+$("#set-discard").onclick = () => { fillSettings(); updateDirty(); };
+$("#settings-form").onsubmit = async e => {
+  e.preventDefault();
+  const body = formValues(), msg = $("#settings-msg");
   try { state.settings = await api("/api/settings", { method: "POST", body }); msg.textContent = "Saved to data/settings.json"; initFromSettings(true); brainStatus(); loadPlan(); }
   catch (err) { msg.textContent = err.message; }
+  updateDirty();
   if (msg.animate && motionOK()) msg.animate([{ opacity: 0, transform: "translateX(-4px)" }, { opacity: 1, transform: "none" }], { duration: 260, easing: "cubic-bezier(.22,1,.36,1)" });
 };
-// Settings > Display: reduce animations on this PC only (kept in the window's local storage, never sent to the server)
+// section menu: click to jump, and the menu follows as you scroll
+let navLock = 0;                                 // a clicked section stays highlighted while the page glides to it
+$$("#set-nav a").forEach(a => a.onclick = e => {
+  e.preventDefault(); navLock = Date.now() + 1200;
+  $(a.getAttribute("href"))?.scrollIntoView({ behavior: motionOK() ? "smooth" : "auto", block: "start" });
+  $$("#set-nav a").forEach(x => x.classList.toggle("on", x === a));
+});
+(() => {
+  const seen = new Set(), sections = $$("#settings-form fieldset");
+  const spy = new IntersectionObserver(entries => {
+    entries.forEach(en => en.isIntersecting ? seen.add(en.target.id) : seen.delete(en.target.id));
+    if (Date.now() < navLock) return;
+    const m = $("main"), atEnd = m.scrollTop + m.clientHeight >= m.scrollHeight - 4;   // bottom reached: the last visible one
+    const vis = sections.filter(f => seen.has(f.id)), top = atEnd ? vis[vis.length - 1] : vis[0]; if (!top) return;
+    $$("#set-nav a").forEach(x => x.classList.toggle("on", x.getAttribute("href") === `#${top.id}`));
+  }, { root: $("main"), rootMargin: "0px 0px -55% 0px" });
+  sections.forEach(f => spy.observe(f));
+})();
+// Settings > Display: this-PC-only preferences (kept in the window's local storage, never sent to the server)
 (() => {
   const el = $("#pref-motion"); el.checked = document.documentElement.classList.contains("reduce-motion");
   el.onchange = () => { document.documentElement.classList.toggle("reduce-motion", el.checked); try { localStorage.setItem("reduceMotion", el.checked ? "1" : "0"); } catch (e) {} };
+  const ss = $("#pref-sessions"); ss.checked = state.showSessions; ss.onchange = () => setShowSessions(ss.checked);
 })();
 
 
@@ -901,10 +1093,248 @@ function initFromSettings(keepSymbol = false) {
   if (!keepSymbol || !(s.symbols_watch || []).includes(state.symbol)) state.symbol = s.symbols_watch?.[0] || s.symbol;
   renderChips(); fillSettings();
   bindSlider("#thr", "threshold", "", 2); bindSlider("#stake", "stake_pct", "% of balance", 2);
-  $("#stake").addEventListener("change", () => setTimeout(loadPlan, 300));
+  if (!initFromSettings.bound) { $("#stake").addEventListener("change", () => setTimeout(loadPlan, 300)); initFromSettings.bound = true; }
   $$(".sym-txt").forEach(x => x.textContent = s.symbol); $("#days-txt").textContent = s.days_history;
-  loadBars();
+  loadBars(); updateDirty();
 }
+
+/* ---------- manual trading (UI by Chat B; the /api/manual/* backend is specced for Chat A in TWO_CHATS.md) ----------
+   Watching prices and closing positions work today through /api/bars and /api/positions/{ticket}/close. Placing,
+   editing and pending orders switch on by themselves once /api/manual/* answers. */
+const man = { symbol: null, backend: null, spec: null, q: null, type: "market", arm: null, owner: "any", pos: [], editing: null, realOk: false, tick: 0 };
+const BULK_LABEL = { profit: "Close profitable", loss: "Close losing", buys: "Close buys", sells: "Close sells", all: "Close all" };
+const volStep = () => man.spec?.volume_step || 0.01;
+const volDec = () => Math.max(0, Math.round(-Math.log10(volStep())));
+const isReal = () => $("#acct-mode").classList.contains("real");
+function setPrice(el, v, d) { const prev = el._v; el._v = v; el.textContent = fmt(v, d); if (prev != null && v !== prev) flash(el, v > prev ? 1 : -1); }
+function manSymbols() {
+  const list = state.settings?.symbols_watch || []; if (!man.symbol) man.symbol = state.symbol || list[0];
+  setHTML($("#man-symbols"), list.map(s => `<button class="chip${s === man.symbol ? " active" : ""}" data-sym="${s}" type="button">${s}</button>`).join(""));
+}
+function manPick(sym) {
+  if (!sym || sym === man.symbol) return;
+  man.symbol = sym; man.spec = null; man.q = null; $("#man-bid")._v = $("#man-ask")._v = null;
+  $("#man-sl").value = $("#man-tp").value = $("#man-price").value = ""; disarm(); manSymbols(); loadManQuote(); loadManQuotes();
+}
+async function probeManual() {
+  if (man.backend !== null) return;
+  try { await api(`/api/manual/quote?symbol=${encodeURIComponent(man.symbol)}`); man.backend = true; }
+  catch (e) { man.backend = e.status !== 404; }         // 404 = not built yet; anything else (MT5 closed) means it exists
+  $("#man-backend").hidden = man.backend;
+  $$("#man-buy, #man-sell").forEach(b => b.title = man.backend ? "" : "Placing orders needs the manual-trading backend (Chat A is building it)");
+}
+async function loadManQuote() {
+  if (!man.symbol) return;
+  let q = null;
+  if (man.backend) { try { q = await api(`/api/manual/quote?symbol=${encodeURIComponent(man.symbol)}`); } catch (e) { if (e.status === 404) { man.backend = false; $("#man-backend").hidden = false; } } }
+  if (!q) { try { const d = await api(`/api/bars?symbol=${encodeURIComponent(man.symbol)}&count=1`); q = { symbol: d.symbol, bid: d.bid, ask: d.ask, digits: d.digits, point: d.point }; }
+            catch (e) { $("#man-msg").textContent = e.status === 503 ? "Open MT5 to trade." : e.message; return; } }
+  if (q.symbol !== man.symbol) return;
+  man.q = q; if (q.volume_step) man.spec = q;
+  $("#man-msg").textContent = "";
+  setPrice($("#man-bid"), q.bid, q.digits); setPrice($("#man-ask"), q.ask, q.digits);
+  $("#man-spread").textContent = Math.round((q.ask - q.bid) / q.point);
+  updateRisk(); updatePriceHint();
+}
+function orderText(side) { return `${side.toUpperCase()}${man.type === "market" ? "" : " " + man.type} ${(+$("#man-vol").value).toFixed(volDec())}`; }
+function disarm() {
+  if (!man.arm) return;
+  clearTimeout(man.arm.t); $(`#man-${man.arm.side}`).classList.remove("armed"); $(`#man-${man.arm.side}-note`).textContent = ""; man.arm = null;
+}
+async function manTrade(side) {
+  if (!man.backend) { toast("Placing orders needs the manual-trading backend. Chat A is building it from the spec in TWO_CHATS.md.", true); return; }
+  const oneClick = $("#man-oneclick").checked && (!isReal() || man.realOk);
+  if (!oneClick && man.arm?.side !== side) {             // first click arms, the second sends
+    disarm(); $(`#man-${side}`).classList.add("armed");
+    $(`#man-${side}-note`).textContent = `click again: ${orderText(side)}${isReal() ? " · REAL money" : ""}`;
+    man.arm = { side, t: setTimeout(disarm, 4000) }; return;
+  }
+  disarm();
+  const body = { symbol: man.symbol, side, type: man.type, volume: +$("#man-vol").value, deviation: +$("#man-dev").value || 20 };
+  const sl = parseFloat($("#man-sl").value), tp = parseFloat($("#man-tp").value);
+  if (sl) body.sl = sl; if (tp) body.tp = tp;
+  if (man.type !== "market") {
+    body.price = parseFloat($("#man-price").value); body.expiration = $("#man-exp").value;
+    if (!body.price) { toast("Set the price for the pending order.", true); return; }
+  }
+  if (isReal()) body.confirm_real = true;
+  const b = $(`#man-${side}`); b.disabled = true;
+  try {
+    const r = await api("/api/manual/order", { method: "POST", body });
+    toast(r.ok ? `${orderText(side)} ${man.symbol} ${man.type === "market" ? `filled at ${fmt(r.price, man.q?.digits ?? 2)}` : "placed"} · #${r.ticket}` : `Order refused: ${r.comment}`, !r.ok);
+    beep(r.ok ? [660, 880] : [520, 390]);
+  } catch (e) { toast(e.message, true); }
+  b.disabled = false; loadManPositions(); loadManOrders(); loadPositions();
+}
+$("#man-buy").onclick = () => manTrade("buy"); $("#man-sell").onclick = () => manTrade("sell");
+$("#man-symbols").addEventListener("click", e => { const b = e.target.closest("[data-sym]"); if (b) manPick(b.dataset.sym); });
+function setVol(v) {
+  const s = volStep(), mn = man.spec?.volume_min || s, mx = man.spec?.volume_max || 100;
+  $("#man-vol").value = Math.min(mx, Math.max(mn, Math.round(v / s) * s)).toFixed(volDec()); updateRisk(); disarm();
+}
+$$("[data-vol]").forEach(b => b.onclick = () => setVol(+$("#man-vol").value + (+b.dataset.vol) * volStep()));
+$("#man-vol-presets").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) setVol(b.dataset.v === "min" ? (man.spec?.volume_min || volStep()) : +b.dataset.v); });
+$("#man-vol").addEventListener("change", () => setVol(+$("#man-vol").value));
+$("#man-type").addEventListener("click", e => {
+  const b = e.target.closest("[data-type]"); if (!b) return;
+  man.type = b.dataset.type; $$("#man-type .seg-opt").forEach(x => x.classList.toggle("on", x === b));
+  $(".man-price").hidden = man.type === "market";
+  if (man.type !== "market" && !$("#man-price").value && man.q) $("#man-price").value = ((man.q.bid + man.q.ask) / 2).toFixed(man.q.digits);
+  updatePriceHint(); updateRisk(); disarm();
+});
+function updatePriceHint() {
+  const q = man.q, h = $("#man-price-hint"); if (!q || man.type === "market") return;
+  h.textContent = man.type === "limit" ? `A buy limit sits below ${fmt(q.ask, q.digits)}, a sell limit above ${fmt(q.bid, q.digits)}.`
+    : `A buy stop sits above ${fmt(q.ask, q.digits)}, a sell stop below ${fmt(q.bid, q.digits)}.`;
+}
+function updateRisk() {
+  const q = man.q, sl = parseFloat($("#man-sl").value), el = $("#man-risk-txt"); if (!q) return;
+  if (!sl) { el.textContent = "Add a stop loss to see what's at risk."; return; }
+  const entry = man.type === "market" ? (sl < q.bid ? q.ask : q.bid) : parseFloat($("#man-price").value) || q.bid;
+  const dist = Math.abs(entry - sl), v = +$("#man-vol").value;
+  const money = q.tick_value && q.tick_size ? dist / q.tick_size * q.tick_value * v : null;
+  el.textContent = `Stop ${Math.round(dist / q.point).toLocaleString()} points away${money != null ? ` · risks ${fmt(money)}${state.acct?.currency ? " " + state.acct.currency : ""}` : ""}`;
+}
+["#man-sl", "#man-tp", "#man-price"].forEach(s => $(s).addEventListener("input", () => { updateRisk(); updatePriceHint(); disarm(); }));
+$("#man-size").onclick = async () => {
+  const sl = parseFloat($("#man-sl").value), q = man.q;
+  if (!sl || !q) { toast("Set a stop loss first; the lots are sized from it.", true); return; }
+  const entry = man.type === "market" ? (sl < q.bid ? q.ask : q.bid) : parseFloat($("#man-price").value) || q.bid;
+  try {
+    const r = await api(`/api/size?symbol=${encodeURIComponent(man.symbol)}&entry=${entry}&stop=${sl}&risk=${$("#man-risk").value}`);
+    if (r.lots) { setVol(r.lots); toast(`${r.lots} lots risks ${fmt(r.risk_money)} of ${fmt(r.equity)}.`); }
+    else toast(`Even the minimum lot risks more than ${$("#man-risk").value}% with that stop.`, true);
+  } catch (e) { toast(e.message, true); }
+};
+(() => {                                         // one-click trading: remembered on this PC; on real money it asks once
+  const el = $("#man-oneclick"); try { el.checked = localStorage.getItem("oneClick") === "1"; } catch (e) {}
+  el.onchange = () => {
+    if (el.checked && isReal()) { if (!confirm("One-click trading on a REAL account sends every Buy or Sell straight away. Turn it on?")) { el.checked = false; return; } man.realOk = true; }
+    try { localStorage.setItem("oneClick", el.checked ? "1" : "0"); } catch (e) {}
+    disarm();
+  };
+})();
+async function loadManPositions() {
+  const tb = $("#man-pos tbody"), a = state.acct;
+  if (a) setHTML($("#man-acct"), `<span>Balance <b>${fmt(a.balance)}</b></span><span>Equity <b>${fmt(a.equity)}</b></span><span>Margin <b>${fmt(a.margin)}</b></span><span>Free <b>${fmt(a.margin_free)}</b></span><span>Level <b>${a.margin_level ? Math.round(a.margin_level) + "%" : "–"}</b></span>`);
+  let ps; try { ps = await api("/api/positions"); } catch (e) { setHTML(tb, `<tr><td colspan="10" class="muted">${e.status === 503 ? "Open MT5 to see positions." : e.message}</td></tr>`); return; }
+  man.pos = ps;
+  const sel = ps.filter(p => man.owner === "any" || p.owner === man.owner);
+  const groups = { profit: sel.filter(p => p.profit > 0), loss: sel.filter(p => p.profit < 0), buys: sel.filter(p => p.side === "buy"), sells: sel.filter(p => p.side === "sell"), all: sel };
+  $$("[data-bulk]").forEach(b => {
+    if (b.classList.contains("armed")) return;
+    const g = groups[b.dataset.bulk], sum = g.reduce((s, p) => s + p.profit, 0);
+    setHTML(b, `${BULK_LABEL[b.dataset.bulk]}<span class="cnt">${g.length}${g.length ? ` · ${signed(sum)}` : ""}</span>`); b.disabled = !g.length;
+  });
+  if (man.editing != null) return;               // don't wipe the SL/TP editor while you type
+  const off = man.backend ? "" : " disabled title=\"Needs the manual-trading backend\"", seen = man.posSeen;
+  man.posSeen = new Set(ps.map(p => p.ticket));
+  setHTML(tb, sel.map(p => `<tr data-t="${p.ticket}"${seen && !seen.has(p.ticket) ? ` class="enter"` : ""}><td>${p.symbol}</td><td><span class="tag ${p.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[p.owner] || "You"}</span></td>
+      <td class="${p.side === "buy" ? "up" : "down"}">${p.side === "buy" ? "▲" : "▼"} ${p.side}</td><td>${p.volume}</td><td>${p.open}</td><td>${p.current}</td><td>${p.sl || "–"}</td><td>${p.tp || "–"}</td>
+      <td class="${cls(p.profit)}">${signed(p.profit)}</td><td><span class="acts"><button data-act="be" title="Move the stop loss to the entry price"${off}>BE</button><button data-act="edit" title="Change stop loss / take profit"${off}>SL/TP</button><button data-act="half" title="Close half"${off}>½</button><button class="x" data-act="close">Close</button></span></td></tr>`).join("")
+    || `<tr><td colspan="10" class="muted">No positions${man.owner === "any" ? "" : " for this filter"}.</td></tr>`);
+}
+$("#man-owner").addEventListener("click", e => {
+  const b = e.target.closest("[data-o]"); if (!b) return;
+  man.owner = b.dataset.o; $$("#man-owner .chip").forEach(x => x.classList.toggle("active", x === b)); loadManPositions();
+});
+$("#man-pos").addEventListener("click", async e => {
+  const b = e.target.closest("[data-act]"); if (!b || b.disabled) return;
+  const tr = b.closest("tr"), tk = +tr.dataset.t, p = man.pos.find(x => x.ticket === tk); if (!p) return;
+  const act = b.dataset.act;
+  if (act === "edit") {
+    man.editing = tk; tr.nextElementSibling?.classList.contains("edit") && tr.nextElementSibling.remove();
+    tr.insertAdjacentHTML("afterend", `<tr class="edit"><td colspan="10"><div class="edit-row">Stop loss <input id="ed-sl" type="number" step="any" value="${p.sl || ""}" placeholder="none"> Take profit <input id="ed-tp" type="number" step="any" value="${p.tp || ""}" placeholder="none">
+      <button class="btn xs primary" data-act="save">Save</button><button class="btn xs" data-act="cancel">Cancel</button></div></td></tr>`);
+    $("#ed-sl").focus(); return;
+  }
+  if (act === "cancel") { man.editing = null; loadManPositions(); return; }
+  b.disabled = true;
+  try {
+    let r;
+    if (act === "close") { r = await api(`/api/positions/${tk}/close`, { method: "POST" }); toast(r.retcode === 10009 ? `Closed #${tk} · ${signed(p.profit)}` : `Close result: ${r.comment}`, r.retcode !== 10009); }
+    if (act === "half") { const v = Math.max(volStep(), Math.round(p.volume / 2 / volStep()) * volStep()); r = await api("/api/manual/close", { method: "POST", body: { tickets: [tk], volume: +v.toFixed(volDec()) } }); toast(`Closed ${v.toFixed(volDec())} of #${tk}.`); }
+    if (act === "be") { r = await api("/api/manual/modify", { method: "POST", body: { ticket: tk, sl: p.open, tp: p.tp || 0 } }); toast(r.ok ? `#${tk}: stop moved to entry ${p.open}.` : r.comment, !r.ok); }
+    if (act === "save") {
+      const tr0 = tr.previousElementSibling, t0 = +tr0.dataset.t;
+      r = await api("/api/manual/modify", { method: "POST", body: { ticket: t0, sl: parseFloat($("#ed-sl").value) || 0, tp: parseFloat($("#ed-tp").value) || 0 } });
+      toast(r.ok ? `#${t0}: stop loss and take profit updated.` : r.comment, !r.ok); man.editing = null;
+    }
+  } catch (err) { toast(err.message, true); }
+  loadManPositions(); loadPositions();
+});
+$(".bulk-btns").addEventListener("click", async e => {
+  const b = e.target.closest("[data-bulk]"); if (!b || b.disabled) return;
+  const kind = b.dataset.bulk, match = { profit: p => p.profit > 0, loss: p => p.profit < 0, buys: p => p.side === "buy", sells: p => p.side === "sell", all: () => true }[kind];
+  const sel = man.pos.filter(p => (man.owner === "any" || p.owner === man.owner) && match(p));
+  if (!b.classList.contains("armed")) {          // two clicks, like Wipe: the first shows exactly what will close
+    $$(".bulk-btns .btn.armed").forEach(x => x.classList.remove("armed"));
+    b.classList.add("armed"); b.textContent = `Click again: close ${sel.length} (${signed(sel.reduce((s, p) => s + p.profit, 0))})`;
+    clearTimeout(man.bulkT); man.bulkT = setTimeout(() => { b.classList.remove("armed"); b._html = null; loadManPositions(); }, 4000); return;
+  }
+  clearTimeout(man.bulkT); b.classList.remove("armed"); b._html = null; b.disabled = true;
+  let closed = 0, failed = 0;
+  if (man.backend) {
+    try { const r = await api("/api/manual/close", { method: "POST", body: { filter: kind, owner: man.owner } }); closed = r.closed.length; failed = r.failed.length; }
+    catch (err) { toast(err.message, true); }
+  } else {
+    for (const p of sel) { try { const r = await api(`/api/positions/${p.ticket}/close`, { method: "POST" }); r.retcode === 10009 ? closed++ : failed++; } catch (err) { failed++; } }
+  }
+  toast(`Closed ${closed} position${closed === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}.`, failed > 0);
+  loadManPositions(); loadPositions();
+});
+async function loadManOrders() {
+  const tb = $("#man-orders tbody"), all = $("#man-cancel-all");
+  if (!man.backend) { setHTML(tb, `<tr><td colspan="8" class="muted">Pending orders show up here once the manual-trading backend is in.</td></tr>`); all.disabled = true; return; }
+  let os; try { os = await api("/api/manual/orders"); } catch (e) { setHTML(tb, `<tr><td colspan="8" class="muted">${e.status === 503 ? "Open MT5 to see pending orders." : e.message}</td></tr>`); return; }
+  all.disabled = !os.length;
+  setHTML(tb, os.map(o => `<tr><td>${o.symbol}</td><td class="${o.type.startsWith("buy") ? "up" : "down"}">${o.type.startsWith("buy") ? "▲" : "▼"} ${o.type.replace("_", " ")}</td><td>${o.volume}</td><td>${o.price}</td><td>${o.sl || "–"}</td><td>${o.tp || "–"}</td>
+      <td>${(o.time_setup || "").replace("T", " ").slice(5, 16)}</td><td><span class="acts"><button class="x" data-cancel="${o.ticket}">Cancel</button></span></td></tr>`).join("")
+    || `<tr><td colspan="8" class="muted">No pending orders.</td></tr>`);
+}
+$("#man-orders").addEventListener("click", async e => {
+  const b = e.target.closest("[data-cancel]"); if (!b) return; b.disabled = true;
+  try { await api("/api/manual/orders/cancel", { method: "POST", body: { tickets: [+b.dataset.cancel] } }); toast("Order cancelled."); } catch (err) { toast(err.message, true); }
+  loadManOrders();
+});
+$("#man-cancel-all").onclick = async () => {
+  const b = $("#man-cancel-all");
+  if (!b.classList.contains("armed")) { b.classList.add("armed", "danger-outline"); b.textContent = "Click again to cancel all"; clearTimeout(man.cancelT); man.cancelT = setTimeout(() => { b.classList.remove("armed", "danger-outline"); b.textContent = "Cancel all"; }, 4000); return; }
+  clearTimeout(man.cancelT); b.classList.remove("armed", "danger-outline"); b.textContent = "Cancel all";
+  try { const r = await api("/api/manual/orders/cancel", { method: "POST", body: { all: true } }); toast(`Cancelled ${r.cancelled.length} order(s)${r.failed.length ? ` · ${r.failed.length} failed` : ""}.`, r.failed.length > 0); } catch (err) { toast(err.message, true); }
+  loadManOrders();
+};
+async function loadManHistory() {
+  const tb = $("#man-hist tbody");
+  if (!man.backend) { setHTML(tb, `<tr><td colspan="8" class="muted">Today's closed deals show up here once the manual-trading backend is in.</td></tr>`); return; }
+  let hs; try { hs = await api("/api/manual/history?days=1"); } catch (e) { setHTML(tb, `<tr><td colspan="8" class="muted">${e.message}</td></tr>`); return; }
+  const net = hs.reduce((s, h) => s + (h.profit || 0), 0);
+  setHTML($("#man-hist-meta"), hs.length ? `${hs.length} closed · net <b class="num ${cls(net)}">${signed(net)}</b>` : "");
+  setHTML(tb, hs.map(h => `<tr><td>${(h.time || "").slice(11, 16)}</td><td>${h.symbol}</td><td class="${h.side === "buy" ? "up" : "down"}">${h.side === "buy" ? "▲" : "▼"} ${h.side}</td><td>${h.volume}</td><td>${h.open}</td><td>${h.close}</td>
+      <td class="${cls(h.profit)}">${signed(h.profit)}</td><td><span class="tag ${h.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[h.owner] || "You"}</span></td></tr>`).join("")
+    || `<tr><td colspan="8" class="muted">Nothing closed today yet.</td></tr>`);
+}
+async function loadManQuotes() {
+  const syms = state.settings?.symbols_watch || []; if (!syms.length) return;
+  let qs = null;
+  if (man.backend) { try { qs = await api(`/api/manual/quotes?symbols=${encodeURIComponent(syms.join(","))}`); } catch (e) { qs = null; } }
+  if (!qs) qs = (await Promise.all(syms.map(s => api(`/api/bars?symbol=${encodeURIComponent(s)}&count=1`)
+    .then(d => ({ symbol: d.symbol, bid: d.bid, ask: d.ask, digits: d.digits, point: d.point })).catch(() => null)))).filter(Boolean);
+  setHTML($("#man-quotes tbody"), qs.map(q => `<tr data-sym="${q.symbol}"${q.symbol === man.symbol ? ` class="sel"` : ""}><td>${q.symbol}</td><td class="num">${fmt(q.bid, q.digits)}</td><td class="num">${fmt(q.ask, q.digits)}</td><td class="num">${Math.round((q.ask - q.bid) / q.point)}</td></tr>`).join("")
+    || `<tr><td colspan="4" class="muted">Open MT5 to see quotes.</td></tr>`);
+}
+$("#man-quotes").addEventListener("click", e => { const r = e.target.closest("[data-sym]"); if (r) manPick(r.dataset.sym); });
+async function openManual() {
+  manSymbols(); await probeManual();
+  loadManQuote(); loadManPositions(); loadManQuotes(); loadManOrders(); loadManHistory();
+}
+setInterval(() => {                               // only while the Manual tab is open: quote 1 s, positions 2 s, lists 3 s, history 15 s
+  if (state.tab !== "manual") return;
+  man.tick++; loadManQuote();
+  if (man.tick % 2 === 0) loadManPositions();
+  if (man.tick % 3 === 0) { loadManQuotes(); loadManOrders(); }
+  if (man.tick % 15 === 0) loadManHistory();
+}, 1000);
 
 /* ---------- boot ---------- */
 initChart();
@@ -914,7 +1344,7 @@ setInterval(pollBot, 2000);
 loadProgress(); setInterval(loadProgress, 5000);
 setInterval(pollStatus, 2000);
 setInterval(pollAccount, 2000);
-setInterval(() => state.tab === "dash" && !state.replay.view && (loadBars(), loadPositions()), 3000);
+setInterval(() => { if (state.tab === "dash" && !state.replay.view) loadBars(); loadPositions(); }, 3000);   // positions feed the top bar on every tab
 setInterval(() => state.tab === "dash" && state.replay.view && loadReplay(), 400);
 setInterval(() => state.tab === "agent" && (pollAgentLog(), loadJournal()), 2000);
 setInterval(() => state.tab === "agent" && loadPlan(), 10000);
@@ -1056,7 +1486,7 @@ async function loadQuiz() {
   const st = r.state || {}, qz = r.quiz, pol = r.policy;
   quiz.st = st;
   if (qz && quiz.labels?.built !== qz.built) { try { quiz.labels = await api("/api/quiz/labels"); quiz.picked.clear(); updatePicked(); } catch (e) {} }
-  renderBuild(r.build, r.job_running);
+  renderBuild(r.build, r.job_running); renderBank(r.bank);
   const sp = r.control?.speed ?? 0;
   document.querySelectorAll("#quiz-speed button").forEach(b => b.classList.toggle("active", +b.dataset.speed === sp));
   $("#quiz-status").textContent = r.job_running ? (st.round ? (st.focus ? `working on ${st.focus.length.toLocaleString()} picked` : "running") : "working...")
@@ -1110,12 +1540,13 @@ async function startQuiz(body, msg) {
   catch (e) { toast(e.message, true); }
 }
 $("#quiz-build").onclick = async () => {
-  const n = Math.max(40, Math.min(100000, Math.round(+$("#quiz-n").value || 1000)));
-  $("#quiz-n").value = n;
+  const all = $("#quiz-all").getAttribute("aria-pressed") === "true";      // All = every usable question in the bank
+  const n = all ? 0 : Math.max(40, Math.round(+$("#quiz-n").value || 1000));
+  if (!all) $("#quiz-n").value = n;
   try {
     await api("/api/quiz/build", { method: "POST", body: { questions: n } });
     quiz.streaks = "";
-    toast(n > 20000 ? `Building ${n.toLocaleString()} questions: a few minutes. Training a quiz this size takes a while per round; Continue picks up where it left off.`
+    toast(!n ? "Building a quiz from every usable question in the bank." : n > 20000 ? `Building ${n.toLocaleString()} questions: a few minutes. Training a quiz this size takes a while per round; Continue picks up where it left off.`
       : `Finding ${n.toLocaleString()} pro setups in your history. This takes a minute.`);
   } catch (e) { toast(e.message, true); }
 };
@@ -1187,6 +1618,20 @@ $("#quiz-wipe").onclick = async () => {
     toast("All quiz questions and their progress were deleted. The trained agent is kept.");
     loadQuiz();
   } catch (e) { toast(e.message, true); }
+};
+
+/* question bank: an always-on creator keeps adding questions (backend by Chat A); one line + half-year bars while it works */
+function renderBank(b) {
+  const box = $("#quiz-bank"); box.hidden = !b; if (!b) return;
+  const good = (b.good ?? 0).toLocaleString(), yrs = (b.history || "").replace(/(\d{4})-\d\d-\d\d to (\d{4})-\d\d-\d\d/, "$1–$2");
+  $("#quiz-bank-txt").textContent = `Question bank: ${good} ready${yrs ? ` (${yrs})` : ""} · ${b.running ? b.stage || "adding questions" : b.watcher ? "always adding new ones" : b.stage || "up to date"}`;
+  box.querySelector(".live-dot").hidden = !b.running;
+  setHTML($("#quiz-bank-bars"), b.running && (b.finders || []).length ? b.finders.map(f =>
+    `<div class="finder ${f.pct >= 1 ? "done" : ""}">${f.label}<div class="bar"><i style="width:${Math.round((f.pct || 0) * 100)}%"></i></div></div>`).join("") : "");
+}
+$("#quiz-all").onclick = () => {
+  const b = $("#quiz-all"), on = b.getAttribute("aria-pressed") !== "true";
+  b.setAttribute("aria-pressed", String(on)); b.classList.toggle("active", on); $("#quiz-n").disabled = on;
 };
 
 /* build progress: several question finders work through slices of history at once */
