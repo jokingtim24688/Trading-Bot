@@ -74,6 +74,8 @@ def add_event(kind: str, **fields) -> dict:
               "volume": None, "price": None, "profit": None, "owner": None, "message": None, **fields}
         _next_id += 1
         _events.append(ev)
+    print(f"(event #{ev['id']} {kind} ticket {ev['ticket']} {ev['symbol'] or ''} {ev['side'] or ''} "
+          f"profit {ev['profit']})", flush=True)          # logs/app.log: proves the feed saw it, for bug reports
     if kind in ("tp", "sl"):
         notify.for_event(ev)                           # Windows pop-up, so you see it with the app minimised
     telegram.for_event(ev)                             # your phone, if Telegram alerts are on

@@ -250,6 +250,25 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24, from the user, with a screenshot of the Manual chart holding 5 sells: "instead of this clunky design simply
+  put the small sl and tp and instead of a big banner a small dot for where i bought they can overlap and also the
+  notifications weren't working".
+  **1. Chart markers (Manual chart, and the Market chart's bot trades if they use the same style):**
+  - Remove the big gold "you sell 0.1" price-line banners, one per position, which stack into a wall.
+  - Entry = a **small dot** where the trade opened: a candle marker at the open time and price (e.g. `setMarkers`
+    `shape: "circle"`, small, green for buys and red for sells, no text; or a small canvas dot on `#chart-layer`).
+    Dots may overlap.
+  - SL / TP = **thin lines with just a small "SL" / "TP" axis tag** (1 px, dotted or low opacity, red / green). No
+    per-position price label in the tag. Positions sharing a level may overlap; don't stack five labels.
+  - Keep drag-to-move for SL/TP working on the thin lines. Hover (or selecting a position in the table) can show
+    the details the banner used to show: side, lots, P/L.
+  **2. Notifications "weren't working":** the user had just updated from an old copy (see the update fix), so it may
+  have been the old version. The events feed passes its tests on a fake MT5. From my commit after this item,
+  `logs/app.log` prints `(event #N kind ticket ...)` for every event the backend creates, so a missing notification
+  can be traced to backend or UI. Please check the UI side on a real setup: `pollEvents` stops for good once it gets a
+  404 (`alertsState.ok = false`), e.g. while an older server was still running. Consider retrying every ~30 s instead.
+  Also check the screen pop-up window path (`pop.feed`) when the main window is in front vs behind. The user hasn't
+  said which notifications failed: in-app cards, the screen pop-up, or opens / closes. Ask them if you can.
 - 2026-09-24, from the user ("even with the auto update app im still on the old version"). **FYI, small edit in your
   file:** `Trading Bot.bat` now runs `".venv\Scripts\python.exe" -m app.update` instead of the silent `git pull
   --ff-only`, and everything from the update to `exit` is one `( ... )` block (cmd parses it once, so an update that
