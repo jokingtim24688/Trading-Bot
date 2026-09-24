@@ -301,3 +301,4 @@ label.inline select { width: auto; padding: 4px 8px; }
 .probs .bar i { display: block; height: 100%; background: var(--gold); }
 .probs .pick { color: var(--text); font-weight: 600; }
 #quiz-answer a { color: var(--gold); }
+.lgc { background: #89cff0; }

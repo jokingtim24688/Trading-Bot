@@ -16,8 +16,9 @@ Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. R
 - **learn.py**: analyze ledger → learned_rules.json + `.claude/skills/m1-bot-lessons/`; `block_reason()` used by run.py.
 - **practice.py**: `Practice.decide()` top-10% of the last 1440 confidence readings (Paper/Replay).
 - **quiz.py**: quiz school. `build` (40-10,000) -> data/quiz.json + quiz_x/quiz_bars/quiz_times .npy (clean pro winners +
-  stay-out spots, contradictions removed); `train [--resume] [--focus ids]` -> 49-64-3 network, REINFORCE with
-  per-question baseline, adaptive exploration, sticky mastery, stuck -> "unclear"; progress data/quiz_progress.npz,
+  stay-out spots, contradictions removed); `train [--resume] [--focus ids]` -> (49 indicators + 178 chart inputs)-64..512-3 network,
+  REINFORCE with per-question baseline, adaptive exploration, sticky mastery, loops until done (stall tactics:
+  extra reps + bigger steps -> grow network -> reset stuck); writes .claude/skills/quiz-lessons; progress data/quiz_progress.npz,
   agent models/quiz_policy.json, live data/quiz_state.json. `--quiz-filter` in run/replay.
 - **pro.py**: professional-trader inputs (prior-day levels, Asian range, London/NY opening ranges, session average,
   liquidity sweeps, FVGs, H1 structure, round numbers) added by `build_features`; `active_setups()` / `primary_setup()`

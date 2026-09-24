@@ -170,6 +170,7 @@ def main():
     if args.quiz_filter:
         from .quiz import load_policy
         quiz_pol = load_policy()
+    OHLC = np.column_stack([O, H, L, C]) if quiz_pol is not None else None   # the quiz agent looks at the chart
     rules = learn.load_rules()                         # fixed for the run: reading files per candle limits max speed
     ctl, ctl_read = read_control(), time.time()
     i = i0
@@ -222,7 +223,8 @@ def main():
                     price = C[i] + SP[i] if side == "buy" else C[i]
                     plan = stake_plan(broker.account_balance(), price * (spec.tick_value / spec.tick_size) * args.margin_rate,
                                       spec, m, price)
-                    qa = quiz_pol.answer_row(feats.iloc[i].to_dict()) if quiz_pol is not None else None
+                    qa = (quiz_pol.answer_row(feats.iloc[i].to_dict(), OHLC[max(0, i - 89):i + 1])
+                          if quiz_pol is not None else None)
                     if qa and qa["action"] != side:
                         decision, reason = f"skipped {side}", f"quiz agent says {qa['action']}"
                         skips["quiz agent disagreed"] += 1

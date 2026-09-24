@@ -651,6 +651,8 @@ function drawBoard() {
   cv.style.height = L.h + "px"; cv.width = Math.round(L.w * r); cv.height = Math.round(L.h * r);
   const g = cv.getContext("2d"); g.setTransform(r, 0, 0, r, 0, 0); g.clearRect(0, 0, L.w, L.h);
   const miss = quiz.st.mistake && quiz.st.running ? quiz.st.mistake.id : null, ids = quiz.labels?.ids;
+  const cur = quiz.st.running ? quiz.st.current : null;
+  let curXY = null;
   for (let k = 0; k < n; k++) {
     const x = (k % L.cols) * (L.cell + L.gap), y = Math.floor(k / L.cols) * (L.cell + L.gap), c = st[k];
     g.fillStyle = c === "5" ? "#c9a24a" : c === "u" ? "#4a4f58" : c === "0" ? "#232830" : `rgba(201,162,74,${0.12 + 0.12 * +c})`;
@@ -658,10 +660,16 @@ function drawBoard() {
     const id = ids ? ids[k] : k + 1;
     if (miss === id) { g.strokeStyle = "#e0574f"; g.lineWidth = 1.5; g.strokeRect(x + .75, y + .75, L.cell - 1.5, L.cell - 1.5); }
     if (quiz.picked.has(id)) { g.strokeStyle = "#e6e2d8"; g.lineWidth = 1.5; g.strokeRect(x + .75, y + .75, L.cell - 1.5, L.cell - 1.5); }
+    if (cur === id) { curXY = [x, y]; }
+  }
+  if (curXY) {                                   // the question it is working on right now: baby blue, drawn on top
+    const [x, y] = curXY, pad = Math.max(2, L.cell / 3);
+    g.fillStyle = "#89cff0"; g.fillRect(x, y, L.cell, L.cell);
+    g.strokeStyle = "#89cff0"; g.lineWidth = 1.5; g.strokeRect(x - pad + .75, y - pad + .75, L.cell + 2 * pad - 1.5, L.cell + 2 * pad - 1.5);
   }
   quiz.cells = L;
-  const done = [...st].filter(c => c === "5").length, unclear = [...st].filter(c => c === "u").length;
-  $("#quiz-board-meta").textContent = `${done.toLocaleString()} of ${n.toLocaleString()} finished${unclear ? ` · ${unclear} unclear` : ""}`;
+  const done = [...st].filter(c => c === "5").length, stuck = [...st].filter(c => c === "u").length;
+  $("#quiz-board-meta").textContent = `${done.toLocaleString()} of ${n.toLocaleString()} finished${stuck ? ` · ${stuck} stuck (looping)` : ""}`;
 }
 function boardHit(e) {
   const L = quiz.cells; if (!L) return null;
@@ -675,7 +683,7 @@ $("#quiz-board").addEventListener("mousemove", e => {
   if (!h) { tip.hidden = true; return; }
   const c = quiz.streaks[h.k], lb = quiz.labels;
   const name = lb ? lb.names[lb.setups[h.k]] : "", ans = lb ? ACT[lb.answers[h.k]] : "";
-  tip.textContent = `Q${h.id} · ${name} · ${ans} · ${c === "5" ? "finished" : c === "u" ? "unclear" : `streak ${c}/5`}`;
+  tip.textContent = `Q${h.id} · ${name} · ${ans} · ${c === "5" ? "finished" : c === "u" ? "stuck, looping" : `streak ${c}/5`}${quiz.st.current === h.id && quiz.st.running ? " · working on it now" : ""}`;
   tip.hidden = false;
   tip.style.left = Math.min(h.x + 12, $("#quiz-board").clientWidth - tip.offsetWidth - 4) + "px"; tip.style.top = (h.y + 14) + "px";
 });
@@ -723,13 +731,13 @@ async function loadQuiz() {
   if (quiz.lastPts && r.job_running) { const dt = (now - quiz.lastPts.t) / 1000; if (dt > 0.2) quiz.pps = 0.6 * quiz.pps + 0.4 * (P - quiz.lastPts.p) / dt; }
   quiz.lastPts = { p: P, t: now };
   $("#quiz-points").textContent = `${P >= 0 ? "+" : "−"}${Math.abs(P).toLocaleString()}`;
-  $("#quiz-pps").textContent = r.job_running ? `${quiz.pps >= 0 ? "+" : "−"}${Math.abs(Math.round(quiz.pps)).toLocaleString()} points a second · ${(st.rate || 0).toLocaleString()} answers a second` : st.reason ? st.reason : " ";
+  $("#quiz-pps").textContent = r.job_running && st.note ? st.note : r.job_running ? `${quiz.pps >= 0 ? "+" : "−"}${Math.abs(Math.round(quiz.pps)).toLocaleString()} points a second · ${(st.rate || 0).toLocaleString()} answers a second` : st.reason ? st.reason : " ";
   $("#quiz-round").textContent = st.round ? `round ${st.round.toLocaleString()}` : "";
   const card = (l, v, extra = "") => `<div class="stat"><span>${l}</span><strong>${v}</strong>${extra}</div>`;
   const prac = st.practice ?? qz?.practice ?? 0, mastered = st.mastered ?? pol?.mastered ?? 0;
   $("#quiz-stats").innerHTML = card("Finished", `${mastered.toLocaleString()}/${prac.toLocaleString()}`, `<div class="bar" style="width:100%;margin-top:6px"><i style="width:${prac ? 100 * mastered / prac : 0}%"></i></div>`)
     + card("Answers", (st.asked ?? pol?.asked ?? 0).toLocaleString()) + card("Right, last 1,000", st.recent_pct != null ? `${st.recent_pct}%` : "–")
-    + card("Unclear", (st.unclear ?? 0).toLocaleString());
+    + card("Stuck (looping)", (st.stuck ?? 0).toLocaleString());
   // board
   if (typeof st.streaks === "string") quiz.streaks = st.streaks;
   else if (qz && !quiz.streaks) quiz.streaks = "0".repeat(qz.practice);

@@ -507,7 +507,7 @@ def quiz_ask():
     df.index = pd.to_datetime(df["time"], unit="s", utc=True)
     df = df.rename(columns={"volume": "tick_volume"})
     row = build_features(df, d["point"]).iloc[-1].to_dict()
-    ans = pol.answer_row(row)
+    ans = pol.answer_row(row, df[["open", "high", "low", "close"]].to_numpy()[-90:])
     return {**ans, "setups": [SETUP_NAMES[k] for k in active_setups(row)], "bar_time": int(df["time"].iloc[-1]),
             "price": d["bid"], "bars": d["bars"][-90:]}
 

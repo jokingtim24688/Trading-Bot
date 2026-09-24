@@ -5,3 +5,5 @@ Scripts: position_size.py, fetch_m1.py, m1_session_filter.py. Packaged as `mt5-t
 Subagent `.claude/agents/mt5-m1-trader.md`: tools include `mcp__mt5__*`; rules cover risk first, confirmation on real accounts, closed bars only, and the testing ladder.
 
 - `references/pro_playbook.md`: professional intraday routine and setups, mapped to agent/pro.py inputs.
+- `.claude/skills/quiz-school/`: how to run, read and un-stick Quiz school.
+- `.claude/skills/quiz-lessons/`: written by agent/quiz.py after every run (per-setup mastery and exam accuracy).

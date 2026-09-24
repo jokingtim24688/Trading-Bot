@@ -213,3 +213,19 @@
 - App (layout A): controls + big points + points/s + stats + points-per-round curve + exam by setup on the left;
   canvas mastery board (4-12 px squares, hover label, click to pick/view, pick all unfinished, work on picked),
   latest mistake chart held 2 s, hardest-right-now table (work on these), ask-the-live-market.
+
+## 2026-09-24: Quiz v3 - loops until done, sees the chart, skills
+- User's real run: 9,438 questions, 6,936/7,078 finished; 142 stayed stuck (5% right) even with Work on picked, and
+  the run quit and marked them unclear. Cause: with only 49 indicator inputs they looked like questions with the
+  opposite answer.
+- Added data: the agent now also sees the chart itself (last 40 candles OHLC + 90-candle outline, in ATRs from the
+  close) = 227 inputs. Built from the stored quiz charts, so existing quizzes work without rebuilding. Live answers,
+  the replay/agent second opinion and "What would you do now?" pass the chart too.
+- Never gives up: loops until everything in play is finished or Stop. After 100 rounds without a new finish it asks
+  stuck questions 7 extra times with 3x learning steps, then doubles the network (64 -> 512, keeping what it learned),
+  then resets expectations/exploration on the stuck ones, and loops again. Board shows stuck squares grey
+  ("stuck, looping"); the note under the points names the current tactic.
+- Baby-blue square (and ring) = the question it is working on right now.
+- Skills: `.claude/skills/quiz-school/` (how to run, read and un-stick the quiz) and `.claude/skills/quiz-lessons/`
+  (rewritten by the quiz after every run: finished/stuck and exam accuracy per setup, which setups to trust).
+- Short test (100 questions, synthetic): 75/75 finished in 58 rounds, 227 inputs, exam 68%, lessons written.

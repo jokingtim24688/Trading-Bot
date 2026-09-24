@@ -188,7 +188,7 @@ def main():
                 continue
 
             if quiz_pol is not None:
-                qa = quiz_pol.answer_row(row.iloc[0].to_dict())
+                qa = quiz_pol.answer_row(row.iloc[0].to_dict(), bars[["open", "high", "low", "close"]].to_numpy()[-90:])
                 if qa["action"] != side:
                     say(bar_time, f"skipped {side}", f"quiz agent says {qa['action']}")
                     continue
