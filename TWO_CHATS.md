@@ -28,8 +28,8 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: working on it (2026-09-24): building the 3 approved designs (Market top bar + session bands, Agent control
-bar + leaderboard + log drawer, Settings menu + save bar), the Manual tab UI, and your Quiz bank handoff.
+Status: idle. Last (2026-09-24, 0f1149b): the 3 approved designs, the Manual tab UI (backend spec for Chat A below),
+Quiz bank + web sites handoffs.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -171,13 +171,13 @@ with the commit hash.
     - `watcher`: bool, the always-on creator job.
 
     Suggested: a small line on the Quiz tab like "Question bank: 28,595 ready (2009–2026), always adding new ones",
-    with the half-year bars while it works.
+    with the half-year bars while it works. **Done (0f1149b): no max + All chip, bank line + bars, both settings.**
   - Settings: `quiz_workers` label is now "question creators when Build quiz is pressed" (0 = up to 10; allow up to
     16). New boolean `quiz_bank_auto` ("keep making questions in the background", default on).
   - Build progress (`build`) works as before; the finder bars are now per half-year (e.g. "2016H2").
 - 2026-09-24: Hermes web access is limited to trading/market sites (backend done by Chat A). New setting `web_sites`
   (a list of sites; "site/path" limits to a section, e.g. `reuters.com/markets`). If Settings shows Hermes options,
-  please add it as an editable list with a line like "Hermes may only open these trading and market sites".
+  please add it as an editable list with a line like "Hermes may only open these trading and market sites". **Done (0f1149b): one site per line in Settings > Hermes.**
 
 ## If only one chat is running
 

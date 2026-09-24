@@ -43,3 +43,17 @@
 - Empty states: `.empty-state` cards (consoles `#agent-empty`/`#train-empty`, board, mistake panel, points chart, bot
   card, positions). Hermes: `brainStatus` reads `local`/`next_step`/`download_pct`/`installing`/`device`; `#brain-setup`
   posts `/api/assistant/setup`; leaving the tab posts `/api/assistant/sleep`.
+
+## UI, round 2 (2026-09-24, Chat B)
+- Top bar: `#acct-mode` chip, `#bot-today-top`, `#open-count` (positions polled every 3 s on every tab), `#sessions`
+  (`renderSessions`, server time = New York + 7 h), `#sys-pop` popover with RAM/VRAM/free margin.
+- Chart overlay: `#chart-layer` inside `.chart-wrap`; `drawSessions`/`scheduleSessions` (Asia 01–09, London 10:00,
+  New York 16:30 server time, like agent/pro.py), prior-day lines `updatePriorDay` (`state.pd`), pref `sessions`.
+- Agent: `#ladder` path (`.path li.done|current`, `--prog`), `#gate`, `#plan` (4-column grid), `renderLeaderboard`
+  (`#leaderboard`, from `state.cal.trades`), log drawer `#log-drawer` (`openLog`/`closeLog`, unread `.log-dot`).
+- Settings: `#set-nav` + IntersectionObserver spy, `formValues`/`updateDirty`/`#savebar`, units `.u[data-u]`, prefs
+  `#pref-motion`, `#pref-sessions`; `web_sites` textarea (one per line).
+- Manual tab `#tab-manual` (`man` state, `openManual`, 1 s loop while open): quote from `/api/manual/quote` or
+  `/api/bars?count=1`; orders `/api/manual/order`; closes `/api/positions/{t}/close` or `/api/manual/close`; edits
+  `/api/manual/modify`; pending `/api/manual/orders(+/cancel)`; history `/api/manual/history`. A 404 on
+  `/api/manual/quote` shows the "needs its backend" banner.

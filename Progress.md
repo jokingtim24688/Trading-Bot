@@ -552,4 +552,26 @@ Each chat writes only in its own section below, and adds new entries just above 
      that stays visible and names the unsaved change.
 - Next: the user picks which to build.
 
+### 2026-09-24: The 3 approved designs, Manual tab UI, more handoffs (0f1149b)
+- The user approved all three proposals; built for real (not mockups):
+  - Market: top bar = account chip (DEMO/REAL, server, login), equity, "Bot today" for the current stage, floating,
+    open positions, session clock (London 10:00–18:30, New York 16:30–23:00, Asia 01:00–09:00 in broker server
+    time = New York time + 7 h, as agent/pro.py uses), agent status; RAM/VRAM/free margin in a popover. Bot colour
+    blue (`--bot`), ▲/▼ for direction, bot card as a label/value grid, Replay button. Chart overlay layer: Asia range
+    box, London and New York open lines, prior-day high/low price lines (fetched once per symbol per server day),
+    redrawn at most once a frame on scroll/zoom/data; Settings > Display switch.
+  - Agent: control bar with the stage ladder as a path (progress on the next edge, locks on real money), gate and plan
+    side by side (plan in 4 columns), "Which setups make money" leaderboard (follows the mode filter), Live log drawer.
+  - Settings: section menu with scroll-spy and unsaved dots, card sections, units inside inputs, help lines, Quiz
+    section, sticky save bar naming the change (with a retrain hint for exit rules), Discard.
+- New Manual tab (the user asked for everything the MT5 mobile app does): order ticket (one-click switch, lots
+  stepper/presets, market/limit/stop, SL/TP, points at risk, size from stop, slippage, expiry), quotes list, positions
+  with Close / ½ / SL-TP / BE, bulk close (all, profitable, losing, buys, sells; everyone's/mine/bot/Hermes; two
+  clicks), pending orders, today's history. Watching prices and closing work now (existing endpoints); placing,
+  editing and pending orders wait for `/api/manual/*` - full spec handed to Chat A in TWO_CHATS.md.
+- Chat A handoffs done: Quiz size without a maximum plus All, question-bank line with half-year bars, quiz settings
+  (`quiz_workers` wording, `quiz_bank_auto`); Hermes `web_sites` list in Settings.
+- Tested in the sandbox (fake MT5, populated and fresh): every new control driven in headless Chromium, 0 errors,
+  earlier regression suite still green, 0 long tasks. 7 images sent to the user.
+
 <!-- Chat B: add new entries above this line -->

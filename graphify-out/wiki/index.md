@@ -10,7 +10,7 @@
 ## Communities (subsystems)
 | Community | Page | Core nodes | Lane |
 |---|---|---|---|
-| Desktop app | [app.md](app.md) | `app/main.py`, `app/server.py`, `app/static/*` | B: static + window · A: server, jobs, settings |
+| Desktop app (tabs Market, Manual, Agent, Train, Quiz, Hermes, Settings) | [app.md](app.md) | `app/main.py`, `app/server.py`, `app/static/*` | B: static + window · A: server, jobs, settings |
 | Hermes assistant + memory | [hermes.md](hermes.md) | `app/brain.py`, `app/memory.py`, `app/tools.py`, `hermes/` | A |
 | M1 trading agent | [agent.md](agent.md) | `agent/run.py`, `agent/features.py`, `agent/model.py`, `agent/risk.py`, `agent/broker.py` | A |
 | MT5 MCP bridge | [mcp.md](mcp.md) | `mcp_server/mt5_mcp.py` | A |
@@ -62,4 +62,6 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: design review of all six tabs (screenshots + findings), see app.md "Design review".
 - 2026-09-24: chart auto-align + lazy history (`/api/bars?before=`), P/L calendar, Train dropdowns, copy-only Weak spots,
   animations, empty states, Hermes set-up UI; see app.md "UI (2026-09-24)".
+- 2026-09-24: new Manual tab (UI; `/api/manual/*` backend specced for Chat A), top bar + session bands, Agent control bar +
+  leaderboard + log drawer, Settings menu + save bar; see app.md "UI, round 2".
 <!-- Chat B: add new lines above this marker -->
