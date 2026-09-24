@@ -14,7 +14,7 @@ one branch without breaking each other's work. Read it at the start of every tas
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: Hermes memory in one file, model unloads after each reply and when leaving the Hermes tab (2026-09-24).
+Status: idle. Last: Hermes chat on llama3.2:3b, CPU only (no VRAM) (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -123,6 +123,9 @@ with the commit hash.
     The Memory panel's line in `index.html` still says `data/memory.db`; please change it to `data/hermes_memory.json`.
   - `ollama_keep_alive` now defaults to `0` (unload right after each reply). If Settings shows that field, "0" means
     "unload right away".
+- 2026-09-24: Hermes chat now runs `llama3.2:3b` on the CPU only (backend done by Chat A). The Hermes pill in
+  `app.js` says `${s.model} on RTX 4060`; please use the new status field `device` ("CPU" or "GPU") instead, e.g.
+  "llama3.2:3b on CPU". Settings has a new boolean `ollama_cpu_only` (default true) if you show Hermes settings.
 
 ## If only one chat is running
 

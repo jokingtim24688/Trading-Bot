@@ -3,7 +3,7 @@
 hermes_agent: Nous Research Hermes Agent's OpenAI-compatible API server (default :8642). Hermes keeps its own
               persistent memory, skills and tools (web, terminal, files, schedules, MCP). The MT5 MCP bridge gives
               it trading tools.
-local:        a Hermes model (default hermes3:8b) served by Ollama on the RTX 4060, with this app's SQLite memory
+local:        a small model (default llama3.2:3b) served by Ollama on the CPU (no VRAM), with this app's file memory
               and the tools in tools.py.
 auto:         hermes_agent if it answers, otherwise local.
 """
@@ -178,7 +178,9 @@ def local_state(s: dict) -> dict:
     elif not alive:
         state, step = "stopped", "Ollama isn't running. Press Set up to start it."
     else:
-        state, step = "no_model", f"{model} isn't downloaded yet. Press Set up to download it (about 4.7 GB, once)."
+        size = MODEL_SIZES.get(model)
+        state, step = "no_model", (f"{model} isn't downloaded yet. Press Set up to download it"
+                                   + (f" (about {size}, once)." if size else " (once)."))
     return {"local": state, "next_step": step, "download_pct": round(_setup["pct"], 3) if _setup["busy"] else None}
 
 
@@ -238,7 +240,7 @@ def status() -> dict:
     s = load()
     agent = hermes_agent_alive(s)
     return {"backend_setting": s["assistant_backend"], "hermes_agent": agent, "ollama": ollama_alive(s),
-            "model": s["ollama_model"], "facts": len(memory.all_facts()),
+            "model": s["ollama_model"], "device": "CPU" if s.get("ollama_cpu_only", True) else "GPU", "facts": len(memory.all_facts()),
             "installing": _setup["busy"] and _setup["stage"] == "installing Ollama", **local_state(s)}
 
 
@@ -251,6 +253,17 @@ def _ask_hermes_agent(s: dict, text: str) -> str:
     if r.status_code != 200:
         raise BackendError(f"Hermes Agent returned {r.status_code}: {r.text[:300]}")
     return r.json()["choices"][0]["message"]["content"]
+
+
+MODEL_SIZES = {"llama3.2:3b": "2 GB", "llama3.2:1b": "1.3 GB", "hermes3:8b": "4.7 GB", "qwen2.5:3b": "1.9 GB"}
+
+
+def _options(s: dict) -> dict:
+    """Model options: CPU only (num_gpu 0) keeps the RTX 4060's VRAM free for everything else."""
+    opts = {"num_ctx": 8192, "temperature": 0.4}
+    if s.get("ollama_cpu_only", True):
+        opts["num_gpu"] = 0
+    return opts
 
 
 def _keep_alive(s: dict):
@@ -271,7 +284,7 @@ def _ask_local(s: dict, text: str, trace: list) -> str:
     use_tools = True
     for rnd in range(7):                         # tool-use loop; the last round must answer in words
         body = {"model": s["ollama_model"], "messages": messages, "stream": False,
-                "keep_alive": _keep_alive(s), "options": {"num_ctx": 8192, "temperature": 0.4}}
+                "keep_alive": _keep_alive(s), "options": _options(s)}
         if use_tools and rnd < 6:
             body["tools"] = tools.schemas()
         try:

@@ -43,14 +43,15 @@ DEFAULTS = {
     "hermes_url": "http://127.0.0.1:8642",
     "hermes_key": "",
     "ollama_url": "http://127.0.0.1:11434",
-    "ollama_model": "hermes3:8b",
+    "ollama_model": "llama3.2:3b",         # small model (~2 GB) for the Hermes chat tab
+    "ollama_cpu_only": True,               # run it on the CPU so it never uses the RTX 4060's VRAM
     "ollama_keep_alive": "0",              # unload the model right after each reply (0 = no lingering)
     "assistant_autosetup": True,           # start Ollama and download the model automatically when needed
     "allow_web": True,
     # MCP bridge for Hermes Agent
     "mcp_http_port": 8765,
     "mcp_autostart": True,
-    "settings_version": 5,
+    "settings_version": 6,
 }
 
 
@@ -73,6 +74,12 @@ def load() -> dict:
                 if s.get("ollama_keep_alive") == "5m":
                     s["ollama_keep_alive"] = "0"
                 s["settings_version"] = 5
+                PATH.write_text(json.dumps(s, indent=2))
+            if s.get("settings_version", 1) < 6:          # v6: chat on a small CPU-only model, no VRAM
+                if s.get("ollama_model") == "hermes3:8b":
+                    s["ollama_model"] = "llama3.2:3b"
+                s["ollama_cpu_only"] = True
+                s["settings_version"] = 6
                 PATH.write_text(json.dumps(s, indent=2))
         except json.JSONDecodeError:
             pass
