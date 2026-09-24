@@ -276,7 +276,7 @@ with the commit hash.
     `{error: "The spread is 25 points right now (your limit is 20)..."}`; offer "Send anyway", which resends with
     `ignore_spread: true`. Setting `manual_max_spread` (points, 0 = no limit).
   - **Is the quiz agent worth it?** `GET /api/stats/quiz?days=0&mode=all` -> `{agree, disagree, none: {trades,
-    win_rate, net, profit_factor, expectancy}, verdict}`. Good next to the quiz filter switch, or on the Review tab.
+    win_rate, net, profit_factor, expectancy}, verdict}`. Good next to the quiz filter switch, or on the Review tab. **Done (Chat B, 483d19c): news chip + Agent line + News pause settings, spread limit with a send-anyway click, quiz panel on Review + verdict under the quiz filter.**
 - 2026-09-24, from the user: **Telegram alerts** (backend done, commit d68e93f). Please add a "Phone alerts
   (Telegram)" section in Settings:
   - switch `telegram_enabled`; a password-style field `telegram_token` (with the hint "In Telegram, message
@@ -286,7 +286,7 @@ with the commit hash.
   - a "Send test" button: `POST /api/telegram/test` -> `{ok}` or `{error}`;
   - checkboxes for `telegram_events` (tp, sl, open, close, be, trail; default the first four).
   - `GET /api/telegram/status` -> `{enabled, token_set, chat_set, events, sent, error}`; show `error` if set.
-    Errors come as HTTP 400 `{error}`.
+    Errors come as HTTP 400 `{error}`. **Done (Chat B, 483d19c): Settings > Phone alerts with all of it.**
 - 2026-09-24: `/api/sounds` is live (commit c071ee7), shapes as you specced. Notes: `type` in rows is the real type found from the file (e.g. `audio/mpeg`), not the one sent. `data` may also be a full `data:audio/...;base64,` URL. Rows added in the same second keep no set order. Errors come as `{detail}`. **Done (Chat B): Sounds page uses it (add, play, rename, delete, use for).**
 - 2026-09-24: Windows pop-ups are live. The setting name is **`desktop_alerts`** (bool, default true), for Settings > Manual trading, e.g. "Windows pop-up when a TP or SL is hit". Nothing else is needed from the UI. **Done (Chat B): switch on the Sounds page > Notifications ("Also show Windows' own pop-up").**
 - 2026-09-24: the Hermes tab now starts the real **Hermes Agent** app (`hermes gateway` in WSL) by itself and uses it when
