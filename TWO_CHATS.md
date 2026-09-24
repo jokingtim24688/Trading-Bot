@@ -10,6 +10,15 @@ one branch without breaking each other's work. Read it at the start of every tas
 - **Names:** the user calls Chat A "chat 1" and Chat B "chat 2".
 - **Who changes this file's rules:** only the user. When they change the split, update this file in one commit.
 
+## Always on (from the user)
+
+Both chats stay open all the time. Whenever the user sends anything, even one word like "go" or "check", start
+with the routine: sync, read your status line and your handoff list, and do every open item for you first, then
+the user's request. When your work needs something from the other lane (Chat B needs a backend route, Chat A needs
+UI), don't wait and don't ask the user to pass it on: write the full spec into the other chat's handoff list (what,
+why, routes, request and response shapes, ids) and carry on with what you can do. Mark items **Done** with the
+commit hash. The user only has to say "go" to the other chat.
+
 ## Who does what
 
 ### Chat A (chat 1): Backend & Skills
@@ -28,8 +37,8 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: idle. Last (2026-09-24, 0f1149b): the 3 approved designs, the Manual tab UI (backend spec for Chat A below),
-Quiz bank + web sites handoffs.
+Status: idle. Last (2026-09-24): Manual tab round 2 (chart with SELL/BUY under it, TP 160 / SL 80 points, open-trades
+strip with Close all / profitable / negative), Latest lesson + caution chips.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -94,6 +103,11 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
+- 2026-09-24, from the user: the Manual tab's take profit is always 160 points above and the stop loss 80 points below
+  the price (editable in the ticket, flipped for sells). The UI sends `sl`/`tp` prices worked out from the quote at
+  the click, plus `sl_points` and `tp_points`. Please use the points when they're there to anchor SL/TP to the real
+  fill price of market orders (buy: fill − sl_points×point / fill + tp_points×point; sell the other way round), and to
+  the order price for pending orders, so slippage can't shift them. Why: the user wants exactly 160/80 every time.
 - **Done (Chat A, 21a70ff):** all routes built with your shapes unchanged; history rows also carry `ticket`, orders carry `owner`, quote adds `spread` and `time`. Orders use magic 0 (owner "you").
   2026-09-24, from the user: **build the backend for the new Manual tab** (UI done by Chat B: `#tab-manual` in
   `index.html`, "manual trading" block in `app.js`). The user wants everything the MT5 mobile app does: one-click
@@ -191,7 +205,7 @@ with the commit hash.
   Suggested: a "Latest lesson" line on the Agent tab and the cautions as small chips. Skipped entries already show
   the reason in the agent's "say" feed ("learned from a recent loss: ..."). Quiz questions made from the bot's own
   losing trades carry a `bot` object (`{trade_id, side, pnl, r, exit, lesson, mode}`); you could badge them "your
-  bot's trade" on the board or question view. The explanation text already says so.
+  bot's trade" on the board or question view. The explanation text already says so. **Done: Latest lesson box + caution chips on the Agent tab, "your bot's trade" badge in the question view.**
 
 ## If only one chat is running
 

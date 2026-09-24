@@ -656,3 +656,37 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
 .u input { -moz-appearance: textfield; }
 .u input::-webkit-inner-spin-button, .u input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .sys-btn:focus-visible, .replay-btn:focus-visible, .side-btn:focus-visible, .seg-opt:focus-visible { outline: 2px solid rgba(201,162,74,.6); outline-offset: 2px; }
+/* manual tab, round 2: open trades above the chart, Buy/Sell under it, lists below */
+.man-grid { grid-template-columns: 330px minmax(0, 1fr); }
+.man-main { min-width: 0; }
+.open-strip { padding: 12px 14px; }
+.strip-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.strip-head h3 { margin: 0; }
+.strip-head .bulk-btns { margin-left: auto; }
+.trade-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; max-height: 84px; overflow: auto; }
+.tchip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 4px 4px 10px; border-radius: 999px; font-size: 12px; background: var(--bg-2); border: 1px solid var(--line); transition: border-color .2s, background-color .2s; }
+.tchip.pos { border-color: rgba(63,182,139,.35); } .tchip.neg { border-color: rgba(224,87,79,.35); }
+.tchip em { font-style: normal; font-weight: 500; }
+.tchip .tag { margin-left: 0; }
+.tchip button { border: 0; background: var(--raised); color: var(--muted); border-radius: 999px; min-width: 22px; height: 22px; padding: 0 7px; cursor: pointer; font: 500 11px var(--sans); transition: background-color .15s, color .15s; }
+.tchip button:hover { color: var(--text); }
+.tchip.armed { background: rgba(224,87,79,.1); border-color: var(--down); }
+.tchip.armed button { background: var(--down); color: var(--bg); }
+.man-chart-panel { padding: 12px; box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 18px 50px rgba(0,0,0,.32); }
+.man-sym { font-weight: 600; }
+.man-chart-wrap { position: relative; height: clamp(320px, 50vh, 560px); }
+.man-chart-wrap #man-chart { position: absolute; inset: 0; }
+.trade-bar { margin-top: 10px; }
+.trade-bar .side-btn { flex-direction: row; justify-content: center; gap: 12px; padding: 14px 10px; }
+.trade-bar .side-btn small { font-size: 12px; }
+.trade-bar .side-btn b { font-size: 22px; }
+.trade-bar .side-btn em { position: absolute; bottom: 3px; left: 0; right: 0; text-align: center; }
+.levels { width: 100%; margin: 8px 0 2px; font-size: 12px; }
+.levels th { position: static; background: none; padding: 3px 6px; font-size: 11px; }
+.levels td { padding: 4px 6px; font-size: 12px; }
+.bulk-more { margin-top: 10px; justify-content: flex-end; }
+
+.lesson { background: var(--bg-2); border-left: 3px solid var(--bot); border-radius: var(--r-sm); padding: 8px 10px; margin-bottom: 8px; }
+.lesson b { font-size: 12.5px; margin-right: 8px; }
+.lesson p { margin: 4px 0 0; font-size: 12.5px; }
+.rule-chip.caution { color: var(--warn); border-color: rgba(224,163,58,.45); background: rgba(224,163,58,.08); }

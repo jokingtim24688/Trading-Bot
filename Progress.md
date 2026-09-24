@@ -621,4 +621,23 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Tested in the sandbox (fake MT5, populated and fresh): every new control driven in headless Chromium, 0 errors,
   earlier regression suite still green, 0 long tasks. 7 images sent to the user.
 
+### 2026-09-24: Manual tab round 2, lessons UI, "Always on" rule
+- The user asked for the chart with buy and sell under it, TP always 160 above and SL 80 below, everything from the
+  right column moved under the chart, and a strip above the chart with all open trades plus Close all / Close
+  profitable / Close negative.
+- Manual tab now: left column = order ticket + quotes; right = open-trades strip (summary, owner filter, the three
+  bulk buttons with two-click confirm, one chip per trade with a two-click quick close), the chart (its own
+  lightweight-charts instance: 300 bars, then live updates every second; entry/SL/TP lines for every position; hovering
+  Buy or Sell previews the TP/SL you would get), the SELL | spread | BUY bar under it, then Positions, Pending orders
+  and History.
+- TP/SL are set in MT5 points: 160 above / 80 below for a buy, flipped for a sell (1.60 / 0.80 on gold). Editable in
+  the ticket and remembered; a small table shows the exact entry/TP/SL for both sides. Orders send the prices plus
+  `sl_points`/`tp_points`; asked Chat A to re-anchor them to the real fill price so slippage can't move them.
+- Chat A handoff done: "Latest lesson" box and caution chips in "What the bot has learned"; "your bot's trade" badge
+  on quiz questions made from the bot's own losses.
+- TWO_CHATS.md: new "Always on" section from the user (both chats always open; any message = sync, do open handoffs,
+  then the request; write specs into the other chat's list instead of asking the user to relay).
+- Tested against Chat A's real `/api/manual/*` with a fake MT5: levels right for both sides, hover preview lines,
+  two-click buy filled, chip arming, fallback quote, 0 console errors. Screenshots sent to the user.
+
 <!-- Chat B: add new entries above this line -->

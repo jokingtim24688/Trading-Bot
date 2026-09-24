@@ -850,11 +850,14 @@ $("#gate").addEventListener("click", async e => {
   } catch (err) { toast(err.message, true); }
 });
 function renderLearned(r) {
-  if (!r || !r.generated) return;
+  if (!r || (!r.generated && !r.latest_lesson)) return;
   const chips = [...(r.blocked_hours || []).map(h => `skip ${String(h).padStart(2, "0")}:00 UTC`),
     ...(r.min_confidence ? [`confidence ≥ ${r.min_confidence}`] : []), ...(r.disabled_side ? [`no ${r.disabled_side} trades`] : []),
     ...(r.blocked_setups || []).map(k => `skip ${state.bot.data?.setup_names?.[k] || k}`)];
-  $("#learned").innerHTML = `<div class="learned-rules">${chips.length ? chips.map(c => `<span class="rule-chip">${c}</span>`).join("") : `<span class="muted small">No filters yet. Nothing has lost consistently enough to block.</span>`}</div>
+  const names = state.bot.data?.setup_names || {};
+  const lesson = r.latest_lesson ? `<div class="lesson"><b>Latest lesson</b><span class="muted small">${(r.latest_lesson_utc || "").replace("T", " ").slice(5, 16)} UTC${r.mistakes ? `, lesson ${r.mistakes}` : ""}</span><p>${r.latest_lesson}</p></div>` : "";
+  const cautions = (r.cautions || []).length ? `<div class="learned-rules">${r.cautions.map(c => `<span class="rule-chip caution" title="${(c.why || "").replace(/"/g, "&quot;")}">${c.side === "buy" ? "▲" : "▼"} ${names[c.setup] || c.setup}: needs ${Math.round(c.min_prob * 100)}% until ${(c.until_utc || c.until || "").replace("T", " ").slice(5, 16)}</span>`).join("")}</div>` : "";
+  $("#learned").innerHTML = lesson + cautions + `<div class="learned-rules">${chips.length ? chips.map(c => `<span class="rule-chip">${c}</span>`).join("") : `<span class="muted small">No filters yet. Nothing has lost consistently enough to block.</span>`}</div>
     <p class="muted small" style="margin:0">From ${r.trades_analyzed} closed trades · updated ${r.generated.replace("T", " ")} UTC · ${state.settings?.use_learned ? "applied to new entries" : "not applied (Settings)"} · saved to <code>.claude/skills/m1-bot-lessons/</code></p>
     ${(r.reasons || []).length ? `<ul class="small muted" style="margin:6px 0 0;padding-left:18px">${r.reasons.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}`;
 }
@@ -1102,7 +1105,7 @@ function initFromSettings(keepSymbol = false) {
    Watching prices and closing positions work today through /api/bars and /api/positions/{ticket}/close. Placing,
    editing and pending orders switch on by themselves once /api/manual/* answers. */
 const man = { symbol: null, backend: null, spec: null, q: null, type: "market", arm: null, owner: "any", pos: [], editing: null, realOk: false, tick: 0 };
-const BULK_LABEL = { profit: "Close profitable", loss: "Close losing", buys: "Close buys", sells: "Close sells", all: "Close all" };
+const BULK_LABEL = { profit: "Close profitable", loss: "Close negative", buys: "Close buys", sells: "Close sells", all: "Close all" };
 const volStep = () => man.spec?.volume_step || 0.01;
 const volDec = () => Math.max(0, Math.round(-Math.log10(volStep())));
 const isReal = () => $("#acct-mode").classList.contains("real");
@@ -1114,7 +1117,7 @@ function manSymbols() {
 function manPick(sym) {
   if (!sym || sym === man.symbol) return;
   man.symbol = sym; man.spec = null; man.q = null; $("#man-bid")._v = $("#man-ask")._v = null;
-  $("#man-sl").value = $("#man-tp").value = $("#man-price").value = ""; disarm(); manSymbols(); loadManQuote(); loadManQuotes();
+  $("#man-price").value = ""; man.lineSig = ""; disarm(); manSymbols(); loadManBars(); loadManQuote(); loadManQuotes();
 }
 async function probeManual() {
   if (man.backend !== null) return;
@@ -1127,15 +1130,87 @@ async function loadManQuote() {
   if (!man.symbol) return;
   let q = null;
   if (man.backend) { try { q = await api(`/api/manual/quote?symbol=${encodeURIComponent(man.symbol)}`); } catch (e) { if (e.status === 404) { man.backend = false; $("#man-backend").hidden = false; } } }
-  if (!q) { try { const d = await api(`/api/bars?symbol=${encodeURIComponent(man.symbol)}&count=1`); q = { symbol: d.symbol, bid: d.bid, ask: d.ask, digits: d.digits, point: d.point }; }
-            catch (e) { $("#man-msg").textContent = e.status === 503 ? "Open MT5 to trade." : e.message; return; } }
+  man.quoteOk = !!q;
+  if (!q) return;                                 // no quote: loadManBars fills it from the candles it fetches
+  applyManQuote(q);
+}
+function applyManQuote(q) {
   if (q.symbol !== man.symbol) return;
   man.q = q; if (q.volume_step) man.spec = q;
   $("#man-msg").textContent = "";
   setPrice($("#man-bid"), q.bid, q.digits); setPrice($("#man-ask"), q.ask, q.digits);
   $("#man-spread").textContent = Math.round((q.ask - q.bid) / q.point);
-  updateRisk(); updatePriceHint();
+  $("#man-sym").textContent = q.symbol;
+  updateRisk(); updatePriceHint(); updateLevels(); drawManLines();
 }
+/* take profit / stop loss: always a fixed number of points from the price (160 above, 80 below by default; editable,
+   remembered on this PC). For a sell they flip: take profit below, stop loss above. */
+const TPSL = (() => { try { return JSON.parse(localStorage.getItem("manTPSL")) || { tp: 160, sl: 80 }; } catch (e) { return { tp: 160, sl: 80 }; } })();
+function levelsFor(side) {
+  const q = man.q; if (!q) return null;
+  const pt = q.point, tp = (+$("#man-tp-pts").value || 0) * pt, sl = (+$("#man-sl-pts").value || 0) * pt;
+  const entry = man.type === "market" ? (side === "buy" ? q.ask : q.bid) : parseFloat($("#man-price").value) || (side === "buy" ? q.ask : q.bid);
+  const r = v => +v.toFixed(q.digits);
+  return side === "buy" ? { entry: r(entry), tp: r(entry + tp), sl: r(entry - sl) } : { entry: r(entry), tp: r(entry - tp), sl: r(entry + sl) };
+}
+function updateLevels() {
+  const q = man.q; if (!q) return;
+  setHTML($("#man-levels tbody"), ["buy", "sell"].map(s => { const L = levelsFor(s);
+    return `<tr><td class="${s === "buy" ? "up" : "down"}">${s === "buy" ? "▲ Buy" : "▼ Sell"}</td><td class="num">${fmt(L.entry, q.digits)}</td><td class="num up">${fmt(L.tp, q.digits)}</td><td class="num down">${fmt(L.sl, q.digits)}</td></tr>`; }).join(""));
+}
+["#man-tp-pts", "#man-sl-pts"].forEach(s => $(s).addEventListener("input", () => {
+  TPSL.tp = +$("#man-tp-pts").value || 160; TPSL.sl = +$("#man-sl-pts").value || 80;
+  try { localStorage.setItem("manTPSL", JSON.stringify(TPSL)); } catch (e) {}
+  updateLevels(); updateRisk(); drawManLines(); disarm();
+}));
+$("#man-tp-pts").value = TPSL.tp; $("#man-sl-pts").value = TPSL.sl;
+/* the Manual tab's own chart: candles for the symbol you trade, your open positions, and a preview of where the take
+   profit and stop loss land while you hover Buy or Sell */
+function manChart() {
+  if (man.chart || !window.LightweightCharts) return;
+  man.chart = LightweightCharts.createChart($("#man-chart"), {
+    autoSize: true, layout: { background: { color: "transparent" }, textColor: "#8c9098", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
+    grid: { vertLines: { color: "rgba(255,255,255,.035)" }, horzLines: { color: "rgba(255,255,255,.035)" } },
+    rightPriceScale: { borderColor: "#262c34" }, timeScale: { borderColor: "#262c34", timeVisible: true, secondsVisible: false, rightOffset: 6 },
+    crosshair: { mode: 0 }, localization: { locale: "en-US" },
+  });
+  man.series = man.chart.addCandlestickSeries({ upColor: "#3fb68b", downColor: "#e0574f", borderVisible: false, wickUpColor: "#3fb68b", wickDownColor: "#e0574f" });
+  $("#man-chart").addEventListener("dblclick", () => { man.chart.priceScale("right").applyOptions({ autoScale: true }); man.chart.timeScale().scrollToRealTime(); });
+}
+async function loadManBars() {
+  manChart(); if (!man.series || !man.symbol) return;
+  const sym = man.symbol, full = man.barsSym !== sym;
+  let d; try { d = await api(`/api/bars?symbol=${encodeURIComponent(sym)}&count=${full ? 300 : 3}`); }
+  catch (e) { $("#man-msg").textContent = e.status === 503 ? "Open MT5 to trade." : e.message; return; }
+  if (sym !== man.symbol) return;
+  if (!man.backend || !man.quoteOk) applyManQuote({ ...(man.q?.symbol === d.symbol ? man.q : {}), symbol: d.symbol, bid: d.bid, ask: d.ask, digits: d.digits, point: d.point });
+  const bars = d.bars.map(pickBar);
+  if (full || (bars.length && bars[0].time > man.lastBar + 60)) {
+    if (!full) return (man.barsSym = null, loadManBars());     // candles were missed: reload
+    man.series.applyOptions({ priceFormat: { type: "price", precision: d.digits, minMove: d.point } });
+    man.series.setData(bars); man.barsSym = sym; man.lastBar = bars.length ? bars[bars.length - 1].time : 0;
+    man.chart.timeScale().scrollToRealTime(); man.lineSig = "";
+  } else for (const b of bars) if (b.time >= man.lastBar) { man.series.update(b); man.lastBar = b.time; }
+  drawManLines();
+}
+function drawManLines() {
+  const q = man.q; if (!man.series || !q) return;
+  const want = [];
+  man.pos.filter(p => p.symbol === man.symbol).forEach(p => {
+    want.push([p.open, p.owner === "bot" ? "#89cff0" : "#c9a24a", `${p.owner === "bot" ? "bot" : "you"} ${p.side} ${p.volume}`, 2]);
+    if (p.sl) want.push([p.sl, "#e0574f", "SL", 0]); if (p.tp) want.push([p.tp, "#3fb68b", "TP", 0]);
+  });
+  if (man.preview) { const L = levelsFor(man.preview); want.push([L.tp, "#3fb68b", `TP if you ${man.preview}`, 1], [L.sl, "#e0574f", `SL if you ${man.preview}`, 1]); }
+  const sig = want.map(w => `${w[0].toFixed(q.digits)}${w[2]}`).join("|");
+  if (sig === man.lineSig) return; man.lineSig = sig;
+  (man.lines || []).forEach(l => man.series.removePriceLine(l));
+  man.lines = want.map(([price, color, title, lineStyle]) => man.series.createPriceLine({ price, color, lineWidth: 1, lineStyle, axisLabelVisible: true, title }));
+}
+["buy", "sell"].forEach(s => {
+  const b = $(`#man-${s}`);
+  const on = () => { man.preview = s; drawManLines(); }, off = () => { if (man.preview === s) { man.preview = null; drawManLines(); } };
+  b.addEventListener("mouseenter", on); b.addEventListener("focus", on); b.addEventListener("mouseleave", off); b.addEventListener("blur", off);
+});
 function orderText(side) { return `${side.toUpperCase()}${man.type === "market" ? "" : " " + man.type} ${(+$("#man-vol").value).toFixed(volDec())}`; }
 function disarm() {
   if (!man.arm) return;
@@ -1151,8 +1226,9 @@ async function manTrade(side) {
   }
   disarm();
   const body = { symbol: man.symbol, side, type: man.type, volume: +$("#man-vol").value, deviation: +$("#man-dev").value || 20 };
-  const sl = parseFloat($("#man-sl").value), tp = parseFloat($("#man-tp").value);
-  if (sl) body.sl = sl; if (tp) body.tp = tp;
+  if (man.type !== "market" && !parseFloat($("#man-price").value)) { toast("Set the price for the pending order.", true); return; }
+  const L = levelsFor(side); if (!L) return;
+  Object.assign(body, { sl: L.sl, tp: L.tp, sl_points: +$("#man-sl-pts").value, tp_points: +$("#man-tp-pts").value });
   if (man.type !== "market") {
     body.price = parseFloat($("#man-price").value); body.expiration = $("#man-exp").value;
     if (!body.price) { toast("Set the price for the pending order.", true); return; }
@@ -1180,7 +1256,7 @@ $("#man-type").addEventListener("click", e => {
   man.type = b.dataset.type; $$("#man-type .seg-opt").forEach(x => x.classList.toggle("on", x === b));
   $(".man-price").hidden = man.type === "market";
   if (man.type !== "market" && !$("#man-price").value && man.q) $("#man-price").value = ((man.q.bid + man.q.ask) / 2).toFixed(man.q.digits);
-  updatePriceHint(); updateRisk(); disarm();
+  updatePriceHint(); updateRisk(); updateLevels(); drawManLines(); disarm();
 });
 function updatePriceHint() {
   const q = man.q, h = $("#man-price-hint"); if (!q || man.type === "market") return;
@@ -1188,18 +1264,15 @@ function updatePriceHint() {
     : `A buy stop sits above ${fmt(q.ask, q.digits)}, a sell stop below ${fmt(q.bid, q.digits)}.`;
 }
 function updateRisk() {
-  const q = man.q, sl = parseFloat($("#man-sl").value), el = $("#man-risk-txt"); if (!q) return;
-  if (!sl) { el.textContent = "Add a stop loss to see what's at risk."; return; }
-  const entry = man.type === "market" ? (sl < q.bid ? q.ask : q.bid) : parseFloat($("#man-price").value) || q.bid;
-  const dist = Math.abs(entry - sl), v = +$("#man-vol").value;
+  const q = man.q, el = $("#man-risk-txt"); if (!q) return;
+  const dist = (+$("#man-sl-pts").value || 0) * q.point, v = +$("#man-vol").value;
   const money = q.tick_value && q.tick_size ? dist / q.tick_size * q.tick_value * v : null;
   el.textContent = `Stop ${Math.round(dist / q.point).toLocaleString()} points away${money != null ? ` · risks ${fmt(money)}${state.acct?.currency ? " " + state.acct.currency : ""}` : ""}`;
 }
-["#man-sl", "#man-tp", "#man-price"].forEach(s => $(s).addEventListener("input", () => { updateRisk(); updatePriceHint(); disarm(); }));
+$("#man-price").addEventListener("input", () => { updateRisk(); updatePriceHint(); updateLevels(); drawManLines(); disarm(); });
 $("#man-size").onclick = async () => {
-  const sl = parseFloat($("#man-sl").value), q = man.q;
-  if (!sl || !q) { toast("Set a stop loss first; the lots are sized from it.", true); return; }
-  const entry = man.type === "market" ? (sl < q.bid ? q.ask : q.bid) : parseFloat($("#man-price").value) || q.bid;
+  const L = levelsFor("buy"); if (!L) return;
+  const sl = L.sl, entry = L.entry;
   try {
     const r = await api(`/api/size?symbol=${encodeURIComponent(man.symbol)}&entry=${entry}&stop=${sl}&risk=${$("#man-risk").value}`);
     if (r.lots) { setVol(r.lots); toast(`${r.lots} lots risks ${fmt(r.risk_money)} of ${fmt(r.equity)}.`); }
@@ -1226,6 +1299,13 @@ async function loadManPositions() {
     const g = groups[b.dataset.bulk], sum = g.reduce((s, p) => s + p.profit, 0);
     setHTML(b, `${BULK_LABEL[b.dataset.bulk]}<span class="cnt">${g.length}${g.length ? ` · ${signed(sum)}` : ""}</span>`); b.disabled = !g.length;
   });
+  const net = sel.reduce((s, p) => s + p.profit, 0);
+  setHTML($("#man-open-sum"), sel.length ? `${sel.length} open, net <b class="num ${cls(net)}">${signed(net)}</b>` : "");
+  setHTML($("#man-open"), sel.map(p => `<span class="tchip ${p.profit >= 0 ? "pos" : "neg"}${man.chipArm === p.ticket ? " armed" : ""}" title="#${p.ticket} opened at ${p.open}">
+      <span class="${p.side === "buy" ? "up" : "down"}">${p.side === "buy" ? "▲" : "▼"}</span><b>${p.symbol}</b><span class="muted">${p.volume}</span><span class="tag ${p.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[p.owner] || "You"}</span>
+      <em class="num ${cls(p.profit)}">${signed(p.profit)}</em><button type="button" data-quick="${p.ticket}" aria-label="Close #${p.ticket}">${man.chipArm === p.ticket ? "close?" : "×"}</button></span>`).join("")
+    || `<span class="muted small">No open trades${man.owner === "any" ? "" : " for this filter"}. Buy or Sell under the chart opens one.</span>`);
+  drawManLines();
   if (man.editing != null) return;               // don't wipe the SL/TP editor while you type
   const off = man.backend ? "" : " disabled title=\"Needs the manual-trading backend\"", seen = man.posSeen;
   man.posSeen = new Set(ps.map(p => p.ticket));
@@ -1263,12 +1343,20 @@ $("#man-pos").addEventListener("click", async e => {
   } catch (err) { toast(err.message, true); }
   loadManPositions(); loadPositions();
 });
-$(".bulk-btns").addEventListener("click", async e => {
-  const b = e.target.closest("[data-bulk]"); if (!b || b.disabled) return;
+$("#man-open").addEventListener("click", async e => {    // × on a chip: two clicks, then that trade closes
+  const b = e.target.closest("[data-quick]"); if (!b) return;
+  const tk = +b.dataset.quick;
+  if (man.chipArm !== tk) { man.chipArm = tk; clearTimeout(man.chipT); man.chipT = setTimeout(() => { man.chipArm = null; loadManPositions(); }, 3000); loadManPositions(); return; }
+  clearTimeout(man.chipT); man.chipArm = null;
+  try { const r = await api(`/api/positions/${tk}/close`, { method: "POST" }); toast(r.retcode === 10009 ? `Closed #${tk}.` : `Close result: ${r.comment}`, r.retcode !== 10009); } catch (err) { toast(err.message, true); }
+  loadManPositions(); loadPositions();
+});
+document.addEventListener("click", async e => {
+  const b = e.target.closest("#tab-manual [data-bulk]"); if (!b || b.disabled) return;
   const kind = b.dataset.bulk, match = { profit: p => p.profit > 0, loss: p => p.profit < 0, buys: p => p.side === "buy", sells: p => p.side === "sell", all: () => true }[kind];
   const sel = man.pos.filter(p => (man.owner === "any" || p.owner === man.owner) && match(p));
   if (!b.classList.contains("armed")) {          // two clicks, like Wipe: the first shows exactly what will close
-    $$(".bulk-btns .btn.armed").forEach(x => x.classList.remove("armed"));
+    $$("#tab-manual .bulk-btns .btn.armed").forEach(x => x.classList.remove("armed"));
     b.classList.add("armed"); b.textContent = `Click again: close ${sel.length} (${signed(sel.reduce((s, p) => s + p.profit, 0))})`;
     clearTimeout(man.bulkT); man.bulkT = setTimeout(() => { b.classList.remove("armed"); b._html = null; loadManPositions(); }, 4000); return;
   }
@@ -1326,11 +1414,11 @@ async function loadManQuotes() {
 $("#man-quotes").addEventListener("click", e => { const r = e.target.closest("[data-sym]"); if (r) manPick(r.dataset.sym); });
 async function openManual() {
   manSymbols(); await probeManual();
-  loadManQuote(); loadManPositions(); loadManQuotes(); loadManOrders(); loadManHistory();
+  loadManBars(); loadManQuote(); loadManPositions(); loadManQuotes(); loadManOrders(); loadManHistory();
 }
 setInterval(() => {                               // only while the Manual tab is open: quote 1 s, positions 2 s, lists 3 s, history 15 s
   if (state.tab !== "manual") return;
-  man.tick++; loadManQuote();
+  man.tick++; loadManBars(); if (man.backend) loadManQuote();
   if (man.tick % 2 === 0) loadManPositions();
   if (man.tick % 3 === 0) { loadManQuotes(); loadManOrders(); }
   if (man.tick % 15 === 0) loadManHistory();
@@ -1384,7 +1472,7 @@ function probBars(probs, pick) {
 function showQuestion(q, title, agent) {
   $("#quiz-q-panel").classList.add("has-q");
   $("#quiz-q-title").textContent = title;
-  $("#quiz-q-meta").textContent = `Q${q.id} · ${q.time} server time · ${q.setup_name}`;
+  $("#quiz-q-meta").innerHTML = `${q.bot ? `<span class="tag bot" title="Made from your bot's own ${q.bot.mode || ""} trade #${q.bot.trade_id}">your bot's trade</span> ` : ""}Q${q.id}, ${q.time} server time, ${q.setup_name}`;
   drawQuizBars(q);
   $("#quiz-answer").innerHTML = (agent ? `<p class="small" style="margin:0 0 6px">It answered <b>${ACT[agent.action]}</b>, this sure:</p>${probBars(agent.probs, agent.action)}
       <p class="quiz-verdict down">✗ ${agent.verdict[0].toUpperCase() + agent.verdict.slice(1)} · ${agent.points} points</p>` : "")

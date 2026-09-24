@@ -134,11 +134,6 @@
           <div class="panel-head"><h3>New order</h3>
             <label class="switch" title="On: Buy and Sell send the order straight away. Off: click twice to confirm."><input type="checkbox" id="man-oneclick"><span>One-click trading</span></label></div>
           <div class="chips" id="man-symbols"></div>
-          <div class="quote-row">
-            <button class="side-btn sell" id="man-sell" type="button"><small>SELL</small><b class="num flashable" id="man-bid">—</b><em id="man-sell-note"></em></button>
-            <div class="spread"><span class="num" id="man-spread">—</span><small>spread</small></div>
-            <button class="side-btn buy" id="man-buy" type="button"><small>BUY</small><b class="num flashable" id="man-ask">—</b><em id="man-buy-note"></em></button>
-          </div>
           <div class="vol-row">
             <span class="muted small">Lots</span>
             <div class="stepper"><button type="button" data-vol="-1" aria-label="Less">−</button><input id="man-vol" type="number" step="0.01" min="0.01" value="0.01" inputmode="decimal"><button type="button" data-vol="1" aria-label="More">+</button></div>
@@ -148,10 +143,11 @@
             <button class="seg-opt on" data-type="market" type="button">Market</button><button class="seg-opt" data-type="limit" type="button">Limit</button><button class="seg-opt" data-type="stop" type="button">Stop</button></div>
           <label class="man-price" hidden>Price for the pending order<input id="man-price" type="number" step="any"><small id="man-price-hint" class="muted"></small></label>
           <div class="form-row">
-            <label>Stop loss<input id="man-sl" type="number" step="any" placeholder="none"></label>
-            <label>Take profit<input id="man-tp" type="number" step="any" placeholder="none"></label>
+            <label>Take profit<span class="u" data-u="points above"><input id="man-tp-pts" type="number" min="1" step="10" value="160"></span></label>
+            <label>Stop loss<span class="u" data-u="points below"><input id="man-sl-pts" type="number" min="1" step="10" value="80"></span></label>
           </div>
-          <div class="man-risk"><span id="man-risk-txt" class="muted small">Add a stop loss to see what's at risk.</span>
+          <table class="levels" id="man-levels" aria-label="Where the take profit and stop loss land"><thead><tr><th></th><th>Entry</th><th>Take profit</th><th>Stop loss</th></tr></thead><tbody></tbody></table>
+          <div class="man-risk"><span id="man-risk-txt" class="muted small"></span>
             <span class="row gap"><input id="man-risk" type="number" step="0.1" min="0.1" max="5" value="0.5" title="% of equity"><span class="muted small">%</span><button class="btn xs" id="man-size" type="button" title="Set the lots so the stop loss risks this % of equity">Size from stop</button></span></div>
           <details class="man-more"><summary>More options<span class="chev"></span></summary>
             <div class="form-row">
@@ -165,20 +161,32 @@
           <table id="man-quotes"><thead><tr><th>Symbol</th><th>Bid</th><th>Ask</th><th>Spread</th></tr></thead><tbody></tbody></table>
         </div>
       </div>
-      <div class="man-right">
-        <div class="panel">
-          <div class="panel-head"><h3>Positions</h3><span id="man-acct" class="man-acct"></span></div>
-          <div class="bulk">
-            <div class="chips" id="man-owner" role="radiogroup" aria-label="Whose positions"><button class="chip active" data-o="any" type="button">Everyone's</button><button class="chip" data-o="you" type="button">Mine</button><button class="chip" data-o="bot" type="button">Bot</button><button class="chip" data-o="hermes" type="button">Hermes</button></div>
+      <div class="man-main">
+        <div class="panel open-strip">
+          <div class="strip-head">
+            <h3>Open trades</h3><span id="man-open-sum" class="muted small"></span>
+            <div class="chips" id="man-owner" role="radiogroup" aria-label="Whose trades"><button class="chip active" data-o="any" type="button">Everyone's</button><button class="chip" data-o="you" type="button">Mine</button><button class="chip" data-o="bot" type="button">Bot</button><button class="chip" data-o="hermes" type="button">Hermes</button></div>
             <div class="bulk-btns">
               <button class="btn xs" data-bulk="profit" type="button">Close profitable</button>
-              <button class="btn xs" data-bulk="loss" type="button">Close losing</button>
-              <button class="btn xs" data-bulk="buys" type="button">Close buys</button>
-              <button class="btn xs" data-bulk="sells" type="button">Close sells</button>
+              <button class="btn xs" data-bulk="loss" type="button">Close negative</button>
               <button class="btn xs danger-outline" data-bulk="all" type="button">Close all</button>
             </div>
           </div>
+          <div class="trade-chips" id="man-open"></div>
+        </div>
+        <div class="panel man-chart-panel">
+          <div class="chart-head"><div class="quote"><span id="man-sym" class="man-sym">—</span><span class="tf">M1</span><span class="muted small">double-click the chart to realign</span></div></div>
+          <div class="man-chart-wrap"><div id="man-chart"></div></div>
+          <div class="quote-row trade-bar">
+            <button class="side-btn sell" id="man-sell" type="button"><small>SELL</small><b class="num flashable" id="man-bid">—</b><em id="man-sell-note"></em></button>
+            <div class="spread"><span class="num" id="man-spread">—</span><small>spread</small></div>
+            <button class="side-btn buy" id="man-buy" type="button"><small>BUY</small><b class="num flashable" id="man-ask">—</b><em id="man-buy-note"></em></button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Positions</h3><span id="man-acct" class="man-acct"></span></div>
           <div class="table-wrap"><table id="man-pos"><thead><tr><th>Symbol</th><th>Who</th><th>Side</th><th>Lots</th><th>Open</th><th>Now</th><th>SL</th><th>TP</th><th>P/L</th><th></th></tr></thead><tbody></tbody></table></div>
+          <div class="bulk-btns bulk-more"><button class="btn xs" data-bulk="buys" type="button">Close buys</button><button class="btn xs" data-bulk="sells" type="button">Close sells</button></div>
         </div>
         <div class="panel">
           <div class="panel-head"><h3>Pending orders</h3><button class="btn xs" id="man-cancel-all" type="button">Cancel all</button></div>

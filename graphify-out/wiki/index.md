@@ -65,4 +65,6 @@ Each chat adds lines only to its own list, just above its marker line.
   animations, empty states, Hermes set-up UI; see app.md "UI (2026-09-24)".
 - 2026-09-24: new Manual tab (UI; `/api/manual/*` backend specced for Chat A), top bar + session bands, Agent control bar +
   leaderboard + log drawer, Settings menu + save bar; see app.md "UI, round 2".
+- 2026-09-24: Manual tab round 2: chart with SELL/BUY under it, TP 160 / SL 80 points, open-trades strip with Close all /
+  profitable / negative above the chart; Latest lesson + caution chips; "Always on" rule in TWO_CHATS.md.
 <!-- Chat B: add new lines above this marker -->

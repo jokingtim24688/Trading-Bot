@@ -58,3 +58,13 @@
   `/api/bars?count=1`; orders `/api/manual/order`; closes `/api/positions/{t}/close` or `/api/manual/close`; edits
   `/api/manual/modify`; pending `/api/manual/orders(+/cancel)`; history `/api/manual/history`. A 404 on
   `/api/manual/quote` shows the "needs its backend" banner.
+- Manual tab, round 2: `.man-grid` = ticket + quotes on the left (`.man-left`), and on the right (`.man-main`) the
+  open-trades strip (`.open-strip`: `#man-open-sum`, owner chips `#man-owner`, `data-bulk="profit|loss|all"` two-click
+  bulk closes, `#man-open` chips `.tchip` with two-click quick close), then the chart `#man-chart` (second
+  lightweight-charts instance, `manChart`/`loadManBars`: 300 bars, then 3-bar updates; entry/SL/TP lines per position,
+  hover preview of the TP/SL you would get) with the SELL/BUY bar under it, then Positions, Pending orders, History.
+  TP/SL are in points (`#man-tp-pts` 160 above, `#man-sl-pts` 80 below, flipped for sells, saved in `localStorage`
+  `manTPSL`); `levelsFor(side)` works out the prices shown in `#man-levels` and sent as `sl`/`tp` with
+  `sl_points`/`tp_points`. `man.quoteOk` falls back to the bars quote when `/api/manual/quote` fails.
+- Agent "What the bot has learned": `.lesson` box (`latest_lesson`, time, mistakes) and `.rule-chip.caution` chips
+  from `cautions`; Quiz question view badges `q.bot` questions "your bot's trade".
