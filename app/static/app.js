@@ -1078,7 +1078,7 @@ function fillSettings() {
     const known = el.name in s; el.disabled = !known;          // a setting the backend doesn't have yet waits for it
     el.closest("label")?.classList.toggle("waiting", !known);
     if (!known) { el.closest("label") && (el.closest("label").title = "Waits for its backend (Chat A is building it)"); continue; }
-    if (el.type === "checkbox") el.checked = !!s[el.name];
+    if (el.type === "checkbox") el.checked = el.value && el.value !== "on" ? (s[el.name] || []).includes(el.value) : !!s[el.name];
     else el.value = Array.isArray(s[el.name]) ? s[el.name].join(el.tagName === "TEXTAREA" ? "\n" : ", ") : s[el.name];
   }
 }
@@ -1087,7 +1087,9 @@ function formValues() {
   const body = {};
   for (const el of $("#settings-form").elements) {
     if (!el.name || el.disabled) continue;
-    if (el.type === "checkbox") body[el.name] = el.checked;
+    if (el.type === "checkbox" && el.value && el.value !== "on") { body[el.name] ||= []; if (el.checked) body[el.name].push(el.value); }   // a group: a list
+    else if (el.type === "checkbox") body[el.name] = el.checked;
+    else if (el.name === "news_currencies") body[el.name] = el.value.split(",").map(x => x.trim().toUpperCase()).filter(Boolean);
     else if (el.name === "symbols_watch") body[el.name] = el.value.split(",").map(x => x.trim()).filter(Boolean);
     else if (el.name === "web_sites") body[el.name] = el.value.split(/[\n,]+/).map(x => x.trim()).filter(Boolean);
     else if (el.type === "number") body[el.name] = parseFloat(el.value);
@@ -1109,7 +1111,8 @@ function updateDirty() {
   const body = formValues(), s = state.settings, changed = [];
   for (const el of $("#settings-form").elements) {
     if (!el.name || el.disabled) continue;
-    const dirty = !sameVal(body[el.name], s[el.name]);
+    const dirty = el.type === "checkbox" && el.value && el.value !== "on"          // one box of a group: its own tick only
+      ? el.checked !== (s[el.name] || []).includes(el.value) : !sameVal(body[el.name], s[el.name]);
     el.closest("label")?.classList.toggle("changed", dirty);
     if (dirty) changed.push(el);
   }
@@ -1212,7 +1215,9 @@ function applyManQuote(q) {
   man.q = q; if (q.volume_step) man.spec = q;
   $("#man-msg").textContent = "";
   setPrice($("#man-bid"), q.bid, q.digits); setPrice($("#man-ask"), q.ask, q.digits);
-  $("#man-spread").textContent = Math.round((q.ask - q.bid) / q.point);
+  const sp = $("#man-spread"); sp.textContent = Math.round((q.ask - q.bid) / q.point);
+  sp.parentElement.classList.toggle("wide", q.spread_ok === false);
+  sp.parentElement.title = q.max_spread ? `Spread ${sp.textContent} points; market orders stop above ${q.max_spread} (Settings > Manual trading)` : "";
   $("#man-sym").textContent = q.symbol;
   updateRisk(); updatePriceHint(); updateLevels(); drawManLines(); renderConn();
 }
@@ -1296,7 +1301,9 @@ function disarm() {
 async function manTrade(side) {
   if (!man.backend) { toast("Placing orders needs the manual-trading backend. Chat A is building it from the spec in TWO_CHATS.md.", true); return; }
   if (man.blocked) { disarm(); toast(`Not sending: ${man.blocked.toLowerCase()}.`, true); return; }
-  const oneClick = $("#man-oneclick").checked && (!isReal() || man.realSession);
+  const anyway = man.spreadArm?.side === side;      // the second click after "spread too wide"
+  if (man.spreadArm) { clearTimeout(man.spreadArm.t); $(`#man-${man.spreadArm.side}`).classList.remove("armed"); man.spreadArm = null; }
+  const oneClick = anyway || ($("#man-oneclick").checked && (!isReal() || man.realSession));
   if (!oneClick && man.arm?.side !== side) {             // first click arms, the second sends
     disarm(); $(`#man-${side}`).classList.add("armed");
     $(`#man-${side}-note`).textContent = `click again: ${orderText(side)}${isReal() ? " · REAL money" : ""}`;
@@ -1306,6 +1313,7 @@ async function manTrade(side) {
   if (!(await realCheck())) return;
   const body = { symbol: man.symbol, side, type: man.type, volume: +$("#man-vol").value, deviation: +$("#man-dev").value || 20 };
   if (man.auto) Object.assign(body, { be_points: +$("#man-be-pts").value || 0, trail_points: +$("#man-trail-pts").value || 0 });
+  if (anyway) body.ignore_spread = true;
   if (man.type !== "market" && !parseFloat($("#man-price").value)) { toast("Set the price for the pending order.", true); return; }
   const L = levelsFor(side); if (!L) return;
   Object.assign(body, { sl: L.sl, tp: L.tp, sl_points: +$("#man-sl-pts").value, tp_points: +$("#man-tp-pts").value });
@@ -1320,7 +1328,13 @@ async function manTrade(side) {
     const d = man.q?.digits ?? 2, lv = r.ok && (r.sl || r.tp) ? `, TP ${fmt(r.tp, d)}, SL ${fmt(r.sl, d)}` : "";
     toast(r.ok ? `${orderText(side)} ${man.symbol} ${man.type === "market" ? `filled at ${fmt(r.price, d)}` : "placed"}${lv} · #${r.ticket}${r.note ? `. ${r.note}` : ""}` : `Order refused: ${r.comment}`, !r.ok || !!r.note);
     playEvent(r.ok ? "orderOk" : "orderFail");
-  } catch (e) { toast(e.message, true); playEvent("orderFail"); }
+  } catch (e) {
+    toast(e.message, true); playEvent("orderFail");
+    if (e.status === 400 && /spread/i.test(e.message) && body.type === "market") {   // too wide: one more click sends it anyway
+      $(`#man-${side}`).classList.add("armed"); $(`#man-${side}-note`).textContent = "spread too wide: click again to send anyway";
+      man.spreadArm = { side, t: setTimeout(() => { $(`#man-${side}`).classList.remove("armed"); $(`#man-${side}-note`).textContent = ""; man.spreadArm = null; }, 6000) };
+    }
+  }
   b.disabled = false; loadManPositions(); loadManOrders(); loadPositions();
 }
 $("#man-buy").onclick = () => manTrade("buy"); $("#man-sell").onclick = () => manTrade("sell");
@@ -1771,7 +1785,7 @@ async function loadReview() {
   bot = bot.filter(t => !since || (t.closeT || 0) >= since);
   rv.trades = [...you, ...bot].sort((a, b) => (b.closeT || 0) - (a.closeT || 0));
   const S = cmp || { you: statsOf(you.filter(t => t.owner === "you")), bot: statsOf(bot) };
-  renderVs(S); renderCurve(S); renderHours(S);
+  renderVs(S); renderCurve(S); renderHours(S); loadQuizSplit();
   $("#rv-note").textContent = notes.join(" ");
   renderRvList(); rv.busy = false;
   if (rv.pending) { const t = rv.trades.find(x => x.key === rv.pending); rv.pending = null; if (t) { showReplay(t); $(`#rv-list [data-k="${t.key}"]`)?.scrollIntoView({ block: "nearest" }); } else toast("That trade isn't in this period's list.", true); }
@@ -2622,6 +2636,82 @@ $("#snd-lib-list").addEventListener("change", e => {
   snd.data.events[ev].sound = `custom:${id}`; snd.data.events[ev].on = true; saveSounds(); renderSounds(true);
   preview(snd.data.events[ev], ev); toast(`“${SOUND_EVENTS.find(x => x.id === ev).label}” now plays your sound.`);
 });
+
+/* ---------- news: a chip in the top bar for the next big release, and why the bot is paused (backend: /api/news) ---------- */
+const news = { data: null, t: 0 };
+const inMins = m => m < 1 ? "now" : m < 60 ? `${Math.round(m)} min` : `${Math.floor(m / 60)} h ${String(Math.round(m % 60)).padStart(2, "0")} min`;
+const localHM = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+async function loadNews() {
+  try { news.data = await api("/api/news"); } catch (e) { news.data = null; }
+  renderNews();
+}
+function renderNews() {
+  const d = news.data, chip = $("#news-chip"), line = $("#news-line");
+  if (!d) { chip.hidden = true; line.hidden = true; return; }
+  const now = Date.now() / 1000, next = (d.events || []).filter(e => e.time >= now - 60 * (d.after_min || 0)).sort((a, b) => a.time - b.time);
+  const e = next[0], mins = e ? (e.time - now) / 60 : null;
+  const tip = next.slice(0, 4).map(x => `${localHM(x.time)}  ${x.currency} ${x.title}${x.forecast ? ` (forecast ${x.forecast})` : ""}`).join("\n")
+    + (d.error || d.stale ? `\n\nThe news calendar couldn't be refreshed${d.error ? `: ${d.error}` : ""}.` : "");
+  if (d.paused) {
+    chip.hidden = false; chip.className = "pill news-chip paused";
+    setHTML(chip, `<i></i>Bot paused for news${e ? `: ${esc(e.currency)} ${esc(e.title)}` : ""}`);
+  } else if (e && mins <= 180) {
+    chip.hidden = false; chip.className = `pill news-chip${mins <= (d.before_min || 15) + 10 ? " soon" : ""}`;
+    setHTML(chip, `<i></i>${mins < 0 ? "News now" : `News in ${inMins(mins)}`}: ${esc(e.currency)} ${esc(e.title)}`);
+  } else chip.hidden = true;
+  chip.title = `${tip || "No big news in the next two days."}\n\nClick to change the news pause.`;
+  // Agent tab: why it's waiting, or when it will
+  line.hidden = !d.enabled;
+  if (d.enabled) setHTML(line, d.paused ? `<b>Paused for news:</b> ${esc(String(d.paused).replace(/^news:\s*/i, ""))}`
+    : e ? `Next news pause: ${esc(e.currency)} ${esc(e.title)} at ${localHM(e.time)} (${inMins(Math.max(0, mins - (d.before_min || 0)))} from now)` : "No news pause coming up in the next two days.");
+  line.classList.toggle("paused", !!d.paused);
+  // Settings > News pause: the next few
+  const list = $("#news-list");
+  if (list) setHTML(list, next.length ? `<div class="muted small">Coming up (your time)</div>${next.slice(0, 6).map(x => `<div class="news-row"><b class="num">${localHM(x.time)}</b><span class="tag ${x.impact === "High" ? "hi" : ""}">${esc(x.impact || "")}</span><span>${esc(x.currency)} ${esc(x.title)}</span>${x.forecast ? `<span class="muted small">forecast ${esc(x.forecast)}${x.previous ? `, before ${esc(x.previous)}` : ""}</span>` : ""}</div>`).join("")}`
+    : `<p class="muted small">No matching news in the next two days${d.error ? ` (the calendar couldn't be refreshed: ${esc(d.error)})` : ""}.</p>`);
+}
+setTimeout(loadNews, 2500);
+setInterval(() => { if (!document.hidden) { news.t++; if (news.t % 3 === 0) loadNews(); else renderNews(); } }, 20000);   // countdown every 20 s, fetch every minute
+
+/* ---------- is the quiz agent's second opinion worth it? (backend: /api/stats/quiz) ---------- */
+async function loadQuizSplit() {
+  const box = $("#rv-quiz"); if (!box) return;
+  let q; try { q = await api(`/api/stats/quiz?days=${rv.days}&mode=${rv.mode}`); } catch (e) { setHTML(box, `<p class="muted small">${e.status === 404 ? "Waits for its backend." : esc(e.message)}</p>`); return; }
+  const col = (k, label, hint) => { const x = q[k] || {};
+    return `<div class="qz-col ${k}"><b>${label}</b><small>${hint}</small><div class="qz-nums">
+      <span><em class="num">${x.trades ?? 0}</em>trades</span><span><em class="num">${x.win_rate != null ? `${Math.round(x.win_rate)}%` : "—"}</em>won</span>
+      <span><em class="num ${cls(x.net)}">${signed(x.net ?? 0)}</em>net</span><span><em class="num ${cls(x.expectancy)}">${x.expectancy != null ? signed(x.expectancy) : "—"}</em>per trade</span>
+      <span><em class="num">${x.profit_factor != null ? (+x.profit_factor).toFixed(2) : x.trades && !x.losses ? "no losses" : "—"}</em>profit factor</span></div></div>`; };
+  setHTML(box, `<div class="qz-cols">${col("agree", "It agreed", "picked the same side as the bot")}${col("disagree", "It disagreed", "picked the other side, or stay out")}${col("none", "No opinion", "before the quiz agent was trained")}</div>
+    <p class="qz-verdict">${esc(q.verdict || "")}</p>`);
+  const v = $("#quiz-verdict"); if (v) v.textContent = q.verdict ? `So far: ${q.verdict}` : "";
+}
+
+/* ---------- phone alerts through Telegram (backend: /api/telegram/*) ---------- */
+async function saveSettingsNow() {               // the token has to be saved before the server can use it
+  if (!$("#savebar").classList.contains("is-dirty")) return;
+  state.settings = await api("/api/settings", { method: "POST", body: formValues() }); initFromSettings(true); updateDirty();
+}
+async function loadTelegram() {
+  const el = $("#tg-status"); if (!el) return;
+  let s; try { s = await api("/api/telegram/status"); } catch (e) { el.textContent = e.status === 404 ? "Waits for its backend." : e.message; return; }
+  el.className = `small ${s.error ? "tg-err" : "muted"}`;
+  el.textContent = s.error ? `Last try failed: ${s.error}` : !s.token_set ? "No token saved yet." : !s.chat_set ? "Token saved. Message your bot, then press Find my chat."
+    : `Connected${s.enabled ? "" : " (switched off above)"}.${s.sent ? ` ${s.sent} alert${s.sent === 1 ? "" : "s"} sent.` : ""}`;
+}
+$("#tg-detect").onclick = async () => {
+  const b = $("#tg-detect"); b.disabled = true;
+  try { await saveSettingsNow(); const r = await api("/api/telegram/detect", { method: "POST" }); toast(`Connected to ${r.name}. Check Telegram for a hello.`); $("#tg-status").textContent = `Connected to ${r.name}.`; }
+  catch (e) { toast(e.message, true); $("#tg-status").className = "small tg-err"; $("#tg-status").textContent = e.message; }
+  b.disabled = false; setTimeout(loadTelegram, 400);
+};
+$("#tg-test").onclick = async () => {
+  const b = $("#tg-test"); b.disabled = true;
+  try { await saveSettingsNow(); await api("/api/telegram/test", { method: "POST" }); toast("Test sent. Check your phone."); }
+  catch (e) { toast(e.message, true); }
+  b.disabled = false; setTimeout(loadTelegram, 400);
+};
+$$(".rail-btn").forEach(b => b.addEventListener("click", () => { if (b.dataset.tab === "settings") { loadTelegram(); renderNews(); if (!$("#quiz-verdict").textContent) api("/api/stats/quiz?days=0&mode=all").then(q => { $("#quiz-verdict").textContent = q.verdict ? `So far: ${q.verdict}` : ""; }).catch(() => {}); } }));
 
 /* ---------- boot ---------- */
 initChart();

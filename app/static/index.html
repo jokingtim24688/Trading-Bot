@@ -45,6 +45,7 @@
   </div>
   <div class="sessions" id="sessions" title="Market sessions in broker server time, the hours the bot's inputs use"></div>
   <div class="strip-right">
+    <button id="news-chip" class="pill news-chip" type="button" hidden data-goto="settings" data-sec="set-news"></button>
     <button id="mute-pill" class="pill mute-pill" type="button" hidden title="Sounds are off: click to turn them back on"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span id="mute-txt">Muted</span></button>
     <button id="setup-pill" class="pill setup-pill" type="button" hidden aria-controls="setup-drawer" title="What's left to set up"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18h2"/></svg>Setup <b id="setup-count" class="num">0/0</b></button>
     <span id="agent-pill" class="pill">agent idle</span>
@@ -227,7 +228,7 @@
       <div class="ctl-sliders">
         <label class="slider-label">Confidence threshold <span id="thr-txt" class="num"></span><input id="thr" type="range" min="0.05" max="0.8" step="0.01"></label>
         <label class="slider-label">Stake per trade <span id="stake-txt" class="num"></span><input id="stake" type="range" min="0.01" max="1" step="0.01"></label>
-        <div class="ctl-hint"><p class="muted small">Waits for each M1 candle to close and trades only when every risk check passes.</p><p id="thr-hint" class="muted small"></p><p id="agent-msg" class="note"></p></div>
+        <div class="ctl-hint"><p class="muted small">Waits for each M1 candle to close and trades only when every risk check passes.</p><p id="thr-hint" class="muted small"></p><p id="news-line" class="news-line small" hidden></p><p id="agent-msg" class="note"></p></div>
       </div>
     </div>
     <div class="two-even">
@@ -419,6 +420,10 @@
       <div class="rv-hours" id="rv-hours"></div>
       <p id="rv-note" class="muted small"></p>
     </div>
+    <div class="panel rv-quiz">
+      <div class="panel-head"><h3>Is the quiz agent's second opinion worth it?</h3><span class="muted small">the bot's closed trades, split by what the quiz agent said when each one opened</span></div>
+      <div id="rv-quiz"></div>
+    </div>
     <div class="panel rv-replay">
       <div class="panel-head"><h3>Trade replay</h3><span class="muted small">pick a closed trade; ↑ ↓ step through them</span>
         <div class="chips" id="rv-who" role="radiogroup" aria-label="Whose trades"><button class="chip active" data-w="all" type="button">Everyone's</button><button class="chip" data-w="you" type="button">Mine</button><button class="chip" data-w="bot" type="button">Bot</button></div></div>
@@ -510,9 +515,11 @@
       <nav class="set-nav" id="set-nav" aria-label="Settings sections">
         <a href="#set-trading" class="on">Trading<span class="dot"></span></a>
         <a href="#set-money">Bot money rules<span class="dot"></span></a>
+        <a href="#set-news">News pause<span class="dot"></span></a>
         <a href="#set-manual">Manual trading<span class="dot"></span></a>
         <a href="#set-quiz">Quiz school<span class="dot"></span></a>
         <a href="#set-hermes">Hermes<span class="dot"></span></a>
+        <a href="#set-telegram">Phone alerts<span class="dot"></span></a>
         <a href="#set-display">Display<span class="dot"></span></a>
         <a href="#set-backup">Backup<span class="dot"></span></a>
       </nav>
@@ -546,9 +553,22 @@
           <p class="muted small span-all">Score: 1 point = $1. Each trade earns or loses its dollar result (a +$100 trade = +100 points). A stop-loss hit costs the penalty × its loss (−$20 × 1.5 = −30). A trade the bot closes early only costs what it actually lost (−$20 = −20).</p>
           <p class="muted small span-all">Stake is the margin the trade uses. If the stake is below the symbol's minimum lot, the minimum lot is used. Take profit eases from the small-stake % to the large-stake % as stakes grow. Retrain after changing the stop or take-profit rules so the model learns the new exits.</p>
         </fieldset>
+        <fieldset class="panel" id="set-news"><legend>News pause<small>no new bot trades around big news</small></legend>
+          <label class="check"><input type="checkbox" name="news_pause"> Pause new bot trades around big news</label>
+          <span class="help">Gold jumps on US news (CPI, jobs, Fed decisions) and spreads widen. Trades already open are left alone; only new entries wait.</span>
+          <label>Stop taking trades before the news<span class="u" data-u="min before"><input name="news_before_min" type="number" min="0" max="240" step="5"></span></label>
+          <label>Start again after it<span class="u" data-u="min after"><input name="news_after_min" type="number" min="0" max="240" step="5"></span></label>
+          <label>Currencies to watch (comma separated)<input name="news_currencies" spellcheck="false"></label>
+          <div class="span-all check-group"><span class="muted small">Which news</span>
+            <label class="check"><input type="checkbox" name="news_impact" value="High"> High impact</label>
+            <label class="check"><input type="checkbox" name="news_impact" value="Medium"> Medium</label>
+            <label class="check"><input type="checkbox" name="news_impact" value="Low"> Low</label></div>
+          <div class="span-all news-list" id="news-list"></div>
+        </fieldset>
         <fieldset class="panel" id="set-manual"><legend>Manual trading<small>your own trades from the Manual tab</small></legend>
           <label>Move the stop to break-even after (0 = off)<span class="u" data-u="points"><input name="manual_be_points" type="number" min="0" step="10"></span></label>
           <label>Trailing stop distance (0 = off)<span class="u" data-u="points"><input name="manual_trail_points" type="number" min="0" step="10"></span></label>
+          <label>Refuse market orders when the spread is wider than (0 = no limit)<span class="u" data-u="points"><input name="manual_max_spread" type="number" min="0" step="5"></span></label>
           <span class="help span-all">Used for every new manual order; change them per order in the ticket or per trade in Positions. The app moves the stop for you, even with the Manual tab closed.</span>
           <p class="set-link span-all">Keyboard shortcuts are on the <a href="#" data-goto="keys">Keys page</a>. Every sound (pitch, volume, your own files) and how notifications behave are on the <a href="#" data-goto="sounds">Sounds page</a>.</p>
         </fieldset>
@@ -559,6 +579,7 @@
           <label class="check"><input type="checkbox" name="quiz_refresh"> Silently refresh finished questions so it doesn't forget them</label>
           <span class="help">Recommended. Refreshed questions are never asked or shown.</span>
           <label class="check"><input type="checkbox" name="quiz_filter"> Second opinion from the quiz agent: only enter when it picks the same side</label>
+          <span class="help" id="quiz-verdict"></span>
         </fieldset>
         <fieldset class="panel" id="set-hermes"><legend>Hermes<small>your assistant</small></legend>
           <label>Assistant backend
@@ -577,6 +598,22 @@
           <label class="check"><input type="checkbox" name="hermes_agent_autostart"> Start Hermes Agent (in WSL) when the app opens, if it's installed</label>
           <span class="help">Hermes Agent does the real work: longer tasks, tools, the web. The small local model only answers when it isn't running.</span>
           <label class="check"><input type="checkbox" name="mcp_autostart"> Start the MT5 bridge for Hermes Agent when the app opens</label>
+        </fieldset>
+        <fieldset class="panel" id="set-telegram"><legend>Phone alerts<small>take profit, stop loss and more on your phone, through Telegram</small></legend>
+          <label class="check"><input type="checkbox" name="telegram_enabled"> Send alerts to my phone through Telegram</label>
+          <label class="span-all">Your bot's token<input name="telegram_token" type="password" autocomplete="off" spellcheck="false" placeholder="123456789:AA…"></label>
+          <ol class="span-all tg-steps">
+            <li>In Telegram, message <b>@BotFather</b>, send <code>/newbot</code>, pick a name, and paste the token it gives you above. Save.</li>
+            <li>Open your new bot in Telegram and press <b>Start</b> (or send it "hi").</li>
+            <li><button class="btn xs" type="button" id="tg-detect">Find my chat</button> <button class="btn xs" type="button" id="tg-test">Send a test</button> <span id="tg-status" class="muted small"></span></li>
+          </ol>
+          <div class="span-all check-group"><span class="muted small">Send</span>
+            <label class="check"><input type="checkbox" name="telegram_events" value="tp"> Take profit hit</label>
+            <label class="check"><input type="checkbox" name="telegram_events" value="sl"> Stop loss hit</label>
+            <label class="check"><input type="checkbox" name="telegram_events" value="open"> Trade opened</label>
+            <label class="check"><input type="checkbox" name="telegram_events" value="close"> Trade closed</label>
+            <label class="check"><input type="checkbox" name="telegram_events" value="be"> Stop to break-even</label>
+            <label class="check"><input type="checkbox" name="telegram_events" value="trail"> Trailing stop moved</label></div>
         </fieldset>
         <fieldset class="panel" id="set-display"><legend>Display<small>this PC only</small></legend>
           <label class="check"><input type="checkbox" id="pref-motion"> Reduce animations</label>

@@ -157,4 +157,8 @@
   WS_EX_NOACTIVATE, EnumDisplayMonitors work areas, GetDpiForWindow); `_watch` reads `/api/events` every 0.7 s and shows
   TP/SL/close/be/trail when the main window isn't in front; page side `pop` (`popInit`, `popConfigure`,
   `#pop-screen`, `#pop-test`), feed alerts use `screen: !pop.feed`.
+- News / spread / quiz / Telegram (Chat A's routes): `loadNews`/`renderNews` (`#news-chip`, `#news-line`,
+  `#news-list`), spread: `.trade-bar .spread.wide` + `man.spreadArm` resend with `ignore_spread`; `loadQuizSplit`
+  (`#rv-quiz`, `#quiz-verdict`); Telegram `loadTelegram`, `#tg-detect`, `#tg-test`, `saveSettingsNow()`; settings
+  checkbox groups (`news_impact`, `telegram_events`) are lists in `fillSettings`/`formValues`/`updateDirty`.
 

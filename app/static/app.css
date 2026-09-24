@@ -977,3 +977,38 @@ label.waiting { opacity: .5; }
 .pop-row[hidden] { display: none; }
 .pop-row select { width: auto; padding: 5px 8px; margin-left: 6px; }
 
+
+/* news chip (top bar), Agent news line, Settings news list */
+.news-chip { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-family: var(--sans); color: var(--muted); }
+.news-chip[hidden] { display: none; }
+.news-chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.news-chip.soon { color: var(--warn); border-color: rgba(224,163,58,.45); } .news-chip.soon i { background: var(--warn); animation: pulse-dot 1.6s ease-in-out infinite; }
+.news-chip.paused { color: var(--down); border-color: rgba(224,87,79,.5); background: rgba(224,87,79,.08); } .news-chip.paused i { background: var(--down); }
+@keyframes pulse-dot { 50% { opacity: .35; } }
+.reduce-motion .news-chip.soon i { animation: none; }
+.news-line { margin: 4px 0 0; color: var(--muted); } .news-line[hidden] { display: none; }
+.news-line.paused { color: var(--down); } .news-line b { font-weight: 600; }
+.check-group { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.check-group label.check { grid-column: auto; }
+.news-list { display: grid; gap: 4px; }
+.news-row { display: grid; grid-template-columns: 76px 64px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 12.5px; padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+.news-row .tag { margin: 0; color: var(--muted); border: 1px solid var(--line); text-align: center; }
+.news-row .tag.hi { color: var(--down); border-color: rgba(224,87,79,.45); }
+/* Telegram steps */
+.tg-steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+.tg-steps b { color: var(--text); } .tg-steps code { font: 12px var(--mono); color: var(--gold); }
+.tg-steps .btn { margin-right: 6px; }
+.tg-err { color: var(--down); }
+/* Manual: spread over your limit */
+.trade-bar .spread.wide .num, .trade-bar .spread.wide small { color: var(--down); }
+.trade-bar .spread.wide { box-shadow: inset 0 0 0 1px rgba(224,87,79,.45); border-radius: var(--r-sm); }
+/* Review: the quiz agent's second opinion */
+.qz-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1000px) { .qz-cols { grid-template-columns: minmax(0, 1fr); } }
+.qz-col { background: var(--bg-2); border-radius: var(--r-sm); padding: 10px 14px; border-top: 2px solid var(--line); }
+.qz-col.agree { border-top-color: var(--up); } .qz-col.disagree { border-top-color: var(--down); }
+.qz-col > b { display: block; font-size: 13px; } .qz-col > small { color: var(--muted); font-size: 11.5px; }
+.qz-nums { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+.qz-nums span { display: flex; flex-direction: column; font-size: 10.5px; color: var(--muted); }
+.qz-nums em { font: 500 14px var(--mono); font-style: normal; color: var(--text); }
+.qz-verdict { margin: 12px 0 0; font-size: 13px; line-height: 1.5; }
