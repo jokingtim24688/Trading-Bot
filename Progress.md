@@ -734,5 +734,7 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Rings for: TP/SL alerts from `/api/events`, other closes from the feed (bell only), and the bot's paper/replay closes
   (demo/real ring from the feed, so nothing rings twice). Settings > Manual trading has "Play profit bell" /
   "Play loss bell". Rendered both to WAV and sent them to the user.
+- Bells queue 0.45 s apart, so two trades closing together ring one after the other. Recorded a 2-minute walkthrough
+  video of every new feature (headless Chromium, captions, bells mixed in at the alert) and sent it with 11 stills.
 
 <!-- Chat B: add new entries above this line -->

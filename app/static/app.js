@@ -525,7 +525,8 @@ function playBell(win, force = false) {
   if (!force && !state.settings?.alert_sound) return;
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const rate = win ? 1 : 0.5, t = audioCtx.currentTime + 0.01, out = audioCtx.createGain();
+    const rate = win ? 1 : 0.5, t = Math.max(audioCtx.currentTime + 0.01, bell.next || 0), out = audioCtx.createGain();
+    bell.next = t + 0.45;                         // two trades closing together ring one after the other
     out.gain.value = 0.85; out.connect(audioCtx.destination);
     if (bell.buf) { const src = audioCtx.createBufferSource(); src.buffer = bell.buf; src.playbackRate.value = rate; src.connect(out); src.start(t); return; }
     const f0 = 1318.5 * rate;                     // E6 for a win, E5 for a loss; every decay doubles too, like half-speed playback
