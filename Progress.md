@@ -342,4 +342,9 @@ Each chat writes only in its own section below, and adds new entries just above 
 
 ## Chat B log (UI & Polish)
 
+### 2026-09-24: Chat numbers
+- The user named the chats: this chat is chat 2 = Chat B (UI & Polish); the other chat is chat 1 = Chat A (Backend &
+  Skills). The two-chat setup entry in Chat A's log above was written by this chat before the names were set.
+- `TWO_CHATS.md` headings now carry both names.
+
 <!-- Chat B: add new entries above this line -->
