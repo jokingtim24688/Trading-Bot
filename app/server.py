@@ -89,8 +89,8 @@ def positions():
 
 
 @app.get("/api/bars")
-def bars(symbol: str, count: int = 240):
-    return mt5_service.m1_bars(symbol, min(count, 2000))
+def bars(symbol: str, count: int = 240, before: int | None = None):
+    return mt5_service.m1_bars(symbol, min(count, 2000), before)   # before: only candles older than this (chart history)
 
 
 @app.get("/api/size")

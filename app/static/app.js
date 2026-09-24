@@ -15,14 +15,51 @@ function toast(msg, err = false) {
 }
 const fmt = (n, d = 2) => n == null || isNaN(n) ? "—" : Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 
+/* ---------- motion helpers: cheap, skipped when hidden or when motion is reduced ---------- */
+const motionOK = () => !document.documentElement.classList.contains("reduce-motion") && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+const shown = el => !!el && el.offsetParent !== null && !document.hidden;
+// only touch the DOM when the markup really changed (polls repeat every few seconds)
+function setHTML(el, html) { if (el._html === html) return false; el._html = html; el.innerHTML = html; return true; }
+function flash(el, dir) {                      // brief green/red wash when a number moves
+  if (!dir || !el?.animate || !motionOK() || !shown(el)) return;
+  const now = performance.now(); if (now - (el._flashAt || 0) < 700) return; el._flashAt = now;
+  el.animate([{ backgroundColor: dir > 0 ? "rgba(63,182,139,.32)" : "rgba(224,87,79,.32)" }, { backgroundColor: "rgba(0,0,0,0)" }],
+    { duration: 900, easing: "cubic-bezier(.22,1,.36,1)" });
+}
+function tweenNum(el, from, to, format, dur = 480) {   // numbers glide to their new value
+  cancelAnimationFrame(el._tw);
+  if (from == null || !isFinite(from) || from === to || !motionOK() || !shown(el)) { el.textContent = format(to); return; }
+  const t0 = performance.now();
+  const step = now => { const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = format(from + (to - from) * e); if (p < 1) el._tw = requestAnimationFrame(step); };
+  el._tw = requestAnimationFrame(step);
+}
+function setNum(el, v, format, { flashIt = true } = {}) {
+  const prev = el._v; el._v = v;
+  if (v == null || isNaN(v)) { cancelAnimationFrame(el._tw); el.textContent = format(v); return; }
+  if (prev === v && el._set) return;
+  el._set = true; tweenNum(el, prev, v, format);
+  if (flashIt && prev != null && prev !== v) flash(el, v > prev ? 1 : -1);
+}
+
 /* ---------- tabs ---------- */
+function moveRailInd() {                        // slide the highlight to the active section (transform only)
+  const rail = $(".rail"), ind = $(".rail-ind"), b = $(".rail-btn.active"); if (!ind || !b) return;
+  ind.style.transform = `translate(${b.offsetLeft}px, ${b.offsetTop}px)`;
+  ind.style.width = b.offsetWidth + "px"; ind.style.height = b.offsetHeight + "px";
+  if (!rail.classList.contains("ind-ready")) requestAnimationFrame(() => rail.classList.add("ind-ready"));
+}
+$$(".tab").forEach(t => $$(".panel", t).forEach((p, i) => p.style.setProperty("--i", i)));   // stagger order per tab
 function showTab(name) {
+  // leaving the Hermes tab puts the local model to sleep (frees RAM/VRAM; the next message reloads it)
+  if (state.tab === "chat" && name !== "chat") api("/api/assistant/sleep", { method: "POST" }).catch(() => {});
   state.tab = name;
   $$(".rail-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   $$(".tab").forEach(t => t.classList.toggle("active", t.id === `tab-${name}`));
-  if (name === "dash" && state.chart) state.chart.timeScale().scrollToRealTime();
+  moveRailInd();
+  if (name === "dash" && state.chart && state.chartAuto && !state.autoT) realignChart(true);
   if (name === "chat") { loadHistory(); loadFacts(); }
-  if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); loadProgress(); }
+  if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); loadProgress(); loadCalendar(); }
   if (name === "train") pollTrainLog();
   if (name === "quiz") { loadQuiz(); loadReport(false); }
 }
@@ -31,6 +68,7 @@ document.addEventListener("click", e => { const g = e.target.closest("[data-goto
 
 /* ---------- status strip ---------- */
 function countUp(el, to, digits = 2) {
+  if (!motionOK()) { el.textContent = fmt(to, digits); return; }
   const t0 = performance.now(), dur = 900;
   const step = now => { const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
     el.textContent = fmt(to * e, digits); if (p < 1) requestAnimationFrame(step); };
@@ -46,8 +84,8 @@ async function pollStatus() {
     if (r.vram_total_gb) { $("#vram-bar").style.width = `${(r.vram_used_gb / r.vram_total_gb) * 100}%`; $("#vram-txt").textContent = `${r.vram_used_gb}/${r.vram_total_gb} GB`; }
     else $("#vram-txt").textContent = "n/a";
     const a = s.jobs.agent, pill = $("#agent-pill");
-    pill.textContent = a.running ? `agent running · ${a.args.includes("--live") ? (a.args.includes("--allow-real") ? "REAL" : "demo") : "paper"}` : "agent idle";
-    pill.className = "pill" + (a.running ? " live" : "");
+    setHTML(pill, a.running ? `<span class="live-dot"></span>agent running · ${a.args.includes("--live") ? (a.args.includes("--allow-real") ? "REAL" : "demo") : "paper"}` : "agent idle");
+    pill.classList.toggle("live", a.running);
     $("#agent-state").textContent = a.running ? "running" : (a.exit_code != null ? `stopped (exit ${a.exit_code})` : "not started");
     $("#step-fetch").classList.toggle("done", s.data_ready);
     $("#step-train").classList.toggle("done", s.model_ready);
@@ -65,10 +103,11 @@ async function pollAccount() {
     const a = await api("/api/account");
     const badge = $("#acct-mode");
     badge.textContent = a.demo ? "demo" : "real"; badge.className = "badge " + (a.demo ? "demo" : "real");
-    if (!state.equityShown) { countUp($("#equity"), a.equity); state.equityShown = true; }
-    else $("#equity").textContent = fmt(a.equity);
-    const f = $("#floating"); f.textContent = (a.profit >= 0 ? "+" : "") + fmt(a.profit); f.style.color = a.profit > 0 ? "var(--up)" : a.profit < 0 ? "var(--down)" : "";
-    $("#free-margin").textContent = fmt(a.margin_free);
+    const eq = $("#equity");
+    if (!state.equityShown) { countUp(eq, a.equity); Object.assign(eq, { _v: a.equity, _set: true }); state.equityShown = true; }
+    else setNum(eq, a.equity, v => fmt(v));
+    const f = $("#floating"); setNum(f, a.profit, v => (v >= 0 ? "+" : "") + fmt(v)); f.style.color = a.profit > 0 ? "var(--up)" : a.profit < 0 ? "var(--down)" : "";
+    setNum($("#free-margin"), a.margin_free, v => fmt(v), { flashIt: false });
     if (!a.algo_trading) $("#agent-pill").classList.add("warn");
   } catch (e) {
     $("#acct-mode").textContent = "MT5 offline"; $("#acct-mode").className = "badge";
@@ -87,6 +126,64 @@ function initChart() {
     crosshair: { mode: 0 }, autoSize: true, localization: { locale: "en-US" },
   });
   state.series = state.chart.addCandlestickSeries({ upColor: "#3fb68b", downColor: "#e0574f", borderVisible: false, wickUpColor: "#3fb68b", wickDownColor: "#e0574f" });
+  state.chart.timeScale().subscribeVisibleLogicalRangeChange(r => onChartRange(r));
+  wireChartAuto();
+}
+
+/* ---------- chart auto-align: price axis auto-scaled, default candle width, newest candle at the right edge ----------
+   After you zoom, scroll or drag an axis the chart straightens itself AUTO_MS later (the Auto button drains a small bar
+   while it waits). Click Auto to turn that off; double-click the chart to realign right away. */
+const AUTO_MS = 10000, BAR_SPACING = 6, RIGHT_OFFSET = 6;
+state.chartAuto = (() => { try { return localStorage.getItem("chartAuto") !== "off"; } catch (e) { return true; } })();
+state.autoT = null;
+function setAutoBtn() {
+  const b = $("#chart-auto"); b.classList.toggle("on", state.chartAuto); b.setAttribute("aria-pressed", String(state.chartAuto));
+  b.title = state.chartAuto ? "Auto-align is on: after you zoom or drag, the chart straightens itself 10 seconds later. Click to turn it off. Double-click the chart to realign right away."
+    : "Auto-align is off, so the chart stays where you put it. Click to turn it on and realign. Double-click the chart to realign once.";
+}
+function countdown(on) {
+  const c = $("#chart-auto .count"); if (!c?.animate) return;
+  c._a?.cancel(); c._a = null;
+  if (on && motionOK()) c._a = c.animate([{ transform: "scaleX(1)" }, { transform: "scaleX(0)" }], { duration: AUTO_MS, easing: "linear", fill: "forwards" });
+}
+function chartTouched() {
+  if (!state.chartAuto) return;
+  const now = performance.now(); if (now - (state.touchAt || 0) < 150) return; state.touchAt = now;
+  clearTimeout(state.autoT); countdown(true);
+  state.autoT = setTimeout(() => realignChart(), AUTO_MS);
+}
+function realignChart(instant = false) {
+  clearTimeout(state.autoT); state.autoT = null; countdown(false);
+  const ch = state.chart; if (!ch || !state.series) return;
+  // deep in history: bring the live window back first (this also unloads the history that was loaded)
+  if (!state.replay?.view && state.win.bars.length && !state.win.live) { loadLatestWindow().then(() => realignChart(true)).catch(() => {}); return; }
+  ch.priceScale("right").applyOptions({ autoScale: true });
+  const ts = ch.timeScale(), n = state.series.data ? state.series.data().length : 0, w = ts.width();
+  cancelAnimationFrame(state.autoRaf);
+  if (!n || !w) { ts.applyOptions({ barSpacing: BAR_SPACING }); ts.scrollToRealTime(); return; }
+  const to = n - 1 + RIGHT_OFFSET, target = { from: to - w / BAR_SPACING, to }, cur = ts.getVisibleLogicalRange();
+  if (instant || !cur || !motionOK() || !shown($("#chart"))) { ts.setVisibleLogicalRange(target); return; }
+  const b = $("#chart-auto"); b.classList.add("snap"); setTimeout(() => b.classList.remove("snap"), 450);
+  const t0 = performance.now(), dur = 420, f0 = cur.from, e0 = cur.to;
+  const step = now => { const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+    ts.setVisibleLogicalRange({ from: f0 + (target.from - f0) * e, to: e0 + (target.to - e0) * e });
+    if (p < 1) state.autoRaf = requestAnimationFrame(step); };
+  state.autoRaf = requestAnimationFrame(step);
+}
+function wireChartAuto() {
+  const el = $("#chart"), b = $("#chart-auto");
+  setAutoBtn();
+  b.onclick = () => {
+    state.chartAuto = !state.chartAuto; try { localStorage.setItem("chartAuto", state.chartAuto ? "on" : "off"); } catch (e) {}
+    setAutoBtn(); if (state.chartAuto) realignChart(); else { clearTimeout(state.autoT); state.autoT = null; countdown(false); }
+  };
+  el.addEventListener("wheel", chartTouched, { passive: true });
+  let start = null;
+  el.addEventListener("pointerdown", e => { start = [e.clientX, e.clientY]; });
+  el.addEventListener("pointermove", e => { if (start && e.buttons && Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 3) chartTouched(); });
+  addEventListener("pointerup", () => { start = null; });
+  el.addEventListener("dblclick", () => realignChart());
+  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { moveRailInd(); if (state.chartAuto && !state.autoT && state.tab === "dash") realignChart(true); }, 200); });
 }
 /* ---------- replay: bot on downloaded history ---------- */
 state.replay = { view: false, running: false };
@@ -99,6 +196,7 @@ function setReplayView(on) {
   $("#replay-bar").classList.toggle("hidden", !on);
   if (on) $("#chart-msg").classList.add("hidden");
   state.series && state.series.setData([]);
+  state.realignNext = true; state.lastBidShown = null; state.win = newWin();
   loadBars();
 }
 $("#replay-toggle").onclick = () => setReplayView(!state.replay.view);
@@ -145,6 +243,7 @@ function queueReplayBars(r) {
     state.series.setData(bars);
     rpAnim.queue = []; rpAnim.first = bars[0].time; rpAnim.shown = bars[bars.length - 1].time;
     showReplayPrice(bars[bars.length - 1]);
+    if (state.realignNext || state.chartAuto && !state.autoT) { state.realignNext = false; realignChart(true); }
   } else rpAnim.queue.push(...fresh);
   drawBotOverlay();
   if (!rpAnim.lastFrame) requestAnimationFrame(replayFrame);
@@ -168,23 +267,113 @@ function replayFrame(now) {
   }
   requestAnimationFrame(replayFrame);
 }
+/* ---------- lazy chart history ----------
+   Only the candles around what you're looking at are loaded. Scroll far enough left and the next HIST.CHUNK older
+   candles load; the window never holds more than HIST.MAX, so the far side is unloaded (the newest candles when you go
+   back in time, the oldest when you come forward again). While the newest candle is in the window, each 3 s poll only
+   fetches the last 3 candles instead of reloading everything. */
+const HIST = { FIRST: 300, CHUNK: 500, MAX: 1800, MARGIN: 60 };
+const newWin = () => ({ symbol: null, bars: [], live: true, begin: false, busy: false });
+state.win = newWin();
+const pickBar = b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close });
+function showQuote(d) {
+  state.digits = d.digits; state.lastBid = d.bid;
+  const qb = $("#q-bid"), prevBid = state.lastBidShown;
+  $("#q-sym").textContent = d.symbol; qb.textContent = fmt(d.bid, d.digits);
+  if (prevBid != null && d.bid !== prevBid) flash(qb, d.bid > prevBid ? 1 : -1);
+  state.lastBidShown = d.bid;
+  $("#q-spr").textContent = Math.round((d.ask - d.bid) / d.point);
+  $("#chart-msg").classList.add("hidden");
+  if (!$("#sz-entry").value) $("#sz-entry").placeholder = fmt(d.bid, d.digits).replace(/,/g, "");
+  if (d.bars.length) state.latestTime = Math.max(state.latestTime || 0, d.bars[d.bars.length - 1].time);
+}
+function applyWindow(shift = 0) {                // hand the window to the chart and keep the view where it was
+  const W = state.win, ts = state.chart.timeScale(), r = shift ? ts.getVisibleLogicalRange() : null;
+  state.series.setData(W.bars);
+  if (r) ts.setVisibleLogicalRange({ from: r.from + shift, to: r.to + shift });
+  state.barRange = W.bars.length ? [W.bars[0].time, W.bars[W.bars.length - 1].time] : null;
+  drawBotOverlay();
+}
+async function loadLatestWindow() {
+  const sym = state.symbol, d = await api(`/api/bars?symbol=${encodeURIComponent(sym)}&count=${HIST.FIRST}`);
+  if (sym !== state.symbol || state.replay?.view) return;
+  const W = state.win = Object.assign(newWin(), { symbol: sym, bars: d.bars.map(pickBar), busy: true });
+  state.series.applyOptions({ priceFormat: { type: "price", precision: d.digits, minMove: d.point } });
+  showQuote(d); applyWindow();
+  requestAnimationFrame(() => requestAnimationFrame(() => { W.busy = false; }));   // ignore the scroll events of the swap itself
+}
 async function loadBars() {
   if (state.replay?.view) return loadReplay();
   if (!state.series || !state.symbol) return;
+  const W = state.win;
   try {
-    const d = await api(`/api/bars?symbol=${encodeURIComponent(state.symbol)}&count=300`);
-    state.digits = d.digits; state.lastBid = d.bid;
-    state.series.applyOptions({ priceFormat: { type: "price", precision: d.digits, minMove: d.point } });
-    state.series.setData(d.bars.map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
-    $("#q-sym").textContent = d.symbol; $("#q-bid").textContent = fmt(d.bid, d.digits);
-    $("#q-spr").textContent = Math.round((d.ask - d.bid) / d.point);
-    $("#chart-msg").classList.add("hidden");
-    state.barRange = d.bars.length ? [d.bars[0].time, d.bars[d.bars.length - 1].time] : null;
+    if (W.symbol !== state.symbol || !W.bars.length) {
+      await loadLatestWindow();
+      if (state.realignNext) { state.realignNext = false; realignChart(true); }
+      return;
+    }
+    const d = await api(`/api/bars?symbol=${encodeURIComponent(state.symbol)}&count=3`);
+    if (W !== state.win) return;
+    showQuote(d);
+    if (!W.live || !d.bars.length) return;                       // looking at history: only the quote refreshes
+    if (d.bars[0].time > W.bars[W.bars.length - 1].time + 60) return loadLatestWindow();   // candles were missed (app asleep)
+    for (const b of d.bars.map(pickBar)) {
+      const n = W.bars.length, tail = W.bars[n - 1];
+      if (b.time === tail.time) W.bars[n - 1] = b; else if (b.time > tail.time) W.bars.push(b); else continue;
+      state.series.update(b);
+    }
+    if (W.bars.length > HIST.MAX + 120) trimOldest();            // a long live session: drop candles far off to the left
+    state.barRange = [W.bars[0].time, W.bars[W.bars.length - 1].time];
     drawBotOverlay();
-    if (!$("#sz-entry").value) $("#sz-entry").placeholder = fmt(d.bid, d.digits).replace(/,/g, "");
   } catch (e) {
     const m = $("#chart-msg"); m.textContent = e.message; m.classList.remove("hidden");
   }
+}
+function trimOldest() {
+  const W = state.win, r = state.chart.timeScale().getVisibleLogicalRange();
+  const cut = Math.min(W.bars.length - HIST.MAX, Math.floor(r?.from ?? 0) - HIST.MARGIN * 2);
+  if (cut > 0) { W.bars.splice(0, cut); W.begin = false; applyWindow(-cut); }
+}
+async function loadOlder() {
+  const W = state.win; if (W.busy || W.begin || !W.bars.length || state.replay?.view) return;
+  W.busy = true;
+  try {
+    const first = W.bars[0].time, d = await api(`/api/bars?symbol=${encodeURIComponent(W.symbol)}&count=${HIST.CHUNK}&before=${first}`);
+    if (W !== state.win) return;
+    const older = d.bars.filter(b => b.time < first).map(pickBar);
+    if (older.length < HIST.CHUNK) W.begin = true;                // reached the start of what the broker keeps
+    if (!older.length) return;
+    W.bars = older.concat(W.bars);
+    const r = state.chart.timeScale().getVisibleLogicalRange();
+    const keepTo = Math.ceil((r ? r.to : W.bars.length) + older.length) + HIST.MARGIN * 2;
+    const cut = Math.min(W.bars.length - HIST.MAX, W.bars.length - 1 - keepTo);
+    if (cut > 0) { W.bars.length -= cut; W.live = false; }        // unload the newest candles, now far off to the right
+    applyWindow(older.length);
+  } catch (e) { W.begin = true; }
+  finally { W.busy = false; }
+}
+async function loadNewer() {
+  const W = state.win; if (W.busy || W.live || !W.bars.length || state.replay?.view) return;
+  W.busy = true;
+  try {
+    const last = W.bars[W.bars.length - 1].time;
+    const d = await api(`/api/bars?symbol=${encodeURIComponent(W.symbol)}&count=${HIST.CHUNK + 1}&before=${last + (HIST.CHUNK + 1) * 60}`);
+    if (W !== state.win) return;
+    const newer = d.bars.filter(b => b.time > last).map(pickBar);
+    if (!newer.length) { W.live = true; return; }
+    W.bars = W.bars.concat(newer);
+    if (newer[newer.length - 1].time >= (state.latestTime || Infinity)) W.live = true;   // caught up with the present
+    const r = state.chart.timeScale().getVisibleLogicalRange();
+    const cut = Math.min(W.bars.length - HIST.MAX, Math.floor(r ? r.from : 0) - HIST.MARGIN * 2);
+    if (cut > 0) { W.bars.splice(0, cut); W.begin = false; }      // unload the oldest candles, now far off to the left
+    applyWindow(cut > 0 ? -cut : 0);
+  } catch (e) {}
+  finally { W.busy = false; }
+}
+function onChartRange(r) {                       // called while scrolling; loads are single-flight
+  const W = state.win; if (!r || state.replay?.view || !W.bars.length) return;
+  if (r.from < HIST.MARGIN) loadOlder();
+  else if (!W.live && r.to > W.bars.length - HIST.MARGIN) loadNewer();
 }
 function renderChips() {
   const box = $("#symbols"); box.innerHTML = "";
@@ -197,7 +386,8 @@ function renderChips() {
 
 function selectSymbol(sym) {
   if (sym === state.symbol) return;
-  state.symbol = sym; renderChips(); state.series && state.series.setData([]); loadBars(); sizeTrade();
+  state.symbol = sym; renderChips(); state.series && state.series.setData([]);
+  state.realignNext = true; state.lastBidShown = null; state.win = newWin(); loadBars(); sizeTrade();
 }
 
 /* ---------- the bot's own trades: card, chart overlay, history, alerts ---------- */
@@ -234,9 +424,11 @@ async function pollBot() {
         toast(`Bot ${t.side.toUpperCase()} ${t.symbol} ${t.lots} @ ${px(t.entry, t.symbol)} · SL ${px(t.sl, t.symbol)} · TP ${px(t.tp, t.symbol)} (${t.mode})`);
         beep([660, 880]);
         $("#bot-card").classList.remove("live"); void $("#bot-card").offsetWidth; $("#bot-card").classList.add("live");
+        tradeMoment();
       } else if (before === "open" && t.status === "closed") {
         toast(`Bot closed #${t.id} ${t.symbol} · ${t.exit_reason} · ${signed(t.pnl)}${t.score != null ? ` · ${pts(t.score)} pts` : ""}`, t.pnl < 0);
         beep(t.pnl >= 0 ? [700, 940, 1180] : [520, 390]);
+        state.cal.loaded = 0;                       // the calendar picks the closed trade up on its next look
       }
     }
   }
@@ -244,6 +436,16 @@ async function pollBot() {
   renderBotCard(); drawBotOverlay();
   if (state.tab === "agent") renderBotTable();
 }
+// the one deliberate motion moment: when the bot enters, the chart panel glows gold once
+function tradeMoment() {
+  const p = $(".chart-panel"); if (!p?.animate || !motionOK() || !shown(p)) return;
+  p.animate([{ boxShadow: "0 0 0 1px rgba(201,162,74,.75), 0 0 38px rgba(201,162,74,.3)" }, { boxShadow: "0 0 0 1px rgba(201,162,74,0), 0 0 0 rgba(201,162,74,0)" }],
+    { duration: 1600, easing: "cubic-bezier(.22,1,.36,1)" });
+}
+const ICON = {
+  bot: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="7" width="14" height="11" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9 15.5h6"/></svg>`,
+  list: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"/></svg>`,
+};
 
 function renderBotCard() {
   const d = state.bot.data; if (!d) return;
@@ -251,33 +453,38 @@ function renderBotCard() {
   const today = Object.entries(d.stats).filter(([, s]) => s.closed || s.open).map(([m, s]) => `${m} ${signed(s.today_pnl)} · ${pts(s.today_score)} pts`).join(" · ");
   $("#bot-today").textContent = today ? `today: ${today}` : "";
   if (!open.length) {
+    state.bot.cardMax ??= d.recent.reduce((mx, t) => Math.max(mx, t.id), 0);   // so the next entry animates in
     $("#bot-card").classList.remove("live");
     const rp = state.replay?.view && state.replay.last?.total ? state.replay.last : null;
     const a = rp ? { ...rp, mode: "replay", bar: (rp.bar_time_utc || "").slice(11, 16) } : d.agent;
     const pct = v => v == null ? "–" : `${v < 0.1 ? (v * 100).toFixed(1) : Math.round(v * 100)}%`;
     const need = a ? (a.need ?? a.threshold) : 1;
-    box.innerHTML = a ? `<div class="watch">
+    setHTML(box, a ? `<div class="watch">
         <div class="watch-head"><span class="live-dot"></span><strong>Watching ${state.settings?.symbol || ""} · ${a.mode || ""}</strong><span class="muted small">${a.bar ? "candle " + a.bar : ""}</span></div>
         ${a.p_buy != null ? `<div class="conf"><span>Buy</span><div class="bar"><i style="width:${Math.min(100, a.p_buy / Math.max(need, .001) * 100)}%"></i></div><span class="num">${pct(a.p_buy)}</span></div>
         <div class="conf"><span>Sell</span><div class="bar"><i style="width:${Math.min(100, a.p_sell / Math.max(need, .001) * 100)}%"></i></div><span class="num">${pct(a.p_sell)}</span></div>
         <p class="muted small" style="margin:4px 0 0">Needs ${pct(need)} to enter${a.practice ? " (practice: its best ~10% of readings)" : ""} · ${a.open ?? 0}/${a.max_open ?? "–"} open</p>` : ""}
         ${a.setups?.length ? `<div class="setups"><span class="muted small">Pro read:</span>${a.setups.map(x => `<span class="setup-chip">${x}</span>`).join("")}</div>` : ""}
         <p class="small" style="margin:8px 0 0"><b>${a.decision}</b>${a.reason ? ` · <span class="muted">${a.reason}</span>` : ""}</p></div>`
-      : `<p class="empty">The bot isn't running. Start it on the Agent tab. When it enters you'll get an alert, and its entry, stop and target are drawn on the chart.</p>`;
+      : `<div class="empty-state compact">${ICON.bot}<div><b>The bot isn't running</b>Start it on the Agent tab. When it enters you get an alert, and its entry, stop and target are drawn on the chart.</div><button class="btn xs" data-goto="agent">Open Agent</button></div>`);
     return;
   }
   $("#bot-card").classList.add("live");
   const now = state.replay?.view ? state.replay.last : d.agent;
   const proRead = now?.setups?.length ? `<div class="setups" style="margin:0 0 8px"><span class="muted small">Pro read:</span>${now.setups.map(x => `<span class="setup-chip">${x}</span>`).join("")}</div>` : "";
-  box.innerHTML = proRead + open.slice().reverse().map(t => {
+  const firstCard = state.bot.cardMax == null, cardMax = state.bot.cardMax ?? Infinity;
+  state.bot.cardMax = Math.max(state.bot.cardMax ?? 0, ...open.map(t => t.id));
+  const prevPl = state.bot.pl || {}; state.bot.pl = Object.fromEntries(open.map(t => [t.id, t.pnl]));
+  setHTML(box, proRead + open.slice().reverse().map(t => {
     const risk = Math.abs(t.entry - t.sl0), rNow = t.price != null && risk ? ((t.side === "buy" ? t.price - t.entry : t.entry - t.price) / risk) : null;
-    return `<div class="bt">
+    return `<div class="bt${!firstCard && t.id > cardMax ? " enter" : ""}">
       <div class="bt-head"><span class="bt-side ${t.side}">${t.side.toUpperCase()}</span><strong>${t.symbol}</strong><span class="muted small">${t.lots} lots · ${t.mode}${t.prob ? ` · conf ${Math.round(t.prob * 100)}%` : ""}${t.setup ? ` · ${d.setup_names?.[t.setup] || t.setup}` : ""}</span></div>
       <div class="bt-levels"><div><span>Entry</span><strong>${px(t.entry, t.symbol)}</strong></div><div class="sl"><span>Stop</span><strong>${px(t.sl, t.symbol)}</strong></div><div class="tp"><span>Target</span><strong>${px(t.tp, t.symbol)}</strong></div></div>
-      <div class="bt-foot"><span class="num ${cls(t.pnl)}">${signed(t.pnl)}${rNow != null ? ` <span class="muted">(${rNow >= 0 ? "+" : ""}${rNow.toFixed(2)}R)</span>` : ""}</span>
+      <div class="bt-foot"><span class="num flashable ${cls(t.pnl)}" data-pl="${t.id}">${signed(t.pnl)}${rNow != null ? ` <span class="muted">(${rNow >= 0 ? "+" : ""}${rNow.toFixed(2)}R)</span>` : ""}</span>
         <span class="row gap"><button class="btn xs" data-follow="${t.id}" title="Put the bot's stop into the sizer to size your own copy">Size mine</button><button class="btn xs" data-copy="${t.id}">Copy levels</button></span></div>
       <p class="muted small" style="margin:6px 0 0">opened ${(t.open_utc || "").replace("T", " ").slice(0, 16)} UTC · #${t.id}</p></div>`;
-  }).join("");
+  }).join(""));
+  open.forEach(t => { const p0 = prevPl[t.id]; if (p0 != null && t.pnl != null && t.pnl !== p0) flash(box.querySelector(`[data-pl="${t.id}"]`), t.pnl > p0 ? 1 : -1); });
 }
 $("#bot-now").addEventListener("click", async e => {
   const f = e.target.closest("[data-follow]"), c = e.target.closest("[data-copy]");
@@ -314,7 +521,14 @@ function drawBotOverlay() {
 
 function renderBotTable() {
   const d = state.bot.data; if (!d) return;
-  const m = state.bot.filter, rows = d.recent.filter(t => !m || t.mode === m);
+  const m = state.bot.filter, day = state.cal.day;
+  // a picked calendar day shows every trade that closed that day (from the calendar's longer list)
+  const rows = day ? state.cal.trades.filter(t => (!m || t.mode === m) && t.close_utc.slice(0, 10) === day)
+                   : d.recent.filter(t => !m || t.mode === m);
+  const dayBox = $("#bt-day"); dayBox.hidden = !day;
+  if (day) setHTML(dayBox, `<span>${rows.length} trade${rows.length === 1 ? "" : "s"} closed on <b class="num">${day}</b> (UTC)</span><button data-clear-day>Show all trades</button>`);
+  const firstRows = state.bot.rowMax == null, rowMax = state.bot.rowMax ?? Infinity;
+  if (!day) state.bot.rowMax = Math.max(state.bot.rowMax ?? 0, ...rows.map(t => t.id));
   const S = m ? d.stats[m] : Object.values(d.stats).reduce((a, s) => ({ closed: a.closed + s.closed, open: a.open + s.open,
     net_pnl: a.net_pnl + s.net_pnl, today_pnl: a.today_pnl + s.today_pnl, total_r: a.total_r + s.total_r,
     wins: a.wins + (s.win_pct || 0) * s.closed / 100, score: a.score + (s.score || 0), today_score: a.today_score + (s.today_score || 0),
@@ -324,23 +538,89 @@ function renderBotTable() {
   const avgR = m ? S.avg_r : (S.closed ? (S.total_r / S.closed).toFixed(2) : null);
   const card = (label, val, c = "") => `<div class="stat"><span>${label}</span><strong class="${c}">${val ?? "—"}</strong></div>`;
   const avgScore = S.closed ? (S.score / S.closed).toFixed(1) : "—";
-  $("#bt-stats").innerHTML = card("Score", pts(S.score), cls(S.score)) + card("Today's score", pts(S.today_score), cls(S.today_score))
+  setHTML($("#bt-stats"), card("Score", pts(S.score), cls(S.score)) + card("Today's score", pts(S.today_score), cls(S.today_score))
     + card("Avg points / trade", avgScore) + card("Stops hit / early exits", `${S.sl_hits} / ${S.early_exits}`)
     + card("Closed trades", S.closed) + card("Open", S.open) + card("Win rate", win != null ? `${win}%` : "—")
     + card("Net P/L", signed(S.net_pnl), cls(S.net_pnl)) + card("Today", signed(S.today_pnl), cls(S.today_pnl))
     + card("Total R", S.total_r != null ? `${S.total_r >= 0 ? "+" : ""}${Number(S.total_r).toFixed(2)}` : "—", cls(S.total_r))
-    + card("Avg R / trade", avgR) + (m ? card("Profit factor", S.profit_factor) : "");
-  $("#bt-table tbody").innerHTML = rows.map(t => `<tr class="${t.status === "open" ? "open-row" : ""}"><td>${t.id}</td><td>${t.mode}</td>
+    + card("Avg R / trade", avgR) + (m ? card("Profit factor", S.profit_factor) : ""));
+  setHTML($("#bt-table tbody"), rows.map(t => `<tr class="${t.status === "open" ? "open-row" : ""}${!firstRows && !day && t.id > rowMax ? " enter" : ""}"><td>${t.id}</td><td>${t.mode}</td>
     <td>${(t.open_utc || "").replace("T", " ").slice(0, 16)}</td><td>${t.symbol}</td><td class="${t.side === "buy" ? "up" : "down"}">${t.side}</td><td>${t.lots}</td>
     <td>${px(t.entry, t.symbol)}</td><td>${px(t.sl, t.symbol)}</td><td>${px(t.tp, t.symbol)}</td>
     <td>${t.status === "open" ? "open" : px(t.exit, t.symbol)}</td><td>${t.exit_reason || ""}</td>
     <td class="${cls(t.pnl)}">${t.status === "open" ? "" : signed(t.pnl)}</td><td class="${cls(t.r_multiple)}">${t.r_multiple ?? ""}</td><td class="${cls(t.score)}">${t.status === "open" ? "" : pts(t.score)}</td><td>${t.prob ? Math.round(t.prob * 100) + "%" : ""}</td><td class="small">${t.setup ? (d.setup_names?.[t.setup] || t.setup) : ""}</td></tr>`).join("")
-    || `<tr><td colspan="16" class="muted">No bot trades yet${m ? ` in ${m} mode` : ""}. Start the agent and every trade it takes is recorded here, including ones that hit stop or target while the app was closed.</td></tr>`;
+    || `<tr><td colspan="16" class="muted">No bot trades yet${m ? ` in ${m} mode` : ""}. Start the agent and every trade it takes is recorded here, including ones that hit stop or target while the app was closed.</td></tr>`);
 }
 $("#bt-filter").addEventListener("click", e => {
   const b = e.target.closest("[data-m]"); if (!b) return;
-  state.bot.filter = b.dataset.m; $$("#bt-filter .chip").forEach(x => x.classList.toggle("active", x === b)); renderBotTable();
+  state.bot.filter = b.dataset.m; state.cal.day = null;
+  $$("#bt-filter .chip").forEach(x => x.classList.toggle("active", x === b)); renderCalendar(); renderBotTable();
 });
+$("#bt-day").addEventListener("click", e => { if (e.target.closest("[data-clear-day]")) { state.cal.day = null; renderCalendar(); renderBotTable(); } });
+
+/* ---------- daily P/L calendar: closed bot trades grouped by the UTC day they closed ---------- */
+state.cal = { trades: [], loaded: 0, month: null, modeFor: null, day: null, animKey: "", days: new Map() };
+async function loadCalendar(force = false) {
+  if (force || Date.now() - state.cal.loaded > 60000) {
+    try { const d = await api("/api/bot/trades?limit=3000"); state.cal.trades = d.recent.filter(t => t.status === "closed" && t.close_utc); state.cal.loaded = Date.now(); }
+    catch (e) { /* keep what we had */ }
+  }
+  renderCalendar();
+}
+const pad2 = n => String(n).padStart(2, "0");
+const shortPl = v => { const a = Math.abs(v); return (v >= 0 ? "+" : "−") + (a >= 1000 ? `${(a / 1000).toFixed(1)}k` : a >= 100 ? Math.round(a) : a.toFixed(1)); };
+function renderCalendar() {
+  const box = $("#bt-cal"), mode = state.bot.filter, days = new Map();
+  for (const t of state.cal.trades) {
+    if (mode && t.mode !== mode) continue;
+    const k = t.close_utc.slice(0, 10), x = days.get(k) || { pnl: 0, n: 0, w: 0, l: 0, score: 0 }, p = t.pnl || 0;
+    x.pnl += p; x.n++; if (p > 0) x.w++; else if (p < 0) x.l++; x.score += t.score || 0; days.set(k, x);
+  }
+  state.cal.days = days;
+  const keys = [...days.keys()].sort(), today = new Date().toISOString().slice(0, 10);
+  if (!state.cal.month || state.cal.modeFor !== mode) { state.cal.month = (keys[keys.length - 1] || today).slice(0, 7); state.cal.modeFor = mode; }
+  const ym = state.cal.month, [Y, M] = ym.split("-").map(Number);
+  const nDays = new Date(Date.UTC(Y, M, 0)).getUTCDate(), lead = (new Date(Date.UTC(Y, M - 1, 1)).getUTCDay() + 6) % 7;
+  const month = keys.filter(k => k.startsWith(ym)).map(k => days.get(k));
+  const maxAbs = Math.max(0.01, ...month.map(v => Math.abs(v.pnl)));
+  const net = month.reduce((a, v) => a + v.pnl, 0), green = month.filter(v => v.pnl > 0).length, red = month.filter(v => v.pnl < 0).length;
+  const best = Math.max(0, ...month.map(v => v.pnl)), worst = Math.min(0, ...month.map(v => v.pnl));
+  const first = (keys[0] || today).slice(0, 7), last = [keys[keys.length - 1] || today, today].sort()[1].slice(0, 7);
+  const label = new Date(Date.UTC(Y, M - 1, 1)).toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  let cells = "";
+  for (let i = 0; i < lead; i++) cells += `<div class="cal-day pad"></div>`;
+  for (let dd = 1; dd <= nDays; dd++) {
+    const k = `${ym}-${pad2(dd)}`, v = days.get(k);
+    const c = ["cal-day", v && "has", k === today && "today", k === state.cal.day && "sel", k > today && "future"].filter(Boolean).join(" ");
+    const a = v ? (0.14 + 0.5 * Math.sqrt(Math.abs(v.pnl) / maxAbs)).toFixed(3) : 0;
+    const bg = v ? `background:rgba(${v.pnl >= 0 ? "63,182,139" : "224,87,79"},${a})` : "";
+    cells += `<div class="${c}" style="--i:${lead + dd - 1};${bg}"${v ? ` data-day="${k}"` : ""}><span class="d">${dd}</span>${v ? `<span class="n">${v.n}</span><span class="p">${shortPl(v.pnl)}</span>` : ""}</div>`;
+  }
+  const animKey = `${ym}|${mode}`, anim = state.cal.animKey !== animKey && motionOK(); state.cal.animKey = animKey;
+  box.classList.toggle("anim", anim);
+  if (anim) box._html = null;                    // month or mode changed: rebuild so the days ripple in
+  setHTML(box, `<div class="cal-head"><span class="cal-title">${label}<small>daily P/L · UTC days</small></span>
+      <span class="cal-nav"><button data-cal="-1" ${ym <= first ? "disabled" : ""} aria-label="Previous month">‹</button><button data-cal="1" ${ym >= last ? "disabled" : ""} aria-label="Next month">›</button></span></div>
+    <div class="cal-sum"><span>Net <b class="${cls(net)}">${signed(net)}</b></span><span>Green days <b>${green}</b></span><span>Red days <b>${red}</b></span>${best > 0 ? `<span>Best <b class="up">${signed(best)}</b></span>` : ""}${worst < 0 ? `<span>Worst <b class="down">${signed(worst)}</b></span>` : ""}</div>
+    <div class="cal-grid">${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(x => `<span class="cal-dow">${x}</span>`).join("")}${cells}</div>
+    ${keys.length ? "" : `<p class="cal-empty">No closed trades${mode ? ` in ${mode} mode` : ""} yet. Each day fills in as the bot's trades close: green for a winning day, red for a losing one.</p>`}
+    <div class="cal-tip" hidden></div>`);
+}
+$("#bt-cal").addEventListener("click", e => {
+  const nav = e.target.closest("[data-cal]:not(:disabled)");
+  if (nav) { const [Y, M] = state.cal.month.split("-").map(Number); state.cal.month = new Date(Date.UTC(Y, M - 1 + +nav.dataset.cal, 1)).toISOString().slice(0, 7); renderCalendar(); return; }
+  const day = e.target.closest("[data-day]");
+  if (day) { state.cal.day = state.cal.day === day.dataset.day ? null : day.dataset.day; renderCalendar(); renderBotTable(); }
+});
+$("#bt-cal").addEventListener("mouseover", e => {
+  const c = e.target.closest("[data-day]"), tip = $("#bt-cal .cal-tip"); if (!tip) return;
+  const v = c && state.cal.days.get(c.dataset.day); if (!v) { tip.hidden = true; return; }
+  tip.innerHTML = `${c.dataset.day}<br>${v.n} trade${v.n > 1 ? "s" : ""} · ${v.w} won · ${v.l} lost<br>P/L <span class="${cls(v.pnl)}">${signed(v.pnl)}</span> · score ${pts(v.score)}`;
+  tip.hidden = false;
+  const bx = $("#bt-cal").getBoundingClientRect(), r = c.getBoundingClientRect();
+  tip.style.left = Math.max(4, Math.min(r.left - bx.left, bx.width - tip.offsetWidth - 4)) + "px"; tip.style.top = (r.bottom - bx.top + 6) + "px";
+});
+$("#bt-cal").addEventListener("mouseleave", () => { const t = $("#bt-cal .cal-tip"); if (t) t.hidden = true; });
 
 /* ---------- sizing ---------- */
 let szTimer;
@@ -364,12 +644,13 @@ async function loadPositions() {
   try {
     const ps = await api("/api/positions"), box = $("#positions");
     $("#pos-count").textContent = ps.length ? `${ps.length} open` : "";
-    if (!ps.length) { box.innerHTML = `<p class="empty">Nothing open. Positions from the agent, Hermes or manual trades in MT5 show up here.</p>`; return; }
-    box.innerHTML = ps.map(p => `<div class="pos ${p.side}">
+    const seen = state.posSeen; state.posSeen = new Set(ps.map(p => p.ticket));
+    if (!ps.length) { setHTML(box, `<div class="empty-state compact">${ICON.list}<div><b>Nothing open</b>Positions from the bot, Hermes or your own MT5 trades show up here.</div></div>`); return; }
+    setHTML(box, ps.map(p => `<div class="pos ${p.side}${seen && !seen.has(p.ticket) ? " enter" : ""}">
       <span><strong>${p.symbol}</strong><span class="tag ${p.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[p.owner] || "You"}</span> <span class="muted">${p.side} ${p.volume}</span></span>
       <button class="btn xs" data-close="${p.ticket}">Close</button>
       <span class="num small muted">SL ${p.sl || "none"}  TP ${p.tp || "none"}</span>
-      <span class="num small"><span class="pl ${p.profit >= 0 ? "up" : "down"}">${p.profit >= 0 ? "+" : ""}${fmt(p.profit)}</span> <span class="muted">from ${p.open}</span></span></div>`).join("");
+      <span class="num small"><span class="pl ${p.profit >= 0 ? "up" : "down"}">${p.profit >= 0 ? "+" : ""}${fmt(p.profit)}</span> <span class="muted">from ${p.open}</span></span></div>`).join(""));
   } catch (e) { /* offline handled by account badge */ }
 }
 $("#positions").addEventListener("click", async e => {
@@ -481,31 +762,41 @@ $("#agent-start").onclick = async () => {
   catch (e) { msg.textContent = e.message; msg.className = "note err"; }
 };
 $("#agent-stop").onclick = async () => { await api("/api/agent/stop", { method: "POST" }); $("#agent-msg").textContent = "Stopped. Any open position keeps its server-side stop loss and take profit."; pollStatus(); };
+// console panels show a small "nothing yet" card until their job has written something
+function showLog(which, log, stickToEnd) {
+  if (!log || !log.trim()) return;
+  const pre = $(`#${which}-log`); $(`#${which}-empty`).hidden = true; pre.hidden = false;
+  if (pre.textContent === log) return;
+  const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+  pre.textContent = log;
+  if (!stickToEnd || atEnd) pre.scrollTop = pre.scrollHeight;
+}
 async function pollAgentLog() {
-  try { const r = await api("/api/jobs/agent/log?lines=300"); if (r.log) { const c = $("#agent-log"); const stick = c.scrollTop + c.clientHeight >= c.scrollHeight - 20; c.textContent = r.log; if (stick) c.scrollTop = c.scrollHeight; } } catch (e) {}
+  try { const r = await api("/api/jobs/agent/log?lines=300"); showLog("agent", r.log, true); } catch (e) {}
 }
 async function loadJournal() {
   try {
-    const rows = await api("/api/journal?limit=200");
-    $("#journal tbody").innerHTML = rows.reverse().map(r => `<tr><td>${(r.time_utc || "").replace("T", " ").slice(0, 19)}</td><td>${r.mode}</td>
+    const rows = await api("/api/journal?limit=200"), last = state.journalLast;
+    state.journalLast = rows.reduce((mx, r) => (r.time_utc || "") > mx ? r.time_utc : mx, last || "");
+    setHTML($("#journal tbody"), rows.reverse().map(r => `<tr${last != null && (r.time_utc || "") > last ? ` class="enter"` : ""}><td>${(r.time_utc || "").replace("T", " ").slice(0, 19)}</td><td>${r.mode}</td>
       <td class="ev-${r.event}">${r.event}</td><td>${r.side || ""}</td><td>${r.lots || ""}</td><td>${r.price ? Number(r.price).toFixed(state.digits) : ""}</td>
       <td>${r.sl ? Number(r.sl).toFixed(state.digits) : ""}</td><td>${r.tp ? Number(r.tp).toFixed(state.digits) : ""}</td><td>${r.prob || ""}</td><td>${r.note || ""}</td></tr>`).join("")
-      || `<tr><td colspan="10" class="muted">No entries yet. Start the agent in Paper mode and signals will be logged as candles close.</td></tr>`;
+      || `<tr><td colspan="10" class="muted">No entries yet. Start the agent in Paper mode and signals will be logged as candles close.</td></tr>`);
   } catch (e) {}
 }
 
 /* ---------- train ---------- */
 let lastTrainJob = "train";
-$("#btn-fetch").onclick = async () => { try { await api("/api/fetch", { method: "POST" }); lastTrainJob = "fetch"; pollTrainLog(); pollStatus(); } catch (e) { toast(e.message, true); } };
-$("#btn-history").onclick = async () => { try { await api("/api/history/download", { method: "POST", body: JSON.stringify({ years: +$("#hist-years").value }) }); lastTrainJob = "history"; pollTrainLog(); pollStatus(); } catch (e) { toast(e.message, true); } };
-$("#btn-train").onclick = async () => { try { await api("/api/train", { method: "POST" }); lastTrainJob = "train"; pollTrainLog(); pollStatus(); } catch (e) { toast(e.message, true); } };
+$("#btn-fetch").onclick = async () => { try { await api("/api/fetch", { method: "POST" }); lastTrainJob = "fetch"; showLog("train", "Starting the download…"); pollTrainLog(); pollStatus(); } catch (e) { toast(e.message, true); } };
+$("#btn-history").onclick = async () => { try { await api("/api/history/download", { method: "POST", body: JSON.stringify({ years: +$("#hist-years").value }) }); lastTrainJob = "history"; showLog("train", "Starting the history download…"); pollTrainLog(); pollStatus(); } catch (e) { toast(e.message, true); } };
+$("#btn-train").onclick = async () => { try { await api("/api/train", { method: "POST" }); lastTrainJob = "train"; showLog("train", "Starting training…"); pollTrainLog(); pollStatus(); } catch (e) { toast(e.message, true); } };
 async function pollTrainLog() {
-  try { const r = await api(`/api/jobs/${lastTrainJob}/log?lines=400`); if (r.log) { const c = $("#train-log"); c.textContent = r.log; c.scrollTop = c.scrollHeight; } } catch (e) {}
+  try { const r = await api(`/api/jobs/${lastTrainJob}/log?lines=400`); showLog("train", r.log, false); } catch (e) {}
 }
 
 /* ---------- Hermes chat ---------- */
-function addMsg(role, text, tools) {
-  const d = document.createElement("div"); d.className = `msg ${role}`; d.textContent = text;
+function addMsg(role, text, tools, animate = false) {
+  const d = document.createElement("div"); d.className = `msg ${role}${animate ? " enter" : ""}`; d.textContent = text;
   if (tools && tools.length) { const t = document.createElement("div"); t.className = "tools"; t.textContent = "used: " + tools.map(x => x.tool).join(", "); d.appendChild(t); }
   $("#thread").appendChild(d); $("#thread").scrollTop = $("#thread").scrollHeight; return d;
 }
@@ -519,30 +810,56 @@ async function loadHistory() {
 }
 async function send(text) {
   text = text.trim(); if (!text) return;
-  $("#suggest").classList.add("hidden"); $("#chat-intro").classList.add("hidden"); addMsg("user", text);
-  const pending = addMsg("assistant pending", "Thinking");
-  try { const r = await api("/api/chat", { method: "POST", body: { text } }); pending.remove(); addMsg("assistant", r.reply, r.tools); loadFacts(); }
-  catch (e) { pending.remove(); addMsg("assistant", `Couldn't reach the assistant: ${e.message}`); }
+  $("#suggest").classList.add("hidden"); $("#chat-intro").classList.add("hidden"); addMsg("user", text, null, true);
+  const pending = addMsg("assistant pending", "Thinking", null, true);
+  try {
+    const r = await api("/api/chat", { method: "POST", body: { text } }); pending.remove(); addMsg("assistant", r.reply, r.tools, true); loadFacts();
+    if ((r.reply || "").startsWith("⚠")) brainStatus();       // set-up messages: refresh the status line
+  }
+  catch (e) { pending.remove(); addMsg("assistant", `Couldn't reach the assistant: ${e.message}`, null, true); }
 }
 $("#chat-form").onsubmit = e => { e.preventDefault(); const i = $("#chat-input"); const t = i.value; i.value = ""; i.style.height = ""; send(t); };
 $("#chat-input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chat-form").requestSubmit(); } });
 $("#chat-input").addEventListener("input", e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; });
 $$("#suggest button").forEach(b => b.onclick = () => send(b.textContent));
+// status pill + next step + Set up button; the local model can install/start/download itself (backend by Chat A)
+const LOCAL_TEXT = { not_installed: "Ollama not installed", stopped: "Ollama not running", no_model: "Model not downloaded", error: "Set-up problem", starting: "Starting Ollama…" };
 async function brainStatus() {
-  try {
-    const s = await api("/api/assistant/status"), el = $("#brain-state");
-    const useAgent = s.backend_setting === "hermes_agent" || (s.backend_setting === "auto" && s.hermes_agent);
-    if (useAgent && s.hermes_agent) { el.textContent = "Hermes Agent · connected"; el.className = "pill live"; }
-    else if (!useAgent && s.ollama) { el.textContent = `${s.model} on RTX 4060`; el.className = "pill live"; }
-    else { el.textContent = useAgent ? "Hermes Agent not running" : "Ollama not running"; el.className = "pill warn"; }
-  } catch (e) {}
+  let s; try { s = await api("/api/assistant/status"); } catch (e) { return; }
+  const el = $("#brain-state"), next = $("#brain-next"), setup = $("#brain-setup");
+  const useAgent = s.backend_setting === "hermes_agent" || (s.backend_setting === "auto" && s.hermes_agent);
+  const localReady = s.local ? s.local === "ready" : s.ollama;
+  let text, live = false;
+  if (useAgent && s.hermes_agent) { text = "Hermes Agent · connected"; live = true; }
+  else if (useAgent) text = "Hermes Agent not running";
+  else if (localReady) { text = `${s.model} on RTX 4060`; live = true; }
+  else if (s.installing) text = "Installing Ollama…";
+  else if (s.local === "downloading") text = `Downloading ${Math.round((s.download_pct || 0) * 100)}%`;
+  else text = LOCAL_TEXT[s.local] || "Ollama not running";
+  setHTML(el, live ? `<span class="live-dot"></span>${text}` : text);
+  el.className = "pill " + (live ? "live" : "warn");
+  const step = !live && s.next_step ? s.next_step : "";
+  if (next.textContent !== step) next.textContent = step;
+  next.hidden = !step;
+  setup.hidden = useAgent || s.installing || !["not_installed", "stopped", "no_model", "error"].includes(s.local);
+  const dl = s.local === "downloading" && !useAgent;
+  $("#brain-dl").hidden = !dl; if (dl) $("#brain-bar").style.width = `${Math.round((s.download_pct || 0) * 100)}%`;
+  clearTimeout(state.brainT);                    // poll faster while it is busy setting itself up
+  if (!useAgent && (s.installing || ["downloading", "starting"].includes(s.local))) state.brainT = setTimeout(brainStatus, 2000);
 }
+$("#brain-setup").onclick = async () => {
+  const b = $("#brain-setup"); b.disabled = true; b.textContent = "Setting up…";
+  try { const r = await api("/api/assistant/setup", { method: "POST", body: {} }); if (r.note) toast(r.note); }
+  catch (e) { toast(e.message, true); }
+  b.disabled = false; b.textContent = "Set up"; brainStatus();
+};
 async function loadFacts() {
   try {
-    const f = await api("/api/memory");
+    const f = await api("/api/memory"), max = state.factMax;
+    state.factMax = f.reduce((mx, x) => Math.max(mx, x.id), max ?? 0);
     $("#fact-count").textContent = f.length ? `${f.length} saved` : "";
-    $("#facts").innerHTML = f.map(x => `<li><span>${x.text.replace(/</g, "&lt;")}</span><button title="Forget" data-forget="${x.id}">×</button></li>`).join("")
-      || `<li class="muted">Nothing yet. Try "Remember my broker is on GMT+3" or "Remember I only trade the London–New York overlap".</li>`;
+    setHTML($("#facts"), f.map(x => `<li${max != null && x.id > max ? ` class="enter"` : ""}><span>${x.text.replace(/</g, "&lt;")}</span><button title="Forget" data-forget="${x.id}">×</button></li>`).join("")
+      || `<li class="muted">Nothing yet. Try "Remember my broker is on GMT+3" or "Remember I only trade the London–New York overlap".</li>`);
   } catch (e) {}
 }
 $("#facts").addEventListener("click", async e => { const b = e.target.closest("[data-forget]"); if (!b) return; await api(`/api/memory/${b.dataset.forget}`, { method: "DELETE" }); loadFacts(); });
@@ -567,9 +884,16 @@ $("#settings-form").onsubmit = async e => {
     else if (el.type === "number") body[el.name] = parseFloat(el.value);
     else body[el.name] = el.value.trim();
   }
-  try { state.settings = await api("/api/settings", { method: "POST", body }); $("#settings-msg").textContent = "Saved to data/settings.json"; initFromSettings(true); brainStatus(); loadPlan(); }
-  catch (err) { $("#settings-msg").textContent = err.message; }
+  const msg = $("#settings-msg");
+  try { state.settings = await api("/api/settings", { method: "POST", body }); msg.textContent = "Saved to data/settings.json"; initFromSettings(true); brainStatus(); loadPlan(); }
+  catch (err) { msg.textContent = err.message; }
+  if (msg.animate && motionOK()) msg.animate([{ opacity: 0, transform: "translateX(-4px)" }, { opacity: 1, transform: "none" }], { duration: 260, easing: "cubic-bezier(.22,1,.36,1)" });
 };
+// Settings > Display: reduce animations on this PC only (kept in the window's local storage, never sent to the server)
+(() => {
+  const el = $("#pref-motion"); el.checked = document.documentElement.classList.contains("reduce-motion");
+  el.onchange = () => { document.documentElement.classList.toggle("reduce-motion", el.checked); try { localStorage.setItem("reduceMotion", el.checked ? "1" : "0"); } catch (e) {} };
+})();
 
 
 function initFromSettings(keepSymbol = false) {
@@ -584,6 +908,7 @@ function initFromSettings(keepSymbol = false) {
 
 /* ---------- boot ---------- */
 initChart();
+moveRailInd(); document.fonts?.ready.then(moveRailInd);
 pollStatus().then(() => { pollAccount(); loadPositions(); brainStatus(); pollBot(); });
 setInterval(pollBot, 2000);
 loadProgress(); setInterval(loadProgress, 5000);
@@ -610,6 +935,7 @@ function quizChart() {
     rightPriceScale: { borderColor: "#262c34" }, timeScale: { borderColor: "#262c34", timeVisible: true, secondsVisible: false },
   });
   quiz.series = quiz.chart.addCandlestickSeries({ upColor: "#3fb68b", downColor: "#e0574f", borderVisible: false, wickUpColor: "#3fb68b", wickDownColor: "#e0574f" });
+  $("#quiz-chart").addEventListener("dblclick", () => { quiz.chart.priceScale("right").applyOptions({ autoScale: true }); quiz.chart.timeScale().fitContent(); });
 }
 function drawQuizBars(q) {
   quizChart(); if (!quiz.series || !q.bars) return;
@@ -626,6 +952,7 @@ function probBars(probs, pick) {
   return `<div class="probs">${["buy", "sell", "wait"].map(a => `<span class="${a === pick ? "pick" : ""}">${a === "wait" ? "stay out" : a}</span><div class="bar"><i style="width:${Math.round((probs?.[a] || 0) * 100)}%"></i></div><span class="num">${Math.round((probs?.[a] || 0) * 100)}%</span>`).join("")}</div>`;
 }
 function showQuestion(q, title, agent) {
+  $("#quiz-q-panel").classList.add("has-q");
   $("#quiz-q-title").textContent = title;
   $("#quiz-q-meta").textContent = `Q${q.id} · ${q.time} server time · ${q.setup_name}`;
   drawQuizBars(q);
@@ -706,11 +1033,13 @@ $("#quiz-pick-all").onclick = () => { quiz.picked = new Set(); [...quiz.streaks]
 $("#quiz-pick-clear").onclick = () => { quiz.picked.clear(); updatePicked(); drawBoard(); };
 
 function drawCurve(vals, max) {
-  const cv = $("#quiz-curve"), r = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight || 150;
+  const cv = $("#quiz-curve"), none = !vals || vals.length < 2;
+  cv.hidden = none; $("#quiz-curve-empty").hidden = !none;       // empty card until two rounds exist
+  if (none) return;
+  const r = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight || 150;
   cv.width = Math.round(w * r); cv.height = Math.round(h * r);
   const g = cv.getContext("2d"); g.setTransform(r, 0, 0, r, 0, 0); g.clearRect(0, 0, w, h);
   g.font = "10px 'IBM Plex Mono', monospace"; g.fillStyle = "#8c9098";
-  if (!vals || vals.length < 2) { g.fillText("Fills in as rounds finish.", 4, h / 2); return; }
   const padL = 44, pad = 8, lo = Math.min(0, ...vals), hi = Math.max(max || 0, ...vals);
   const X = i => padL + i / (vals.length - 1) * (w - padL - pad), Y = v => pad + (hi - v) / (hi - lo || 1) * (h - 2 * pad);
   g.strokeStyle = "rgba(255,255,255,.05)";
@@ -732,11 +1061,18 @@ async function loadQuiz() {
   document.querySelectorAll("#quiz-speed button").forEach(b => b.classList.toggle("active", +b.dataset.speed === sp));
   $("#quiz-status").textContent = r.job_running ? (st.round ? (st.focus ? `working on ${st.focus.length.toLocaleString()} picked` : "running") : "working...")
     : st.done ? (st.stopped ? "stopped" : "finished") : qz ? `${qz.count.toLocaleString()} questions ready` : "no quiz yet";
+  // the main button follows the state: Build when there is no quiz yet, Continue once there is
+  const hasQuiz = !!qz, busy = !!r.job_running;
+  $("#quiz-build").classList.toggle("primary", !hasQuiz);
+  $("#quiz-resume").classList.toggle("primary", hasQuiz);
+  $("#quiz-resume").disabled = $("#quiz-start").disabled = !hasQuiz || busy;
+  $("#quiz-stop").disabled = !busy;
+  $$("[data-quiz-build]").forEach(b => { b.disabled = busy; b.textContent = busy ? "Building…" : "Build quiz"; });
   // points and rate
   const P = st.points ?? pol?.points ?? 0, now = performance.now();
   if (quiz.lastPts && r.job_running) { const dt = (now - quiz.lastPts.t) / 1000; if (dt > 0.2) quiz.pps = 0.6 * quiz.pps + 0.4 * (P - quiz.lastPts.p) / dt; }
   quiz.lastPts = { p: P, t: now };
-  $("#quiz-points").textContent = `${P >= 0 ? "+" : "−"}${Math.abs(P).toLocaleString()}`;
+  setNum($("#quiz-points"), P, v => `${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v)).toLocaleString()}`, { flashIt: false });
   $("#quiz-pps").textContent = r.job_running && st.note ? st.note : r.job_running ? `${quiz.pps >= 0 ? "+" : "−"}${Math.abs(Math.round(quiz.pps)).toLocaleString()} points a second · ${(st.rate || 0).toLocaleString()} answers a second` : st.reason ? st.reason : " ";
   $("#quiz-round").textContent = st.round ? `round ${st.round.toLocaleString()}` : "";
   const card = (l, v, extra = "") => `<div class="stat"><span>${l}</span><strong>${v}</strong>${extra}</div>`;
@@ -747,6 +1083,8 @@ async function loadQuiz() {
   // board
   if (typeof st.streaks === "string") quiz.streaks = st.streaks;
   else if (qz && !quiz.streaks) quiz.streaks = "0".repeat(qz.practice);
+  const noBoard = !quiz.streaks.length;
+  $("#quiz-board-panel").classList.toggle("is-empty", noBoard); $("#quiz-board-empty").hidden = !noBoard;
   drawBoard();
   drawCurve(st.points_by_round, st.max_round_points);
   $("#quiz-curve-meta").textContent = st.max_round_points ? `best possible +${st.max_round_points.toLocaleString()}` : "";
@@ -781,6 +1119,7 @@ $("#quiz-build").onclick = async () => {
       : `Finding ${n.toLocaleString()} pro setups in your history. This takes a minute.`);
   } catch (e) { toast(e.message, true); }
 };
+document.addEventListener("click", e => { if (e.target.closest("[data-quiz-build]")) $("#quiz-build").click(); });
 $("#quiz-start").onclick = () => startQuiz({}, "Starting over with a fresh agent. Points are its reward.");
 $("#quiz-resume").onclick = () => startQuiz({ resume: true }, "Continuing where it left off.");
 $("#quiz-focus").onclick = () => startQuiz({ focus: [...quiz.picked] }, `Working on ${quiz.picked.size.toLocaleString()} picked question(s).`);
@@ -797,38 +1136,32 @@ $("#quiz-ask").onclick = async () => {
   } catch (e) { $("#quiz-live").textContent = e.message; }
 };
 
-/* weak-spot report: what the quiz agent gets stuck on */
+/* weak-spot report: what the quiz agent gets stuck on. The panel only shows the copy button; the report text itself
+   stays hidden and goes straight to the clipboard (the server still writes it every 5 minutes and after every run). */
 const report = { data: null, md: "", loaded: 0 };
-const pct0 = v => v == null ? "–" : `${Math.round(v * 100)}%`;
 function renderReport() {
-  const r = report.data;
-  if (!r || !r.weak) { $("#quiz-weak").innerHTML = `<p class="empty">Shows up after the quiz has run for a few minutes.</p>`; $("#quiz-report-meta").textContent = ""; return; }
-  $("#quiz-report-meta").textContent = `updated ${r.generated.slice(11, 16)} UTC`;
-  const warn = (r.summary?.warnings || []).map(w => `<div class="weak warn"><b>Warning:</b> ${w}</div>`).join("");
-  $("#quiz-weak").innerHTML = warn + r.weak.map((g, k) => `<div class="weak">
-      <div class="weak-head"><b>${k + 1}. ${g.name}</b><span class="muted small num">pro answer ${ACT[g.answer]} · practice ${pct0(g.acc)} · exam ${pct0(g.exam)} (${g.exam_n}) · finished ${pct0(g.finished)}</span></div>
-      ${g.main_wrong ? `<div class="muted small">Its usual mistake: ${ACT[g.main_wrong]} (${Math.round(g.main_wrong_share * 100)}%)</div>` : ""}
-      <ul>${(g.patterns.length ? g.patterns : ["Nothing stands out yet."]).slice(0, 3).map(p => `<li>${p}</li>`).join("")}${g.trap_check ? `<li>${g.trap_check}</li>` : ""}</ul>
-      <p class="fix"><b>Suggested:</b> ${g.fix[0]}</p>
-      ${g.ids?.length ? `<button class="btn xs" data-weak="${k}" style="margin-top:6px">Work on these (${g.ids.length.toLocaleString()})</button>` : ""}
-    </div>`).join("");
-  document.querySelectorAll("[data-weak]").forEach(b => b.onclick = () => {
-    const g = report.data.weak[+b.dataset.weak];
-    startQuiz({ focus: g.ids }, `Working on ${g.ids.length.toLocaleString()} ${g.name} question(s).`);
-  });
+  const b = $("#quiz-report-copy"), r = report.data;
+  b.title = r?.generated ? `Copies the weak-spot report from ${r.generated.slice(11, 16)} UTC` : "The report appears after the quiz has run for a few minutes";
 }
 async function loadReport(force) {
   try {
     const r = force ? await api("/api/quiz/report", { method: "POST" }) : await api("/api/quiz/report");
     report.data = r.report; report.md = r.markdown || ""; report.loaded = Date.now(); renderReport();
-  } catch (e) { if (force) toast(e.message, true); }
+    return true;
+  } catch (e) { return false; }
 }
-$("#quiz-report-refresh").onclick = () => loadReport(true);
 $("#quiz-report-copy").onclick = async () => {
-  if (!report.md) await loadReport(true);
-  if (!report.md) return;
+  const b = $("#quiz-report-copy"), label = b.querySelector("span"); b.disabled = true;
+  await loadReport(false);                     // newest saved report, or build one now if there is a quiz but no report
+  if (!report.md && quiz.labels) await loadReport(true);
+  b.disabled = false;
+  if (!report.md) { toast("No weak-spot report yet. It appears after the quiz has run for a few minutes.", true); return; }
   const ta = $("#quiz-report-text");
-  try { await navigator.clipboard.writeText(report.md); ta.hidden = true; toast("Report copied. Paste it into your chat with Claude."); }
+  try {
+    await navigator.clipboard.writeText(report.md); ta.hidden = true;
+    label.textContent = "Copied ✓"; b.classList.add("done"); toast("Report copied. Paste it into your chat with Claude.");
+    setTimeout(() => { label.textContent = "Copy report for Claude"; b.classList.remove("done"); }, 1800);
+  }
   catch (e) { ta.value = report.md; ta.hidden = false; ta.focus(); ta.select(); toast("Press Ctrl+C to copy the selected report, then paste it to Claude."); }
 };
 setInterval(() => state.tab === "quiz" && Date.now() - report.loaded > 30000 && loadReport(false), 5000);
@@ -848,8 +1181,8 @@ $("#quiz-wipe").onclick = async () => {
     Object.assign(quiz, { labels: null, streaks: "", st: {}, mistakeAt: -1, viewing: null, lastPts: null });
     quiz.picked.clear(); updatePicked();
     if (quiz.series) { quiz.series.setData([]); quiz.lines.forEach(l => quiz.series.removePriceLine(l)); quiz.lines = []; }
-    $("#quiz-q-title").textContent = "Latest mistake"; $("#quiz-q-meta").textContent = "none yet";
-    $("#quiz-answer").innerHTML = `<p class="empty">All questions wiped. Build a new quiz to start again.</p>`;
+    $("#quiz-q-title").textContent = "Latest mistake"; $("#quiz-q-meta").textContent = "none yet"; $("#quiz-q-panel").classList.remove("has-q");
+    $("#quiz-answer").innerHTML = `<div class="empty-state compact"><div><b>All questions wiped</b>Build a new quiz to start again. The trained agent is kept.</div></div>`;
     report.data = null; report.md = ""; renderReport();
     toast("All quiz questions and their progress were deleted. The trained agent is kept.");
     loadQuiz();

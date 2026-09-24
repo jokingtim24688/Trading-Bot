@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Trading Bot</title>
+<script>try { if (localStorage.getItem("reduceMotion") === "1") document.documentElement.classList.add("reduce-motion"); } catch (e) {}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -14,6 +15,7 @@
 <div class="backdrop" aria-hidden="true"></div>
 
 <nav class="rail glass" aria-label="Sections">
+  <span class="rail-ind" aria-hidden="true"></span>
   <div class="brand" title="Trading Bot · M1">
     <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
       <rect x="5" y="9" width="4" height="12" rx="1" fill="var(--up)"/><line x1="7" y1="5" x2="7" y2="25" stroke="var(--up)" stroke-width="1.5"/>
@@ -32,9 +34,9 @@
 <header class="strip glass">
   <div class="acct">
     <span id="acct-mode" class="badge">offline</span>
-    <span class="acct-line"><span class="muted">Equity</span> <strong id="equity" class="num">—</strong></span>
-    <span class="acct-line"><span class="muted">Floating</span> <span id="floating" class="num">—</span></span>
-    <span class="acct-line"><span class="muted">Free margin</span> <span id="free-margin" class="num">—</span></span>
+    <span class="acct-line"><span class="muted">Equity</span> <strong id="equity" class="num flashable">—</strong></span>
+    <span class="acct-line"><span class="muted">Floating</span> <span id="floating" class="num flashable">—</span></span>
+    <span class="acct-line"><span class="muted">Free margin</span> <span id="free-margin" class="num flashable">—</span></span>
   </div>
   <div class="meters">
     <div class="meter" title="System RAM"><span class="muted">RAM</span><div class="bar"><i id="ram-bar"></i></div><span id="ram-txt" class="num">—</span></div>
@@ -50,7 +52,10 @@
       <div class="panel chart-panel">
         <div class="chart-head">
           <div class="row gap"><div id="symbols" class="chips"></div><button class="chip replay-chip" id="replay-toggle" title="Run the bot on downloaded history, fast">Replay history</button></div>
-          <div class="quote"><span id="q-sym">—</span><span class="num" id="q-bid">—</span><span class="muted">spread</span><span class="num" id="q-spr">—</span><span class="tf">M1</span></div>
+          <div class="quote"><span id="q-sym">—</span><span class="num flashable" id="q-bid">—</span><span class="muted">spread</span><span class="num" id="q-spr">—</span><span class="tf">M1</span>
+            <button class="auto-btn on" id="chart-auto" type="button" aria-pressed="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>Auto</span><i class="count"></i>
+            </button></div>
         </div>
         <div class="replay-bar hidden" id="replay-bar">
           <div class="row gap wrap">
@@ -77,7 +82,7 @@
           <div class="rp-progress"><div class="bar"><i id="rp-prog"></i></div><span id="rp-status" class="muted small">Replays your downloaded M1 history through the bot with all its rules. Trades are recorded as "replay" and feed its learning.</span></div>
         </div>
         <div id="chart"></div>
-        <p id="chart-msg" class="empty hidden"></p>
+        <p id="chart-msg" class="chart-msg hidden"></p>
       </div>
 
       <aside class="side">
@@ -90,12 +95,12 @@
 
         <div class="panel bot-card" id="bot-card">
           <div class="panel-head"><h3>Bot trade</h3><span id="bot-today" class="muted small"></span></div>
-          <div id="bot-now"><p class="empty">The bot is flat. When it enters you'll get an alert, and its entry, stop and target are drawn on the chart.</p></div>
+          <div id="bot-now"><p class="empty">Loading the bot…</p></div>
         </div>
 
         <div class="panel">
           <div class="panel-head"><h3>Open positions</h3><span id="pos-count" class="muted small"></span></div>
-          <div id="positions" class="positions"><p class="empty">Nothing open. Positions from the agent, Hermes or manual trades in MT5 show up here.</p></div>
+          <div id="positions" class="positions"><p class="empty">Loading…</p></div>
         </div>
 
         <button id="kill" class="kill" aria-label="Hold to flatten the agent and stop it">
@@ -126,7 +131,9 @@
       </div>
       <div class="panel console-panel">
         <div class="panel-head"><h3>Live log</h3><span id="agent-state" class="muted small"></span></div>
-        <pre id="agent-log" class="console">The agent's output appears here once it starts.</pre>
+        <div id="agent-empty" class="empty-state"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></svg>
+          <div><b>Not started yet</b>Press Start agent. It acts when the next M1 candle closes, and its output streams here.</div></div>
+        <pre id="agent-log" class="console" hidden></pre>
       </div>
     </div>
     <div class="panel">
@@ -137,7 +144,11 @@
       <div class="panel-head"><h3>Bot trades</h3>
         <div class="chips" id="bt-filter"><button class="chip active" data-m="">All</button><button class="chip" data-m="replay">Replay</button><button class="chip" data-m="paper">Paper</button><button class="chip" data-m="demo">Demo</button><button class="chip" data-m="real">Real</button></div>
       </div>
-      <div class="stats" id="bt-stats"></div>
+      <div class="bt-top">
+        <div class="cal" id="bt-cal" aria-label="Daily profit and loss calendar"></div>
+        <div class="stats" id="bt-stats"></div>
+      </div>
+      <div class="day-filter" id="bt-day" hidden></div>
       <div class="table-wrap"><table id="bt-table"><thead><tr><th>#</th><th>Mode</th><th>Opened (UTC)</th><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>P/L</th><th>R</th><th>Score</th><th>Conf.</th><th>Setup</th></tr></thead><tbody></tbody></table></div>
     </div>
     <div class="panel">
@@ -152,15 +163,25 @@
       <div class="panel">
         <h3>Teach the agent your market</h3>
         <ol class="steps">
-          <li id="step-fetch"><div><strong>Download M1 history</strong><p class="muted small">Pulls <span id="days-txt"></span> days of 1-minute candles for <span class="sym-txt"></span> from MT5 into <code>data/</code>.</p></div><button id="btn-fetch" class="btn">Fetch data</button></li>
-          <li id="step-history"><div><strong>Add years of extra history</strong><p class="muted small">Free XAUUSD 1-minute candles back to 2009 (HistData). 5 years is about 1.8 million candles, roughly 25&times; what MT5 keeps. Training uses it automatically; your MT5 candles win where they overlap. Each year is ~24 MB to download; training uses about 0.5 GB of RAM per year.</p></div><div class="row-inline"><select id="hist-years"><option value="1">1 year</option><option value="3">3 years</option><option value="5" selected>5 years</option><option value="8">8 years</option><option value="17">All (2009+, ~8 GB RAM to train)</option></select><button id="btn-history" class="btn">Download history</button></div></li>
-          <li id="step-train"><div><strong>Train on the RTX 4060</strong><p class="muted small">XGBoost learns from the history, then is tested on the most recent quarter it never saw. Takes about 1–3 minutes.</p></div><button id="btn-train" class="btn primary">Train</button></li>
-          <li id="step-run"><div><strong>Paper trade it</strong><p class="muted small">Training suggests a confidence threshold (the most profitable one with 100+ test trades). It appears on the Agent tab. Start in Paper mode.</p></div><button class="btn" data-goto="agent">Open Agent</button></li>
+          <li id="step-fetch"><details class="step-more"><summary><strong>Download M1 history</strong><span class="chev" title="What this does"></span></summary>
+              <p class="muted small">Pulls <span id="days-txt"></span> days of 1-minute candles for <span class="sym-txt"></span> from MT5 into <code>data/</code>.</p></details>
+            <div class="step-act"><button id="btn-fetch" class="btn">Fetch data</button></div></li>
+          <li id="step-history" class="stack"><details class="step-more"><summary><strong>Add years of extra history</strong><span class="chev" title="What this does"></span></summary>
+              <p class="muted small">Free XAUUSD 1-minute candles back to 2009 (HistData). 5 years is about 1.8 million candles, roughly 25&times; what MT5 keeps. Training uses it automatically; your MT5 candles win where they overlap. Each year is ~24 MB to download; training uses about 0.5 GB of RAM per year.</p></details>
+            <div class="step-act"><select id="hist-years"><option value="1">1 year</option><option value="3">3 years</option><option value="5" selected>5 years</option><option value="8">8 years</option><option value="17">All (2009+, ~8 GB RAM to train)</option></select><button id="btn-history" class="btn">Download history</button></div></li>
+          <li id="step-train"><details class="step-more"><summary><strong>Train on the RTX 4060</strong><span class="chev" title="What this does"></span></summary>
+              <p class="muted small">XGBoost learns from the history, then is tested on the most recent quarter it never saw. Takes about 1–3 minutes.</p></details>
+            <div class="step-act"><button id="btn-train" class="btn primary">Train</button></div></li>
+          <li id="step-run"><details class="step-more"><summary><strong>Paper trade it</strong><span class="chev" title="What this does"></span></summary>
+              <p class="muted small">Training suggests a confidence threshold (the most profitable one with 100+ test trades). It appears on the Agent tab. Start in Paper mode.</p></details>
+            <div class="step-act"><button class="btn" data-goto="agent">Open Agent</button></div></li>
         </ol>
       </div>
       <div class="panel console-panel">
         <div class="panel-head"><h3>Output</h3><span id="train-state" class="muted small"></span></div>
-        <pre id="train-log" class="console">Results print here: rows per threshold with trades, win %, average R after spread.</pre>
+        <div id="train-empty" class="empty-state"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18M6 16v-5M10 16V8M14 16v-3M18 16V6"/></svg>
+          <div><b>Nothing has run yet</b>Fetch data, then Train. The results per confidence threshold print here.</div></div>
+        <pre id="train-log" class="console" hidden></pre>
       </div>
     </div>
   </section>
@@ -202,34 +223,36 @@
         </div>
         <div class="panel">
           <div class="panel-head"><h3>Points per round</h3><span id="quiz-curve-meta" class="muted small"></span></div>
-          <canvas id="quiz-curve" class="quiz-curve"></canvas>
+          <canvas id="quiz-curve" class="quiz-curve" hidden></canvas>
+          <div id="quiz-curve-empty" class="empty-state compact"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18M4 16l5-5 4 3 7-8"/></svg>
+            <div><b>No rounds yet</b>Each round's points draw a line here once the quiz runs.</div></div>
         </div>
         <div class="panel" id="quiz-exam-panel" hidden><div id="quiz-exam"></div></div>
       </div>
       <div class="quiz-main">
-        <div class="panel">
+        <div class="panel board-panel" id="quiz-board-panel">
           <div class="panel-head"><h3>Mastery board</h3><span id="quiz-board-meta" class="muted small"></span></div>
+          <div id="quiz-board-empty" class="empty-state"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>
+            <div><b>No questions yet</b>Build a quiz from your downloaded history. Each question becomes a square here and turns gold once it's mastered.</div>
+            <button class="btn primary xs" data-quiz-build>Build quiz</button></div>
           <div class="board-legend small muted"><span><i class="lg lg0"></i>not yet</span><span><i class="lg lg2"></i>on a streak</span><span><i class="lg lg5"></i>finished</span><span><i class="lg lgu"></i>stuck (looping)</span><span><i class="lg lgs"></i>picked</span><span><i class="lg lgc"></i>working on it now</span></div>
           <div class="board-wrap"><canvas id="quiz-board" class="quiz-board"></canvas><div id="quiz-tip" class="board-tip" hidden></div></div>
-          <div class="row-inline" style="margin-top:8px">
+          <div class="row-inline board-pick" style="margin-top:8px">
             <span class="muted small">Click unfinished squares to pick them.</span>
             <button id="quiz-pick-all" class="btn xs">Pick all unfinished</button>
             <button id="quiz-pick-clear" class="btn xs">Clear</button>
             <button id="quiz-focus" class="btn primary xs" disabled>Work on picked (0)</button>
           </div>
         </div>
-        <div class="panel">
+        <div class="panel q-panel" id="quiz-q-panel">
           <div class="panel-head"><h3 id="quiz-q-title">Latest mistake</h3><span id="quiz-q-meta" class="muted small">none yet</span></div>
           <div id="quiz-chart" class="quiz-chart"></div>
-          <div id="quiz-answer" class="quiz-answer"><p class="empty">Build the quiz from your downloaded history, then start it. At full speed the chart holds on its latest mistake, since those are the answers worth reading.</p></div>
+          <div id="quiz-answer" class="quiz-answer"><div class="empty-state"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.5.2-.8.6-.8 1.1v.5M12 16.5h.01"/></svg>
+            <div><b>No mistakes to show yet</b>Once the quiz runs, the chart holds on its latest wrong answer, next to the pro answer.</div></div></div>
         </div>
-        <div class="panel">
+        <div class="panel weak-panel">
           <div class="panel-head"><h3>Weak spots</h3>
-            <div class="row-inline"><span id="quiz-report-meta" class="muted small"></span>
-              <button id="quiz-report-refresh" class="btn xs">Refresh</button>
-              <button id="quiz-report-copy" class="btn primary xs">Copy report for Claude</button></div></div>
-          <p class="muted small" style="margin:0 0 8px">Where it keeps getting stuck and what those charts have in common. Updated every 5 minutes while the quiz runs and after every run, and saved as the <code>quiz-weak-spots</code> skill. Paste the copied report to Claude to get new skills written from it.</p>
-          <div id="quiz-weak" class="weak-list"><p class="empty">Shows up after the quiz has run for a few minutes.</p></div>
+            <button id="quiz-report-copy" class="btn primary xs copy-btn"><span>Copy report for Claude</span></button></div>
           <textarea id="quiz-report-text" class="report-text" readonly hidden></textarea>
         </div>
         <div class="two-even">
@@ -250,7 +273,9 @@
   <section id="tab-chat" class="tab">
     <div class="chat-grid">
       <div class="panel chat-panel">
-        <div class="panel-head"><h3>Hermes</h3><span id="brain-state" class="pill">checking…</span></div>
+        <div class="panel-head"><h3>Hermes</h3><div class="row gap"><button id="brain-setup" class="btn primary xs" hidden>Set up</button><span id="brain-state" class="pill">checking…</span></div></div>
+        <p id="brain-next" class="brain-next small" hidden></p>
+        <div id="brain-dl" class="bar brain-bar" hidden><i id="brain-bar"></i></div>
         <div id="thread" class="thread"></div>
         <p id="chat-intro" class="empty intro">Hermes can read your MT5 account, summarise M1 price action, size trades, start or stop the agent, save notes, read web pages and remember what you tell it. It isn't limited to trading, so ask it anything.</p>
         <div id="suggest" class="suggest">
@@ -266,7 +291,7 @@
       </div>
       <aside class="panel memory-panel">
         <div class="panel-head"><h3>Memory</h3><span id="fact-count" class="muted small"></span></div>
-        <p class="muted small">Saved on disk in <code>data/memory.db</code>, so it survives restarts. Hermes adds to it when you tell it something worth keeping.</p>
+        <p class="muted small">Saved on disk in <code>data/hermes_memory.json</code>, so it survives restarts. Hermes adds to it when you tell it something worth keeping.</p>
         <ul id="facts" class="facts"></ul>
         <form id="fact-form" class="row gap"><input id="fact-input" placeholder="Add something to remember"><button class="btn">Save</button></form>
       </aside>
@@ -314,9 +339,12 @@
         <label>Hermes Agent API key<input name="hermes_key" type="password"></label>
         <label>Ollama URL<input name="ollama_url"></label>
         <label>Local model<input name="ollama_model"></label>
-        <label>Unload model from VRAM after idle<input name="ollama_keep_alive"></label>
+        <label>Unload model from VRAM after idle (0 = right after each reply)<input name="ollama_keep_alive"></label>
         <label class="check"><input type="checkbox" name="allow_web"> Let Hermes read web pages</label>
         <label class="check"><input type="checkbox" name="mcp_autostart"> Start the MT5 bridge for Hermes Agent when the app opens</label>
+      </fieldset>
+      <fieldset><legend>Display</legend>
+        <label class="check"><input type="checkbox" id="pref-motion"> Reduce animations (this PC only, saved in the app window)</label>
       </fieldset>
       <div class="row gap"><button class="btn primary" type="submit">Save settings</button><span id="settings-msg" class="muted small"></span></div>
     </form>

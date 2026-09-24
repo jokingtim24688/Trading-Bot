@@ -50,12 +50,13 @@ def positions() -> list[dict]:
                 for p in (mt5.positions_get() or [])]
 
 
-def m1_bars(symbol: str, count: int = 300) -> dict:
+def m1_bars(symbol: str, count: int = 300, before: int | None = None) -> dict:
     with _lock:
         _ensure()
         if not mt5.symbol_select(symbol, True):
             raise ValueError(f"Symbol {symbol} isn't offered by this broker. Check the exact name in Market Watch (e.g. XAUUSD.m).")
-        r = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, count)
+        r = (mt5.copy_rates_from(symbol, mt5.TIMEFRAME_M1, before - 1, count) if before
+             else mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, count))
         info = mt5.symbol_info(symbol)
         tick = mt5.symbol_info_tick(symbol)
     bars = [{"time": int(x["time"]), "open": float(x["open"]), "high": float(x["high"]),
