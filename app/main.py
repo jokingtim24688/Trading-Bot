@@ -108,11 +108,13 @@ class Popups:
     def __init__(self, port: int):
         self._port, self._win, self._hwnd, self._main, self._w32 = port, None, None, None, None
         self._height, self._shown, self._ready, self._pending, self._trail = 110, False, False, [], set()
-        self._cfg = {"secs": 1.2, "screen": True, "tpsl": True, "monitor": 0}
+        self._cfg = {"secs": 2, "screen": True, "tpsl": True, "monitor": 0}
         try:
             self._cfg.update(json.loads(POP_CFG.read_text()))
         except (OSError, ValueError):
             pass
+        if self._cfg.get("secs") == 1.2:          # the old default; the user asked for 2 s
+            self._cfg["secs"] = 2
 
     # --- called from the main window's page
     def notify(self, payload):
@@ -202,7 +204,7 @@ class Popups:
         who = {"bot": "Bot", "hermes": "Hermes"}.get(ev.get("owner"), "You")
         body = " ".join(str(x) for x in (ev.get("side"), ev.get("volume"), ev.get("symbol")) if x not in (None, ""))
         body += (f" at {ev['price']}" if ev.get("price") else "") + f" ({who})"
-        out = {"body": body, "amount": None if profit is None else f"{profit:+,.2f}", "secs": self._cfg.get("secs", 1.2)}
+        out = {"body": body, "amount": None if profit is None else f"{profit:+,.2f}", "secs": self._cfg.get("secs", 2)}
         if kind == "tp":
             return {**out, "title": "Take profit hit", "kind": "tp"}
         if kind == "sl":

@@ -11,7 +11,7 @@ async function api(path, opts = {}) {
   return data;
 }
 /* ---------- notifications: one custom stack at the top right. Several show at once, each new one below the others;
-   each fades after 1.2 s (Sounds page), hovering keeps it, a click closes it. When the app isn't in front they also pop
+   each fades after 2 s (Sounds page), hovering keeps it, a click closes it. When the app isn't in front they also pop
    up at the top right of the screen (a small always-on-top window from app/main.py). ---------- */
 const NOTE_ICON = {
   info: '<path d="M12 8h.01M11 12h1v5h1"/><circle cx="12" cy="12" r="9"/>',
@@ -20,7 +20,8 @@ const NOTE_ICON = {
   tp: '<path d="M4 17l5-5 4 3 7-8"/><path d="M15 7h5v5"/>',
   sl: '<path d="M4 7l5 5 4-3 7 8"/><path d="M15 17h5v-5"/>',
 };
-const noteSecs = () => { try { const v = parseFloat(localStorage.getItem("noteSecs")); return v > 0 ? v : 1.2; } catch (e) { return 1.2; } };
+try { if (localStorage.getItem("noteSecs") === "1.2") localStorage.setItem("noteSecs", "2"); } catch (e) {}   // 1.2 s was the old default
+const noteSecs = () => { try { const v = parseFloat(localStorage.getItem("noteSecs")); return v > 0 ? v : 2; } catch (e) { return 2; } };
 const appAway = () => document.hidden || !document.hasFocus();
 function notify({ title = "", body = "", html = "", kind = "info", amount = null, onClick = null, screen = true } = {}) {
   const box = $("#notes"); if (!box) return;

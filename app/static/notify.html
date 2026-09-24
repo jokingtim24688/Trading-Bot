@@ -58,11 +58,11 @@
     const kind = ICON[p.kind] ? p.kind : "info", el = document.createElement("div");
     el.className = `note ${kind}`;
     const amt = p.amount == null ? "" : `<em class="${String(p.amount).startsWith("-") ? "down" : "up"}">${esc(p.amount)}</em>`;
-    el.innerHTML = `<svg viewBox="0 0 24 24">${ICON[kind]}</svg><div>${p.title ? `<b>${esc(p.title)}</b>` : ""}${p.body ? `<span>${esc(p.body)}</span>` : ""}</div>${amt}<i style="animation-duration:${+p.secs || 1.2}s"></i>`;
+    el.innerHTML = `<svg viewBox="0 0 24 24">${ICON[kind]}</svg><div>${p.title ? `<b>${esc(p.title)}</b>` : ""}${p.body ? `<span>${esc(p.body)}</span>` : ""}</div>${amt}<i style="animation-duration:${+p.secs || 2}s"></i>`;
     box.appendChild(el);                           // newest below the others
     while (box.querySelectorAll(".note:not(.out)").length > 5) out(box.querySelector(".note:not(.out)"));
     fit();
-    let left = (+p.secs || 1.2) * 1000, t0 = performance.now(), timer = setTimeout(() => out(el), left);
+    let left = (+p.secs || 2) * 1000, t0 = performance.now(), timer = setTimeout(() => out(el), left);
     el.addEventListener("mouseenter", () => { clearTimeout(timer); left -= performance.now() - t0; el.classList.add("hold"); });
     el.addEventListener("mouseleave", () => { t0 = performance.now(); el.classList.remove("hold"); timer = setTimeout(() => out(el), Math.max(500, left)); });
     el.addEventListener("click", () => { clearTimeout(timer); out(el); });

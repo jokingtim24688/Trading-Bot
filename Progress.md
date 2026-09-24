@@ -834,4 +834,10 @@ Each chat writes only in its own section below, and adds new entries just above 
   argument types. The Win32 part needs Windows to run. Recorded an animation of the notifications popping up (in the
   app, and the pop-up over a stand-in full-screen app) as MP4 and a close-up GIF for the user.
 
+### 2026-09-24: Notifications stay 2 s
+- The user asked for 2 seconds instead of 1.2. New default everywhere (app stack, screen pop-up page, the pop-up's
+  Python side); anyone still on the old 1.2 default moves to 2 by itself, a different chosen value is kept. The slider
+  on the Sounds page still changes it. Tested: a card is still there at 1.7 s and gone by 2.4 s, in the app and the
+  pop-up.
+
 <!-- Chat B: add new entries above this line -->

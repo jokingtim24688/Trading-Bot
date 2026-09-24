@@ -131,7 +131,7 @@
   files; tone = low-pass; length), `drawWave` (OfflineAudioContext, 3 s window), your files via `/api/sounds`
   (`lib`, `customBuffer`, `addSounds`). Top-bar `#mute-pill`.
 - Notifications `#notes`: `notify({title, body|html, kind, amount, onClick})`, `toast()` wraps it; `removeNote` fades
-  and glides the rest up (FLIP); `noteSecs` (default 1.2 s); when `appAway()`, `window.pywebview.api.notify()` sends the
+  and glides the rest up (FLIP); `noteSecs` (default 2 s); when `appAway()`, `window.pywebview.api.notify()` sends the
   card to `app/static/notify.html` in the always-on-top pop-up window (`Popups` in `app/main.py`: notify/fit/idle, placed
   at the top right of screen 0, `focus=False`).
 - Speed: `getPositions()` (one in-flight request, 0.8 s reuse, POSTs clear it); boot intervals skip hidden screens
