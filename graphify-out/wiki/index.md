@@ -66,6 +66,7 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: Telegram alerts (`app/telegram.py`, `/api/telegram/*`): TP/SL/open/close to your phone.
 - 2026-09-24: news pause (`agent/news.py`, `/api/news`), Manual spread limit, quiz second opinion recorded per trade (`/api/stats/quiz`).
 - 2026-09-24: watchdog (`app/watchdog.py`), daily data backup (`app/backup.py`), trade notes + tags.
+- 2026-09-24: honest backtest (`agent/backtest.py`, `/api/backtest`): unseen months, costs, own ledger, vs the Paper gate.
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)

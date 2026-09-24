@@ -88,13 +88,20 @@ class PaperBroker:
         self.tick_fn = tick_fn
         self.positions = ledger.open_trades(mode, symbol)
         self.clock = None          # replay sets this to the candle's UTC time (ISO), so days/hours are historical ones
+        self.commission_per_lot = 0.0   # backtest costs: round-turn commission per lot, taken off at the close
+        self.slippage_px = 0.0          # ...and slippage on every market fill (entry, stop, early exit), in price
 
     def _stamp(self):
         return self.clock() if self.clock else None
 
     def _pnl(self, side, entry, exit_px, lots):
         move = (exit_px - entry) if side == "buy" else (entry - exit_px)
-        return move / self.spec.tick_size * self.spec.tick_value * lots
+        return move / self.spec.tick_size * self.spec.tick_value * lots - self.commission_per_lot * lots
+
+    def _slip(self, side, px, opening: bool):
+        """A market fill slipped against you: buys fill higher, sells lower (the other way when closing)."""
+        worse_up = (side == "buy") == opening
+        return px + self.slippage_px if worse_up else px - self.slippage_px
 
     def account_balance(self) -> float:
         return self.start_equity + ledger.realized_pnl(self.mode)
@@ -123,6 +130,7 @@ class PaperBroker:
 
     def open(self, side, lots, price, sl, tp, prob=None, risk_money=None, open_bar=None, stake=None, setup=None,
              quiz=None, **_):
+        price = self._slip(side, price, True) if self.slippage_px else price
         tid = ledger.open_trade(self.mode, self.symbol, side, lots, price, sl, tp, prob, risk_money, None, open_bar, stake,
                                 open_utc=self._stamp(), setup=setup, quiz=quiz)
         self.positions = ledger.open_trades(self.mode, self.symbol)
@@ -139,6 +147,8 @@ class PaperBroker:
                 still_open.append(p)
                 continue
             exit_px = p["sl"] if hit_sl else p["tp"]
+            if hit_sl and self.slippage_px:                # a stop is a market order; a take profit is a limit
+                exit_px = self._slip(p["side"], exit_px, False)
             pnl = self._pnl(p["side"], p["entry"], exit_px, p["lots"])
             ledger.close_trade(p["id"], exit_px, "sl" if hit_sl else "tp", pnl, close_bar=bar_epoch, close_utc=self._stamp())
             exits.append({"id": p["id"], "exit": exit_px, "pnl": pnl, "reason": "sl" if hit_sl else "tp"})
@@ -155,6 +165,7 @@ class PaperBroker:
         """Close one paper trade at the current market price (bot's own decision, before SL/TP)."""
         t = self.tick_fn()
         px = t.bid if trade["side"] == "buy" else t.ask
+        px = self._slip(trade["side"], px, False) if self.slippage_px else px
         pnl = self._pnl(trade["side"], trade["entry"], px, trade["lots"])
         ledger.close_trade(trade["id"], px, reason, pnl, close_utc=self._stamp())
         self.positions = [p for p in self.positions if p["id"] != trade["id"]]

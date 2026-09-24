@@ -671,6 +671,20 @@ Each chat writes only in its own section below, and adds new entries just above 
   - backup: zip contents, keep-N pruning (same-second names and ordering fixed);
   - notes: saved on the order, edited, shown in history, removed, used by the review.
 
+### 2026-09-24: recommendations, part 3: honest backtest report
+- `POST /api/backtest/start` runs the Replay engine over the model's unseen test period at full speed with the
+  threshold rule, no learned rules (they could come from those months), and costs on top of the candles' spread:
+  commission per lot (setting `backtest_commission`, 7) and slippage on every market fill (`backtest_slippage`, 10
+  points; take profits are limits, so no slippage).
+- It keeps its own ledger (`data/backtest.db`), so your stats, lessons and the stage ladder never see it.
+- `agent/backtest.py` writes `data/backtest.json` + `.md`: win rate, net, PF, expectancy, score, max drawdown, per
+  month, each Paper -> Demo gate line passed or not, and a verdict. `GET /api/backtest` gives progress and the report.
+- Tested:
+  - costs: a 1-lot stop that would lose $80 lost $107 (slippage in and out + $7), a take profit $143 instead of $160;
+  - the report on 150 synthetic trades (gate table and verdict right);
+  - a full run over 29,430 test candles with a real trained model and separate files (the real ledger stayed
+    empty). That model didn't trade: the sandbox's synthetic candles gave it no confidence.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

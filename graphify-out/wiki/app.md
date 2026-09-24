@@ -28,6 +28,7 @@
   reviews, sounds, settings backups, quiz report, models/*.json. `GET/POST /api/backup/data`. Restore = unzip over the folder.
 - **Trade notes** (Chat A, manual.py): `data/trade_notes.json`; `GET/POST /api/manual/notes`; orders take `note`/`tags`;
   history rows carry `note`/`tags`; weekly review names your best/worst tag.
+- **Backtest routes** (Chat A): `POST /api/backtest/start {commission?, slippage?}` (defaults from settings `backtest_commission` 7, `backtest_slippage` 10), `GET /api/backtest` -> `{running, progress, report, log}`, stop via `/api/backtest/stop`; `_replay_args` shared with Replay.
 - **stats.py** (Chat A): `/api/stats/compare?days=&mode=paper|live|all` -> `{you, bot}` (trades, win rate, net, avg
   win/loss, PF, expectancy, best/worst, avg hold, by_hour, by_weekday, curve; server time).
 - **review.py** (Chat A): weekly summary `/api/review/weekly` (GET, POST = rebuild in the background, `working` flag),

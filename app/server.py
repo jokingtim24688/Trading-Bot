@@ -572,6 +572,21 @@ def replay_start(body: dict = Body(default={})):
         raise HTTPException(400, "Train a model first (Train tab).")
     if jobs.jobs["replay"].running:
         raise HTTPException(409, "A replay is already running.")
+    args = _replay_args(s, data, body.get("days", 30), body.get("from", "test"))
+    if s.get("practice", True):
+        args.append("--practice")
+    if not s.get("use_learned", True):
+        args.append("--no-learned")
+    if body.get("fresh"):
+        args.append("--fresh")
+    REPLAY_STATE.unlink(missing_ok=True)
+    _replay_control({"speed": body.get("speed", s.get("replay_speed", 20)), "paused": False, "stop": False})
+    jobs.start("replay", args)
+    return {"started": True}
+
+
+def _replay_args(s: dict, data: Path, days, start) -> list[str]:
+    """The Replay engine's arguments from the settings (shared by Replay and the backtest)."""
     rate, spec = None, None
     try:
         rate = mt5_service.margin_per_lot(s["symbol"])["margin_rate"]
@@ -579,7 +594,7 @@ def replay_start(body: dict = Body(default={})):
     except Exception:
         pass
     args = ["-m", "agent.replay", str(data), "--symbol", s["symbol"], "--point", str(s["point"]),
-            "--days", str(body.get("days", 30)), "--from", str(body.get("from", "test")),
+            "--days", str(days), "--from", str(start),
             "--threshold", str(s["threshold"]), "--balance", str(s["paper_balance"]),
             "--stake-pct", str(s["stake_pct"]), "--sl-pct", str(s["sl_pct_of_stake"]),
             "--tp-small", str(s["tp_pct_small"]), "--tp-large", str(s["tp_pct_large"]),
@@ -590,20 +605,59 @@ def replay_start(body: dict = Body(default={})):
     if spec:
         args += ["--tick-size", str(spec["tick_size"]), "--tick-value", str(spec["tick_value"]),
                  "--volume-min", str(spec["volume_min"]), "--volume-step", str(spec["volume_step"])]
-    if s.get("practice", True):
-        args.append("--practice")
     if not s.get("early_exit", True):
         args.append("--no-early-exit")
-    if not s.get("use_learned", True):
-        args.append("--no-learned")
     if s.get("quiz_filter"):
         args.append("--quiz-filter")
-    if body.get("fresh"):
-        args.append("--fresh")
-    REPLAY_STATE.unlink(missing_ok=True)
-    _replay_control({"speed": body.get("speed", s.get("replay_speed", 20)), "paused": False, "stop": False})
-    jobs.start("replay", args)
-    return {"started": True}
+    return args
+
+
+BACKTEST_REPORT = ROOT / "data" / "backtest.json"
+BACKTEST_STATE = ROOT / "data" / "backtest_state.json"
+
+
+@app.post("/api/backtest/start")
+def backtest_start(body: dict = Body(default={})):
+    """Honest backtest: the model's unseen test period at full speed, threshold rule, no learned rules, commission +
+    slippage, its own ledger (data/backtest.db). The report lands in data/backtest.json / .md."""
+    s = settings.load()
+    data = ROOT / "data" / f"{s['symbol']}_M1.parquet"
+    if not data.exists() and not (ROOT / "data" / f"{s['symbol']}_M1_history.parquet").exists():
+        raise HTTPException(400, "No M1 history yet. Train tab -> Fetch data or Download history first.")
+    if not mt5_service.model_exists(s["symbol"]):
+        raise HTTPException(400, "Train a model first (Train tab).")
+    if jobs.jobs["backtest"].running:
+        raise HTTPException(409, "A backtest is already running.")
+    commission = float(body.get("commission", s.get("backtest_commission", 7.0)))
+    slippage = float(body.get("slippage", s.get("backtest_slippage", 10)))
+    control = ROOT / "data" / "backtest_control.json"
+    control.write_text(json.dumps({"speed": 0, "paused": False, "stop": False}))
+    BACKTEST_STATE.unlink(missing_ok=True)
+    args = _replay_args(s, data, 0, "test") + [
+        "--no-learned", "--fresh", "--db", str(ROOT / "data" / "backtest.db"), "--state", str(BACKTEST_STATE),
+        "--control", str(control), "--commission", str(commission), "--slippage", str(slippage),
+        "--report", str(BACKTEST_REPORT)]
+    jobs.start("backtest", args)
+    return {"started": True, "commission": commission, "slippage": slippage}
+
+
+@app.get("/api/backtest")
+def backtest_get():
+    """The last report (or null), plus progress while one runs."""
+    try:
+        report = json.loads(BACKTEST_REPORT.read_text())
+    except (OSError, ValueError):
+        report = None
+    progress = None
+    if jobs.jobs["backtest"].running:
+        try:
+            st = json.loads(BACKTEST_STATE.read_text())
+            progress = {"index": st.get("index"), "total": st.get("total"), "bar_time_utc": st.get("bar_time_utc"),
+                        "opened": st.get("opened")}
+        except (OSError, ValueError):
+            progress = {"index": 0, "total": None}
+    return {"running": jobs.jobs["backtest"].running, "progress": progress, "report": report,
+            "log": jobs.jobs["backtest"].tail(6)}
 
 
 @app.post("/api/replay/control")

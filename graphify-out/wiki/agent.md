@@ -49,3 +49,9 @@ Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. R
 - **Quiz second opinion recorded** (2026-09-24): run.py and replay.py always load the quiz policy and store its answer at
   entry in the ledger's new `quiz` column (filter still only with `--quiz-filter`); app `stats.quiz_agreement` ->
   `GET /api/stats/quiz` (agree / disagree / none + verdict, needs ~30 each).
+- **backtest.py** (2026-09-24): honest backtest. The app's "backtest" job runs `agent.replay` on the model's unseen test period
+  (`--from test --days 0`, speed 0, threshold rule, `--no-learned`) with costs (`--commission` per lot round trip,
+  `--slippage` points on market fills: entry, stop, early exit; TP is a limit) in its own ledger (`--db data/backtest.db`,
+  `--state`/`--control` files), then `write_report` -> data/backtest.json + .md: metrics (win rate, net, PF, expectancy,
+  score, max drawdown %, days, per month) vs the Paper -> Demo gate + verdict. PaperBroker has `commission_per_lot` /
+  `slippage_px` (0 for normal paper/replay).

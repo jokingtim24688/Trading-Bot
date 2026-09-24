@@ -53,6 +53,9 @@ DEFAULTS = {
     "news_impact": ["High"],               # High / Medium / Low
     # Manual tab: refuse market orders when the spread is wider than this many points (0 = no limit)
     "manual_max_spread": 80,
+    # Honest backtest (Agent tab): costs on top of the candles' spread
+    "backtest_commission": 7.0,            # round-trip commission per 1.0 lot (set 0 if your broker charges none)
+    "backtest_slippage": 10,               # points of slippage on every market fill
     # Daily backup of the app's data (app/backup.py)
     "backup_daily": True,
     "backup_dir": "",                      # "" = data/backups/full; a OneDrive/USB folder survives a dead disk

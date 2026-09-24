@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: the user's recommendations list (news pause, spread filter, backtest report, quiz-agreement stats, tests, watchdog, data backup, trade notes). Last: Telegram alerts.
+Status: the user's recommendations list, last item: automated tests + CI. Last: backtest report.
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -246,6 +246,14 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24, from the user (recommendations, part 3): **honest backtest**. `POST /api/backtest/start {commission?,
+  slippage?}` -> `{started, commission, slippage}` (409 while one runs); `POST /api/backtest/stop`; `GET /api/backtest`
+  -> `{running, progress: {index, total, bar_time_utc, opened} | null, report: null | {generated_utc, period: {from,
+  to}, costs: {commission_per_lot, slippage_points}, metrics: {trades, win_rate, net, profit_factor, expectancy,
+  score, max_drawdown_pct, days, trades_per_day, stop_hits, return_pct, months: [{month, trades, net}]}, gate: [{id,
+  label, value, need, ok}], passed, verdict}, log}`. Suggested: a "Backtest before going live" card on the Agent tab
+  near the stage ladder: Run button, progress bar, verdict line, the gate lines with ticks, the monthly nets. Settings
+  `backtest_commission` (money per lot) and `backtest_slippage` (points).
 - 2026-09-24, from the user (recommendations, part 2):
   - **Watchdog events:** the `/api/events` feed has new kinds `agent_restart`, `agent_failed`, `agent_stuck`,
     `mt5_down`, `mt5_up`, and every event now has a `message` field (a ready sentence for these kinds, null for

@@ -78,7 +78,20 @@ def main():
     ap.add_argument("--strict-filters", action="store_true",
                     help="also apply the live spread-vs-ATR filter (off by default: history spreads are estimates, and on "
                          "cheaper/quieter years it blocks nearly every candle; the spread-vs-stop cost check always applies)")
+    ap.add_argument("--commission", type=float, default=0.0, help="round-turn commission per 1.0 lot (account money)")
+    ap.add_argument("--slippage", type=float, default=0.0, help="points of slippage on every market fill (entry, stop, early exit)")
+    ap.add_argument("--db", default=None, help="ledger file to use instead of data/trades.db (the backtest keeps its own)")
+    ap.add_argument("--state", default=None, help="progress file instead of data/replay_state.json")
+    ap.add_argument("--control", default=None, help="control file instead of data/replay_control.json")
+    ap.add_argument("--report", default=None, help="write the backtest report (JSON; a .md next to it) when done")
     args = ap.parse_args()
+    global STATE, CONTROL
+    if args.db:
+        ledger.DB = Path(args.db)
+    if args.state:
+        STATE = Path(args.state)
+    if args.control:
+        CONTROL = Path(args.control)
 
     cfg = AgentConfig(symbol=args.symbol, threshold=args.threshold)
     m = cfg.money
@@ -133,6 +146,7 @@ def main():
             c.execute("DELETE FROM trades WHERE mode='replay'")
     cur = {"px": float(df["close"].iloc[i0]), "spread": float(df["spread"].iloc[i0]) * args.point, "i": i0}
     broker = PaperBroker(args.balance, spec, cfg.symbol, lambda: Tick(cur["px"], cur["px"] + cur["spread"]), mode="replay")
+    broker.commission_per_lot, broker.slippage_px = args.commission, args.slippage * args.point
     offset = pd.Timedelta(hours=SERVER_UTC_OFFSET_H)
     utc_iso = lambda k: (df.index[k] - offset).strftime("%Y-%m-%dT%H:%M:%S+00:00")    # noqa: E731
     broker.clock = lambda: utc_iso(cur["i"])  # trades get the replayed candle's date/hour, not today's
@@ -279,6 +293,9 @@ def main():
         print(f"\nreplay finished: {stats['opened']} trades opened this run | all replay trades: {st['closed']} closed, "
               f"win {st['win_pct']}%, net {st['net_pnl']:+.2f}, score {st['score']:+.1f} pts, PF {st['profit_factor']} "
               f"| took {time.time() - start_wall:.0f}s", flush=True)
+        if args.report:
+            from .backtest import write_report
+            write_report(Path(args.report), args, df.index[i0], df.index[min(i, i1 - 1)], skips)
 
 
 if __name__ == "__main__":
