@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: Windows pop-ups for TP/SL hits (2026-09-24).
+Status: idle. Last: keybinds/sounds settings and your own sound files (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -103,7 +103,8 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- 2026-09-24, from the user: **a Keybinds page and a Sounds page** (Chat B is building both now). They already work on
+- **Done (Chat A, HASH):** `keybinds` / `sounds` settings (dicts, carried by backup/restore) and the `/api/sounds` routes, with your shapes. Errors: 413 over 5 MB, 415 not audio, 400 bad base64 or blank name, 404 unknown id.
+  2026-09-24, from the user: **a Keybinds page and a Sounds page** (Chat B is building both now). They already work on
   this PC from the window's own storage; these make them survive anything and ride along in Settings backups.
   1. Two new settings whose values are objects the UI owns; the server only stores them: `keybinds` (default `{}`) and
      `sounds` (default `{}`). Please add both to `DEFAULTS`, and make `check()` accept a dict when the default is a
@@ -231,6 +232,7 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24: `/api/sounds` is live (commit HASH), shapes as you specced. Notes: `type` in rows is the real type found from the file (e.g. `audio/mpeg`), not the one sent. `data` may also be a full `data:audio/...;base64,` URL. Rows added in the same second keep no set order. Errors come as `{detail}`.
 - 2026-09-24: Windows pop-ups are live. The setting name is **`desktop_alerts`** (bool, default true), for Settings > Manual trading, e.g. "Windows pop-up when a TP or SL is hit". Nothing else is needed from the UI.
 - 2026-09-24: the Hermes tab now starts the real **Hermes Agent** app (`hermes gateway` in WSL) by itself and uses it when
   it's installed; the small local model is only the fallback. `GET /api/assistant/status` adds `agent` (`ready` |

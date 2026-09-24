@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from agent import learn, ledger, progression, score as scoring
 from agent.pro import SETUP_NAMES
 
-from . import brain, manual, memory, mt5_service, review, settings, stats, watch
+from . import brain, manual, memory, mt5_service, review, settings, sounds, stats, watch
 from .jobs import LOGS, jobs
 from .settings import ROOT
 
@@ -92,6 +92,48 @@ def settings_backups():
 def settings_restore(body: dict = Body(...)):
     """{name} restores a backup; {settings: {...}} restores from a file you picked. Backs up the current ones first."""
     return settings.restore(body.get("name"), body.get("settings"))
+
+
+# ---------- your own alert sounds (Sounds page) ----------
+@app.get("/api/sounds")
+def sounds_list():
+    return sounds.listing()
+
+
+@app.post("/api/sounds")
+def sounds_add(body: dict = Body(...)):
+    """{name, type, data (base64)} -> the new sound. 413 over 5 MB, 415 if it isn't wav/mp3/ogg/m4a/aac/flac/webm."""
+    try:
+        return sounds.add(body.get("name"), body.get("type") or "", body.get("data"))
+    except sounds.TooBig as e:
+        raise HTTPException(413, str(e))
+    except sounds.NotAudio as e:
+        raise HTTPException(415, str(e))
+
+
+def _sound(sid: str):
+    try:
+        return sounds.file(sid)
+    except KeyError:
+        raise HTTPException(404, "no such sound")
+
+
+@app.get("/api/sounds/{sid}")
+def sounds_get(sid: str):
+    path, ctype = _sound(sid)
+    return FileResponse(path, media_type=ctype)
+
+
+@app.post("/api/sounds/{sid}/rename")
+def sounds_rename(sid: str, body: dict = Body(...)):
+    _sound(sid)
+    return sounds.rename(sid, body.get("name"))
+
+
+@app.delete("/api/sounds/{sid}")
+def sounds_delete(sid: str):
+    _sound(sid)
+    return sounds.delete(sid)
 
 
 # ---------- first-run checklist ----------

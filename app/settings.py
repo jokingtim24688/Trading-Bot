@@ -45,6 +45,9 @@ DEFAULTS = {
     "manual_be_points": 0,                 # once a trade is this many points up, move its stop to entry + 2 points
     "manual_trail_points": 0,              # the stop follows the price at this distance, only ever tightening
     "desktop_alerts": True,                # Windows pop-up when a take profit or stop loss is hit (any owner)
+    # Owned by the UI (Keybinds and Sounds pages); the server only stores them so they survive and ride in backups
+    "keybinds": {},                        # {"bindings": {"man.buy": "B", ...}, "groups": {"app": true, ...}}
+    "sounds": {},                          # {"master": {...}, "events": {"profit": {...}, ...}}
     # Assistant
     "assistant_backend": "auto",           # auto | hermes_agent | local
     "hermes_url": "http://127.0.0.1:8642",
@@ -120,7 +123,7 @@ def check(updates: dict) -> tuple[dict, list[str]]:
             ignored.append(k)
         elif isinstance(d, bool) != isinstance(v, bool) or (
                 not isinstance(d, bool) and isinstance(d, (int, float)) and not isinstance(v, (int, float))) or (
-                isinstance(d, (str, list)) and not isinstance(v, type(d))):
+                isinstance(d, (str, list, dict)) and not isinstance(v, type(d))):
             ignored.append(k)
         else:
             good[k] = v

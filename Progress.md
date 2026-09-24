@@ -592,6 +592,22 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Tested: the toast text for TP and SL, other events skipped, XML/quote escaping in the PowerShell fallback, the
   setting off = no pop-up, and the feature tests (events feed) still pass.
 
+### 2026-09-24: Keybinds and Sounds pages backend (Chat B handoff)
+- Settings `keybinds` and `sounds` (default `{}`): objects the UI owns and the server just stores, so they survive a
+  reset of the window's storage and ride along in settings backups. Restore accepts only an object for them.
+- New `app/sounds.py` + routes:
+  - `GET /api/sounds` lists your own sounds;
+  - `POST /api/sounds {name, type, data}` adds one (base64; at most 5 MB, else 413; the first bytes must be real
+    wav/mp3/ogg/m4a/aac/flac/webm audio, else 415);
+  - `GET /api/sounds/{id}` plays it;
+  - `POST /api/sounds/{id}/rename` and `DELETE /api/sounds/{id}`.
+  Files go to `data/sounds/`.
+- Tested:
+  - a wav and an mp3 upload (data: URLs are fine too), list, play back with the right type, rename, delete;
+  - a non-audio file, and audio claiming the wrong type, give 415; 5 MB+ gives 413; bad base64 or a blank name
+    gives 400; unknown ids give 404;
+  - keybinds survive backup and restore, and wrong types are ignored.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

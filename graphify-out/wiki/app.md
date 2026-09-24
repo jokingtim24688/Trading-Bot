@@ -10,6 +10,10 @@
 - **notify.py** (Chat A): Windows pop-ups for TP/SL hits from the events feed (`watch.add_event` -> `notify.for_event`),
   setting `desktop_alerts` (default on); `winotify` (requirements, Windows only) or PowerShell's toast API; silent
   (the app plays its own bell); no-op off Windows.
+- **sounds.py** (Chat A): your own alert sounds in `data/sounds/<id>.<ext>` + `index.json`; `GET/POST /api/sounds`
+  (base64 JSON upload, ≤ 5 MB -> 413, first bytes must be wav/mp3/ogg/m4a/aac/flac/webm -> 415), `GET /api/sounds/{id}`
+  (the file), `POST /api/sounds/{id}/rename`, `DELETE /api/sounds/{id}`. Settings `keybinds` / `sounds` (objects the UI
+  owns; `settings.check` accepts dicts, so backups carry them).
 - **stats.py** (Chat A): `/api/stats/compare?days=&mode=paper|live|all` -> `{you, bot}` (trades, win rate, net, avg
   win/loss, PF, expectancy, best/worst, avg hold, by_hour, by_weekday, curve; server time).
 - **review.py** (Chat A): weekly summary `/api/review/weekly` (GET, POST = rebuild in the background, `working` flag),
