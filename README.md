@@ -6,7 +6,21 @@ also help with anything else.
 
 ## Start it
 1. Install **Python 3.11** (64-bit) and **MetaTrader 5**. Open MT5, log in (use a demo account first), and press **Ctrl+E** to enable Algo Trading.
-2. Double-click **`Trading Bot.bat`**. The first launch sets everything up; after that it opens straight away.
+2. Get the app with git, so it can update itself: install [Git](https://git-scm.com), then in PowerShell
+   `git clone -b claude/laughing-bell-3vt2c7 https://github.com/jokingtim24688/Trading-Bot.git`.
+   (A ZIP download works but never updates.)
+3. Double-click **`Trading Bot.bat`**. The first launch sets everything up. After that it updates itself from GitHub
+   on every start, then opens. What the update did is in `logs\update.log` and in the app's Settings.
+
+### Stuck on an old version?
+Open PowerShell in the Trading-Bot folder (right-click the desktop shortcut → *Open file location*, then type
+`powershell` in the address bar) and run these once:
+```
+git fetch origin
+git checkout -B claude/laughing-bell-3vt2c7 origin/claude/laughing-bell-3vt2c7
+```
+If it says *not a git repository*, the folder came from a ZIP: clone it again (step 2) and copy your old `data`
+folder into the new one. After this one-time fix, `Trading Bot.bat` keeps it up to date by itself.
 
 ## In the app
 - **Market**: live M1 chart, spread, a trade-size calculator, open positions, and a hold-to-flatten kill switch.

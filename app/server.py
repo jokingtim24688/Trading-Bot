@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from agent import learn, ledger, progression, score as scoring
 from agent.pro import SETUP_NAMES
 
+from . import update as update_mod
 from . import backup, brain, manual, memory, mt5_service, review, settings, sounds, stats, telegram, watch, watchdog
 from .jobs import LOGS, jobs
 from .settings import ROOT
@@ -63,13 +64,25 @@ def _resources() -> dict:
 
 
 # ---------- status & settings ----------
+VERSION = update_mod.version()                 # the commit this copy runs (read once at start)
+
+
+def _update_status() -> dict | None:
+    """What Trading Bot.bat's update did before this start (app/update.py)."""
+    try:
+        return json.loads(update_mod.STATUS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 @app.get("/api/status")
 def status():
     s = settings.load()
     meta = mt5_service.model_meta(s["symbol"]) or {}
     return {"settings": s, "jobs": jobs.status(), "model_ready": mt5_service.model_exists(s["symbol"]),
             "model": {k: meta.get(k) for k in ("suggested_threshold", "breakeven_win_pct", "exit_rule")},
-            "data_ready": (ROOT / "data" / f"{s['symbol']}_M1.parquet").exists(), "resources": _resources()}
+            "data_ready": (ROOT / "data" / f"{s['symbol']}_M1.parquet").exists(), "resources": _resources(),
+            "version": {**VERSION, "update": _update_status()}}
 
 
 @app.post("/api/settings")

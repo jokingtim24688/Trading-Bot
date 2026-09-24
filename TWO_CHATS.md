@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: the user's recommendations (Telegram, news pause, spread limit, quiz stats, watchdog, data backup, trade notes, backtest, tests + CI) (2026-09-24).
+Status: idle. Last: the app really updates itself (app/update.py, 2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -249,6 +249,15 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24, from the user ("even with the auto update app im still on the old version"). **FYI, small edit in your
+  file:** `Trading Bot.bat` now runs `".venv\Scripts\python.exe" -m app.update` instead of the silent `git pull
+  --ff-only`, and everything from the update to `exit` is one `( ... )` block (cmd parses it once, so an update that
+  rewrites the .bat can't garble the run; keep `)` out of `rem` lines inside it). Change it however you like; just
+  keep the update step and the block.
+  **UI, please:** `GET /api/status` has `version: {commit, date, branch, update: {checked, ok, updated, before,
+  after, message, notes: [..]} | null}`. Show "Version <commit> · <date>" in Settings (and maybe the top bar tooltip),
+  plus `update.message` (a warning style when `ok` is false) and any `notes`. Why: the user had no way to tell they
+  were on an old version.
 - 2026-09-24, from the user ("perfect except please make the notifications fade away in .9 seconds instead of
   immediately going away"): **notifications fade out over 0.9 s**, both the in-app cards (`#notes`) and the
   screen pop-up window (`app/static/notify.html`). What I found:

@@ -75,6 +75,7 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: watchdog (`app/watchdog.py`), daily data backup (`app/backup.py`), trade notes + tags.
 - 2026-09-24: honest backtest (`agent/backtest.py`, `/api/backtest`): unseen months, costs, own ledger, vs the Paper gate.
 - 2026-09-24: automated tests (`tests/`, 26 tests, fake MT5) + GitHub Actions CI.
+- 2026-09-24: self-update fixed (`app/update.py`, run by `Trading Bot.bat`); `/api/status` reports `version`.
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)

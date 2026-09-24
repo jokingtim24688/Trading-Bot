@@ -704,6 +704,22 @@ Each chat writes only in its own section below, and adds new entries just above 
   TWO_CHATS "For Chat B": 0.3 s -> 0.9 s in app.css and notify.html, the 450 ms fallback timer, and an opacity fade
   even with reduced motion.
 
+### 2026-09-24: the app now really updates itself
+- The user's shortcut kept opening an old version. `Trading Bot.bat` ran `git pull --ff-only -q >nul 2>&1`, which
+  gives up silently when the copy is on another branch, has no tracking, has local edits or commits, or isn't a git
+  clone (ZIP), and hides errors like a GitHub sign-in.
+- New `app/update.py`, run by the .bat before the app opens:
+  - fetches the shared branch; stashes local edits; keeps local-only commits on a backup branch;
+  - switches to GitHub's version and sets tracking;
+  - says clearly when there's no git, no internet or no .git folder;
+  - writes `logs/update.log` and `data/update_status.json`.
+  `/api/status` now has `version` (commit, date, branch, last update).
+- The .bat's update-to-start part is now one parenthesised block (cmd parses it at once), so an update that rewrites
+  the .bat can't garble the run.
+- README: clone with git; a one-time fix for a copy that's stuck.
+- Tests: 6 new against real temporary git repos (old copy, other branch, local edits, local commits, offline, ZIP,
+  status/log). 32 pass.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

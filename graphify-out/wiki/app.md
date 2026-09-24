@@ -29,6 +29,12 @@
 - **Trade notes** (Chat A, manual.py): `data/trade_notes.json`; `GET/POST /api/manual/notes`; orders take `note`/`tags`;
   history rows carry `note`/`tags`; weekly review names your best/worst tag.
 - **Backtest routes** (Chat A): `POST /api/backtest/start {commission?, slippage?}` (defaults from settings `backtest_commission` 7, `backtest_slippage` 10), `GET /api/backtest` -> `{running, progress, report, log}`, stop via `/api/backtest/stop`; `_replay_args` shared with Replay.
+- **update.py** (Chat A): run by `Trading Bot.bat` (`python -m app.update`) before the app opens. `git fetch origin BRANCH`,
+  stashes tracked edits, keeps local-only commits on `backup/local-<time>`, `git checkout -B BRANCH origin/BRANCH` +
+  upstream, so another branch, no tracking or a diverged copy no longer block updates. No .git (ZIP) / no git / offline:
+  says so, app opens as is. Writes `data/update_status.json` + `logs/update.log`; `/api/status` -> `version` {commit,
+  date, branch, update}. The .bat runs update-to-start as one parenthesised block so a self-rewriting update can't
+  garble it.
 - **stats.py** (Chat A): `/api/stats/compare?days=&mode=paper|live|all` -> `{you, bot}` (trades, win rate, net, avg
   win/loss, PF, expectancy, best/worst, avg hold, by_hour, by_weekday, curve; server time).
 - **review.py** (Chat A): weekly summary `/api/review/weekly` (GET, POST = rebuild in the background, `working` flag),

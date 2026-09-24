@@ -7,13 +7,19 @@ if not exist ".venv\Scripts\pythonw.exe" (
   py -3.11 -m venv .venv || python -m venv .venv
   ".venv\Scripts\python.exe" -m pip install --upgrade pip
 )
-rem get the latest version (quietly; carries on offline or if git isn't set up)
-if exist ".git" git pull --ff-only -q >nul 2>&1
-rem install packages only when requirements.txt changed since the last install
-fc /b requirements.txt ".venv\requirements.installed" >nul 2>&1 || (
-  echo Installing packages...
-  ".venv\Scripts\python.exe" -m pip install -r requirements.txt && copy /y requirements.txt ".venv\requirements.installed" >nul
+rem Everything below is one block: cmd reads it all before running it, so an update that rewrites this file
+rem can't garble the rest of this run.
+(
+  rem get the latest version from GitHub with app\update.py: it fixes the branch and tracking, saves local edits,
+  rem says what happened in logs\update.log and in the app, and carries on offline
+  echo Checking for updates...
+  ".venv\Scripts\python.exe" -m app.update
+  rem install packages only when requirements.txt changed since the last install
+  fc /b requirements.txt ".venv\requirements.installed" >nul 2>&1 || (
+    echo Installing packages...
+    ".venv\Scripts\python.exe" -m pip install -r requirements.txt && copy /y requirements.txt ".venv\requirements.installed" >nul
+  )
+  rem pythonw = no console window; output goes to logs\app.log
+  start "" ".venv\Scripts\pythonw.exe" -m app.main
+  exit
 )
-rem pythonw = no console window; output goes to logs\app.log
-start "" ".venv\Scripts\pythonw.exe" -m app.main
-exit
