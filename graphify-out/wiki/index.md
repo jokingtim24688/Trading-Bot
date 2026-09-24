@@ -39,3 +39,4 @@
 
 - 2026-09-23: extra history (agent/history.py, Train-tab download) and practice-cutoff display, see agent.md / app.md.
 - 2026-09-23: Quiz school (agent/quiz.py, Quiz tab): reinforcement learning on real pro setups, reward = points.
+- 2026-09-24: Quiz builds no longer cap near 18k (look-alike majority vote, top-ups until target, capped back-fill, shortfall note in Quiz tab).

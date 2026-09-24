@@ -16,7 +16,7 @@ Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. R
 - **learn.py**: analyze ledger → learned_rules.json + `.claude/skills/m1-bot-lessons/`; `block_reason()` used by run.py.
 - **practice.py**: `Practice.decide()` top-10% of the last 1440 confidence readings (Paper/Replay).
 - **quiz.py**: quiz school. `build` (40-100,000; parallel `_find` finders over ~300k-candle slices via
-  ProcessPoolExecutor, cached in data/quiz_cache, incremental threaded `_Neighbours`, progress data/quiz_build.json) -> data/quiz.json + quiz_x/quiz_bars/quiz_times .npy: 18 setups
+  ProcessPoolExecutor, cached in data/quiz_cache, incremental threaded `_Neighbours` with majority-vote contradictions, top-ups until target (25 rounds max), back-fill capped at traps 30% / stay-out 40%, shortfall note in quiz_build.json `short`, progress data/quiz_build.json) -> data/quiz.json + quiz_x/quiz_bars/quiz_times .npy: 18 setups
   (`_candidates`), vectorised outcomes (`_outcomes`), clean winners / traps / stay-out spots, best-first across years
   (`_year_balanced`), adaptive spacing 60/30/15, contradictions + near-copies removed with top-up, easy/medium/hard
   (`_neighbours`); `train [--resume] [--focus ids]` -> (49 indicators + 178 chart inputs)-64..512-3 network,

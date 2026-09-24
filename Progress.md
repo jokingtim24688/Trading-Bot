@@ -317,3 +317,19 @@
 - Chart inputs vectorised (identical) and saved as data/quiz_c.npy.
 - Build progress file + Quiz tab progress bar with one bar per slice.
 - Result: 20k-question build 58 s -> 18 s cold, 11 s from cache (4-core sandbox).
+
+## 2026-09-24: Quiz builds no longer stop near 18,000 questions
+- Cause: the contradiction check dropped *both* questions of any disagreeing look-alike pair, and new top-ups
+  knocked out old good questions. With only 4 top-up rounds, builds levelled off (~18k) whatever size was asked for.
+- Fix (agent/quiz.py):
+  - `_Neighbours` keeps same/other near-twin vote counts; only outvoted questions are dropped (tie: the older one
+    stays). Verified: incremental equals one-shot equals brute force.
+  - Top-ups continue up to 25 rounds until the target is reached or progress stalls.
+  - Extra 10-minute spacing tier.
+  - Answer groups that run out are back-filled; `MAX_SHARE` holds traps <= 30% and stay-outs <= 40%.
+- Shortfall reason written to quiz_build.json (`short`) and shown in the Quiz tab under the build bar.
+- Stand-in 4-year history:
+  - 20k: 19,296 -> 20,000.
+  - 100k: 24,666 (70% "stay out") -> 27,999 (balanced: 35/33/32, 25% traps).
+  - Training 50 rounds on 20k: exam 71.5%.
+

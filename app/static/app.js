@@ -859,12 +859,15 @@ $("#quiz-wipe").onclick = async () => {
 /* build progress: several question finders work through slices of history at once */
 function renderBuild(b, running) {
   const box = $("#quiz-build-prog");
-  const fresh = b && (b.running ? running : b.done && Date.now() - (renderBuild.doneAt || (renderBuild.doneAt = Date.now())) < 20000);
+  const fresh = b && (b.running ? running : b.done && (b.short || Date.now() - (renderBuild.doneAt || (renderBuild.doneAt = Date.now())) < 20000));
   if (!b || !fresh) { box.hidden = true; if (!b?.done) renderBuild.doneAt = 0; return; }
   if (b.running) renderBuild.doneAt = 0;
   box.hidden = false;
   $("#quiz-build-stage").textContent = b.cached && b.running ? `${b.stage} (using saved finder results)` : b.stage;
   $("#quiz-build-time").textContent = `${Math.round(b.elapsed)}s`;
+  const note = $("#quiz-build-note");
+  note.hidden = !(b.done && b.short);
+  note.textContent = b.short || "";
   $("#quiz-build-bar").style.width = `${Math.round((b.pct || 0) * 100)}%`;
   $("#quiz-finders").innerHTML = (b.finders || []).length && b.running
     ? `<div class="finder" style="grid-column:1/-1">${b.workers} finder(s) working at once</div>` + b.finders.map(f =>

@@ -117,7 +117,9 @@ WAIT_TEXT = ("Price is in the middle of the day's range with no key level, sweep
              "neither a buy nor a sell with the same stop would have been a clean trade.")
 TRAP_SHARE, WAIT_SHARE = 0.15, 0.20       # the rest are clean pro trades
 TRAP_MINUTES = 60                          # a trap: the setup's stop was hit within the hour
-SPACINGS = (60, 30, 15)                    # minutes between questions; tightens only when more are needed
+SPACINGS = (60, 30, 15, 10)                # minutes between questions; tightens only when more are needed
+MAX_SHARE = {"trade": 1.0, "trap": 2 * TRAP_SHARE, "wait": 2 * WAIT_SHARE}   # most a group may reach when others run out
+TOPUP_ROUNDS = 25                          # most top-up rounds when contradictions/near-copies get dropped
 
 
 def setup_name(key: str, trap: bool = False) -> str:
@@ -248,6 +250,11 @@ def _stop_dist(kind, idx, df_np, a, spread):
     return 1.5 * a[idx]
 
 
+def _group(key) -> str:
+    """A pool's group: clean trade, trap or stay-out."""
+    return "trap" if key[2] else "wait" if key[0] == "wait" else "trade"
+
+
 def _year_balanced(idx: np.ndarray, quality: np.ndarray, years: np.ndarray) -> np.ndarray:
     """Best examples first, but taking turns across years so no single market period dominates."""
     order = np.lexsort((-quality, years))
@@ -285,7 +292,7 @@ class _Progress:
 
     def __init__(self, workers):
         self.t0, self.workers = time.time(), workers
-        self.stage, self.pct, self.cached, self.labels = "starting", 0.0, False, []
+        self.stage, self.pct, self.cached, self.labels, self.short = "starting", 0.0, False, [], ""
         for p in DATA.glob("quiz_build_w*.json"):
             p.unlink()
 
@@ -297,7 +304,7 @@ class _Progress:
             w = _load_json(DATA / f"quiz_build_w{k}.json", {})
             finders.append({"label": label, "stage": w.get("stage", "waiting"), "pct": w.get("pct", 0)})
         _write(BUILD_STATE, {"running": not done, "done": done, "stage": self.stage, "pct": round(self.pct, 3),
-                             "elapsed": round(time.time() - self.t0, 1), "cached": self.cached, "workers": self.workers,
+                             "elapsed": round(time.time() - self.t0, 1), "cached": self.cached, "workers": self.workers, "short": self.short,
                              "finders": finders})
 
 
@@ -440,8 +447,9 @@ def _find_all(df, point, workers, prog):
 
 class _Neighbours:
     """Each question's 5 closest look-alikes, kept up to date as questions are added (so top-ups only compare the new
-    ones), computed on several CPU threads. Flags contradictions (a near-twin with the other answer) and near-copies
-    (an earlier near-identical question with the same answer)."""
+    ones), computed on several CPU threads. Near-twins vote: a question is a contradiction only when near-twins with
+    the other answer outnumber it and its same-answer twins (on a tie the older question stays), so a new look-alike
+    can't knock out a well-supported question. Also flags near-copies (an earlier near-identical question, same answer)."""
 
     def __init__(self, k=5, twin=3.0, dup=1.0, threads=None):
         import os
@@ -462,14 +470,17 @@ class _Neighbours:
             self.Z, self.ans = Znew, ans_new
             self.nd = np.full((m, k), np.inf, np.float32)
             self.na = np.empty((m, k), ans_new.dtype)
-            self.contra = np.zeros(m, bool)
+            self.same, self.other = np.zeros(m, np.int32), np.zeros(m, np.int32)
+            self.older_other = np.zeros(m, bool)
             self.dupe = np.zeros(m, bool)
         else:
             n0 = len(self.Z)
             self.Z, self.ans = np.vstack([self.Z, Znew]), np.concatenate([self.ans, ans_new])
             self.nd = np.vstack([self.nd, np.full((m, k), np.inf, np.float32)])
             self.na = np.concatenate([self.na, np.empty((m, k), ans_new.dtype)])
-            self.contra = np.concatenate([self.contra, np.zeros(m, bool)])
+            self.same = np.concatenate([self.same, np.zeros(m, np.int32)])
+            self.other = np.concatenate([self.other, np.zeros(m, np.int32)])
+            self.older_other = np.concatenate([self.older_other, np.zeros(m, bool)])
             self.dupe = np.concatenate([self.dupe, np.zeros(m, bool)])
         Z, ans, n = self.Z, self.ans, len(self.Z)
         sq = (Z * Z).sum(1)
@@ -485,7 +496,9 @@ class _Neighbours:
             ii, jj = np.nonzero(d2 < self.t2)              # near pairs are rare: check only those
             if len(ii):
                 other = ans[r[ii]] != ans[jj]
-                self.contra[r[np.unique(ii[other])]] = True
+                self.other[r] = np.bincount(ii[other], minlength=len(r))
+                self.same[r] = np.bincount(ii[~other], minlength=len(r))
+                self.older_other[r[np.unique(ii[other & (jj < r[ii])])]] = True
                 cp = ~other & (d2[ii, jj] < self.d2) & (jj < r[ii])
                 self.dupe[r[np.unique(ii[cp])]] = True
             if n > k:
@@ -501,7 +514,9 @@ class _Neighbours:
             d2 += sq[r, None]
             ii, jj = np.nonzero(d2 < self.t2)
             if len(ii):
-                self.contra[r[np.unique(ii[ans[r[ii]] != ans[n0 + jj]])]] = True
+                other = ans[r[ii]] != ans[n0 + jj]
+                self.other[r] += np.bincount(ii[other], minlength=len(r)).astype(np.int32)
+                self.same[r] += np.bincount(ii[~other], minlength=len(r)).astype(np.int32)
             cand_d = np.hstack([self.nd[r], d2])
             cand_a = np.hstack([self.na[r], np.broadcast_to(ans[None, n0:], d2.shape)])
             nn = np.argpartition(cand_d, k, axis=1)[:, :k] if cand_d.shape[1] > k else np.arange(cand_d.shape[1])[None].repeat(len(r), 0)
@@ -511,12 +526,13 @@ class _Neighbours:
         self._map(new_rows, range(0, m, step))
         if n0:
             self._map(old_rows, range(0, n0, step))
-        # contradictions are mutual: an old question whose near-twin just arrived is flagged by old_rows above
 
     def result(self):
+        own = self.same + 1                                # a question votes for its own answer
+        contra = (self.other > own) | ((self.other == own) & self.older_other)
         if len(self.Z) <= self.k:
-            return np.ones(len(self.Z)), self.contra, self.dupe
-        return (self.na == self.ans[:, None]).mean(1), self.contra, self.dupe
+            return np.ones(len(self.Z)), contra, self.dupe
+        return (self.na == self.ans[:, None]).mean(1), contra, self.dupe
 
 
 def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.25, point: float = 0.01, seed: int = 7,
@@ -575,6 +591,8 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
     at = {k: 0 for k in pools}
     occupied = np.zeros(len(df), bool)
     spacing_at = [0]                                      # which of SPACINGS is in use
+    backfilled = [0]                                      # plan items filled from another answer group
+    counts = {"trade": 0, "trap": 0, "wait": 0}          # questions picked so far, by group
 
     def make_plan(count):
         n_trap, n_wait = round(count * TRAP_SHARE), round(count * WAIT_SHARE)
@@ -583,6 +601,9 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
                 + [("wait", "wait", False)] * n_wait)
         return [plan[k] for k in rng.permutation(len(plan))]
 
+    def full(g):
+        return counts[g] >= MAX_SHARE[g] * (sum(counts.values()) + 1)
+
     def select(plan):
         """Best-first picks for the plan; spacing tightens only when the history runs out of room."""
         taken = []
@@ -590,6 +611,9 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
             spacing, missing = SPACINGS[spacing_at[0]], []
             for key in plan:
                 got = None
+                if full(_group(key)):                       # trades ran out: don't let traps/stay-outs swamp the quiz
+                    missing.append(key)
+                    continue
                 for k in [key] + [x for x in pools if x[1] == key[1] and x[2] == key[2] and x != key]:   # same answer
                     arr = pools.get(k, [])
                     while at[k] < len(arr):
@@ -600,10 +624,25 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
                             break
                     if got:
                         break
+                if got is None and spacing_at[0] == len(SPACINGS) - 1:   # this answer group ran out: back-fill
+                    for k in sorted(pools, key=lambda x: at[x] - len(pools[x])):   # from the fullest other group
+                        if full(_group(k)):
+                            continue
+                        arr = pools[k]
+                        while at[k] < len(arr):
+                            i = int(arr[at[k]])
+                            at[k] += 1
+                            if not occupied[max(0, i - spacing + 1):i + spacing].any():
+                                got = (i, k)
+                                break
+                        if got:
+                            backfilled[0] += 1
+                            break
                 if got is None:
                     missing.append(key)
                     continue
                 i, (kind, answer, is_trap) = got
+                counts[_group(got[1])] += 1
                 occupied[i] = True
                 taken.append((i, kind, answer, is_trap))
             if not missing or spacing_at[0] == len(SPACINGS) - 1:
@@ -624,25 +663,35 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
     # remove contradictions and near-copies (topping up with fresh candidates when many get dropped), and grade the
     # rest by how much their look-alikes agree; only new questions are compared on each top-up
     nb = _Neighbours()
-    new = picks
-    for attempt in range(4):
-        prog.set(f"comparing {len(picks):,} questions with each other", 0.75 + 0.05 * attempt)
+    new, slow, prev_good = picks, 0, 0
+    for attempt in range(TOPUP_ROUNDS):
+        prog.set(f"comparing {len(picks):,} questions with each other", min(0.9, 0.75 + 0.01 * attempt))
         print(f"  comparing {len(new):,} new questions with {len(picks):,} in total...", flush=True)
         Xn = rows_for(new)
         nb.add(np.clip(np.nan_to_num((Xn - mean) / std), -5, 5), np.array([p[2] for p in new]))
         same_share, contra, dupe = nb.result()
         bad = contra | dupe | (same_share <= 0.2)
         good = int((~bad).sum())
-        if good >= n_questions or attempt == 3:
+        if good >= n_questions:
             break
+        need = n_questions - good
+        if attempt and good - prev_good < 0.005 * need:     # top-ups barely help any more: the history is used up
+            slow += 1
+            if slow >= 2:
+                break
+        else:
+            slow = 0
+        prev_good = good
         rate = good / len(picks)
-        new = select(make_plan(int((n_questions - good) / max(rate, 0.3) * 1.2) + 20))
+        new = select(make_plan(int(need / max(rate, 0.3) * 1.2) + 20))
         if not new:
             break
-        print(f"  {len(picks) - good:,} dropped so far: adding {len(new):,} fresh candidates to replace them", flush=True)
+        print(f"  {len(picks) - good:,} dropped so far, {good:,} good: adding {len(new):,} fresh candidates", flush=True)
         picks = picks + new
-    print(f"  dropped {int((contra | (same_share <= 0.2)).sum()):,} whose look-alikes have the other answer and "
-          f"{int((dupe & ~contra).sum()):,} near-copies", flush=True)
+    print(f"  checked {len(picks):,} candidates: dropped {int(contra.sum()):,} outvoted by look-alikes with the other "
+          f"answer, {int(((same_share <= 0.2) & ~contra).sum()):,} whose closest look-alikes mostly disagree and "
+          f"{int((dupe & ~contra & (same_share > 0.2)).sum()):,} near-copies"
+          + (f"; {backfilled[0]:,} places filled from another answer group" if backfilled[0] else ""), flush=True)
     keep = [k for k in rng.permutation(len(picks)) if not bad[k]][:n_questions]
     difficulty = np.where(same_share >= 0.8, "easy", np.where(same_share >= 0.5, "medium", "hard"))
 
@@ -677,7 +726,12 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
     lv = pd.Series([q["difficulty"] for q in questions]).value_counts().to_dict()
     traps = sum(q["trap"] for q in questions)
     if n < n_questions:
-        print(f"  your history only had room for {n:,} clean questions; download more years (Train tab) for more", flush=True)
+        years_span = f"{df.index[0]:%Y}-{df.index[-1]:%Y}"
+        mix = ", ".join(f"{v / n:.0%} {k}" for k, v in by.items())
+        prog.short = (f"Stopped at {n:,} of {n_questions:,}: the {years_span} history ran out of clean, non-contradicting "
+                      f"setups ({len(picks):,} candidates checked; answers {mix}; {traps / n:.0%} traps). "
+                      f"Download more years (Train tab) for more.")
+        print("  " + prog.short, flush=True)
     took = time.time() - t0
     print(f"saved {n:,} questions ({n - n_exam:,} practice, {n_exam:,} exam; answers {by}; {traps:,} traps; "
           f"difficulty {lv}; {len({q['setup'] for q in questions} - {'wait'})} pro setup types) in {took:.0f}s "

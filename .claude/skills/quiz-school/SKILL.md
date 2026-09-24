@@ -90,6 +90,22 @@ The chart panel holds the latest mistake with the pro answer.
 - The Quiz tab shows build progress with a bar per slice.
 - Measured on 4 years of candles, 20,000 questions (4-core machine): 58 s before, 18 s cold, 11 s from cache.
 
+## How many questions a history can hold
+- **Look-alikes vote.** A question is dropped as a contradiction only when look-alikes with the other answer
+  outnumber it and its same-answer look-alikes. On a tie, the older question stays.
+  - Before 2026-09-24 both questions of any disagreeing pair were dropped. Every top-up then knocked out good
+    questions, so builds levelled off near 18,000 whatever size was asked for.
+- **Top-ups:** the build keeps topping up (up to 25 rounds) until the target is reached or two rounds in a row barely
+  help.
+- **Spacing:** questions are spaced 60 -> 30 -> 15 -> 10 minutes apart, tightening only as needed.
+- **Mix:** when one answer group runs out, others fill in. Traps are held to at most 30% and stay-outs to at most
+  40%, so "always stay out" can never score well.
+- **The limit:** how many clean winning trades the history holds. When a build stops short, the Quiz tab says why,
+  with the answer mix.
+  - Download more years (Train tab) to raise the limit.
+  - Stand-in 4-year history: 20,000 now builds in full (was 19,296); the most is about 28,000 (was ~24,700). The
+    2009–2026 history holds several times more.
+
 ## It loops until done, never re-asks finished questions, and doesn't forget
 - A question is **finished** when it is right 5 times in a row **and** its best answer is right, so lucky streaks
   don't count.
