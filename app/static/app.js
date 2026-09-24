@@ -3,15 +3,63 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const state = { settings: null, symbol: null, mode: "paper", tab: "dash", chart: null, series: null, lastBid: null, digits: 2, equityShown: false };
 
 async function api(path, opts = {}) {
+  if (opts.method && opts.method !== "GET") posCache.at = 0;       // a close/order/edit: the next positions read is fresh
   const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts,
     body: opts.body && typeof opts.body !== "string" ? JSON.stringify(opts.body) : opts.body });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(data.error || data.detail || res.statusText), { status: res.status });
   return data;
 }
-function toast(msg, err = false) {
-  const t = $("#toast"); t.textContent = msg; t.classList.toggle("err", err); t.classList.add("show");
-  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 4200);
+/* ---------- notifications: one custom stack at the top right. Several show at once, each new one below the others;
+   each fades after 1.2 s (Sounds page), hovering keeps it, a click closes it. When the app isn't in front they also pop
+   up at the top right of the screen (a small always-on-top window from app/main.py). ---------- */
+const NOTE_ICON = {
+  info: '<path d="M12 8h.01M11 12h1v5h1"/><circle cx="12" cy="12" r="9"/>',
+  ok: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.7"/>',
+  err: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/>',
+  tp: '<path d="M4 17l5-5 4 3 7-8"/><path d="M15 7h5v5"/>',
+  sl: '<path d="M4 7l5 5 4-3 7 8"/><path d="M15 17h5v-5"/>',
+};
+const noteSecs = () => { try { const v = parseFloat(localStorage.getItem("noteSecs")); return v > 0 ? v : 1.2; } catch (e) { return 1.2; } };
+const appAway = () => document.hidden || !document.hasFocus();
+function notify({ title = "", body = "", html = "", kind = "info", amount = null, onClick = null, screen = true } = {}) {
+  const box = $("#notes"); if (!box) return;
+  const secs = noteSecs(), el = document.createElement("div");
+  el.className = `note ${kind}`; el.setAttribute("role", kind === "err" ? "alert" : "status");
+  el.innerHTML = `<svg class="note-ic" viewBox="0 0 24 24" aria-hidden="true">${NOTE_ICON[kind] || NOTE_ICON.info}</svg>
+    <div class="note-body">${title ? `<b>${esc(title)}</b>` : ""}${html || body ? `<span>${html || esc(body)}</span>` : ""}</div>
+    ${amount != null ? `<em class="num ${cls(amount)}">${signed(amount)}</em>` : ""}<i class="note-life" style="animation-duration:${secs}s"></i>`;
+  box.append(el);                                // the newest sits below the others
+  while (box.querySelectorAll(".note:not(.out)").length > 6) removeNote(box.querySelector(".note:not(.out)"), true);
+  let left = secs * 1000, t0 = performance.now(), timer = setTimeout(() => removeNote(el), left);
+  el.addEventListener("mouseenter", () => { clearTimeout(timer); left -= performance.now() - t0; el.classList.add("hold"); });
+  el.addEventListener("mouseleave", () => { t0 = performance.now(); el.classList.remove("hold"); timer = setTimeout(() => removeNote(el), Math.max(500, left)); });
+  el.addEventListener("click", () => { clearTimeout(timer); onClick?.(); removeNote(el); });
+  if (screen && appAway() && pref("screenNotes", true))   // not in front: the pop-up at the top right of the screen too
+    window.pywebview?.api?.notify?.({ title, body: body || el.querySelector(".note-body span")?.textContent || "", kind, amount: amount == null ? null : signed(amount), secs })?.catch?.(() => {});
+}
+function removeNote(el, instant = false) {       // fade out, then the ones below glide up into its place
+  if (!el || el._gone) return; el._gone = true;
+  const box = el.parentNode; if (!box) return;
+  let done = false;
+  const finish = () => {
+    if (done) return; done = true;
+    const sibs = [...box.children].filter(x => x !== el), before = new Map(sibs.map(x => [x, x.getBoundingClientRect().top]));
+    el.remove();
+    if (!motionOK()) return;
+    sibs.forEach(x => { const dy = before.get(x) - x.getBoundingClientRect().top; if (dy) x.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 280, easing: "cubic-bezier(.22,1,.36,1)" }); });
+  };
+  if (instant || !motionOK()) return finish();
+  el.classList.add("out"); el.addEventListener("animationend", finish, { once: true }); setTimeout(finish, 450);
+}
+function toast(msg, err = false) { notify({ body: msg, kind: err ? "err" : "info" }); }
+/* one positions request shared by the Market and Manual tabs (and the alerts): in flight once, reused for 0.8 s */
+const posCache = { req: null, at: 0, data: null };
+function getPositions() {
+  if (posCache.req) return posCache.req;
+  if (posCache.data && performance.now() - posCache.at < 800) return Promise.resolve(posCache.data);
+  posCache.req = api("/api/positions").then(d => { posCache.data = d; posCache.at = performance.now(); return d; }).finally(() => { posCache.req = null; });
+  return posCache.req;
 }
 const fmt = (n, d = 2) => n == null || isNaN(n) ? "—" : Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 
@@ -63,12 +111,14 @@ function showTab(name) {
   if (name === "chat") { loadHistory(); loadFacts(); }
   if (name === "manual") openManual();
   if (name === "review") openReview();
+  if (name === "keys") renderKeys();
+  if (name === "sounds") openSounds();
   if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); loadProgress(); loadCalendar(); }
   if (name === "train") pollTrainLog();
   if (name === "quiz") { loadQuiz(); loadReport(false); }
 }
 $$(".rail-btn").forEach(b => b.onclick = () => showTab(b.dataset.tab));
-document.addEventListener("click", e => { const g = e.target.closest("[data-goto]"); if (g) showTab(g.dataset.goto); });
+document.addEventListener("click", e => { const g = e.target.closest("[data-goto]"); if (g) { if (g.tagName === "A") e.preventDefault(); showTab(g.dataset.goto); } });
 
 /* ---------- status strip ---------- */
 function countUp(el, to, digits = 2) {
@@ -106,7 +156,7 @@ async function pollStatus() {
 }
 async function pollAccount() {
   try {
-    const a = await api("/api/account"); state.acct = a;
+    const a = await api("/api/account"); state.acct = a; state.acctOk = true;
     const chip = $("#acct-mode");
     chip.className = "acct-chip " + (a.demo ? "demo" : "real");
     $("#acct-kind").textContent = a.demo ? "DEMO" : "REAL";
@@ -120,6 +170,7 @@ async function pollAccount() {
     setNum($("#free-margin"), a.margin_free, v => fmt(v), { flashIt: false });
     if (!a.algo_trading) $("#agent-pill").classList.add("warn");
   } catch (e) {
+    if (state.acctOk) { state.acctOk = false; feedLost(); }
     $("#acct-mode").className = "acct-chip offline"; $("#acct-kind").textContent = "MT5 offline"; $("#acct-server").textContent = "";
     $("#equity").textContent = "—";
   }
@@ -144,12 +195,12 @@ function renderSessions() {
     return `<span class="sess ${cls}"><i></i>${name} <small>${txt}</small></span>`;
   }).join(""));
 }
-renderSessions(); setInterval(renderSessions, 20000);
+renderSessions(); setInterval(() => !document.hidden && renderSessions(), 20000);
 
 /* PC resources live behind a small button */
 $("#sys-btn").onclick = e => { e.stopPropagation(); const p = $("#sys-pop"), open = p.hidden; p.hidden = !open; $("#sys-btn").setAttribute("aria-expanded", String(open)); };
 document.addEventListener("click", e => { if (!e.target.closest(".sys-wrap")) { $("#sys-pop").hidden = true; $("#sys-btn").setAttribute("aria-expanded", "false"); } });
-document.addEventListener("keydown", e => { if (e.key === "Escape") { $("#sys-pop").hidden = true; $("#sys-btn").setAttribute("aria-expanded", "false"); closeLog(); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !keys.capturing) { $("#sys-pop").hidden = true; $("#sys-btn").setAttribute("aria-expanded", "false"); closeLog(); closeSetup(); } });
 
 /* ---------- chart ---------- */
 function initChart() {
@@ -494,59 +545,7 @@ function selectSymbol(sym) {
 /* ---------- the bot's own trades: card, chart overlay, history, alerts ---------- */
 state.bot = { known: null, data: null, filter: "", lines: [] };
 let audioCtx;
-function beep(notes, force = false) {         // force: the caller already checked its own switch
-  if (!force && !state.settings?.alert_sound) return;
-  try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    let t = audioCtx.currentTime;
-    notes.forEach(f => {
-      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-      o.type = "sine"; o.frequency.value = f; o.connect(g); g.connect(audioCtx.destination);
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-      o.start(t); o.stop(t + 0.24); t += 0.16;
-    });
-  } catch (e) {}
-}
 document.addEventListener("pointerdown", () => audioCtx && audioCtx.state === "suspended" && audioCtx.resume());
-/* trade-finish sound: a small bright bell (a glockenspiel-like "ding") when a trade closes in profit, and the same bell
-   two octaves down, softened, for a stop loss or any losing close. Drop your own sound in app/static/sounds/ as
-   profit.wav or profit.mp3 and it replaces the synth bell; a loss plays that file at quarter speed (two octaves down). */
-const bell = { buf: null };
-setTimeout(async () => {                         // look for a custom sound once, after start-up
-  for (const ext of ["wav", "mp3"]) {
-    try {
-      const r = await fetch(`/static/sounds/profit.${ext}`); if (!r.ok) continue;
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      bell.buf = await audioCtx.decodeAudioData(await r.arrayBuffer()); return;
-    } catch (e) {}
-  }
-}, 4000);
-function playBell(win, force = false) {
-  if (!force && !state.settings?.alert_sound) return;
-  try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const rate = win ? 1 : 0.25, t = Math.max(audioCtx.currentTime + 0.01, bell.next || 0), out = audioCtx.createGain();
-    bell.next = t + 0.45;                         // two trades closing together ring one after the other
-    out.gain.value = win ? 0.85 : 1.1; out.connect(audioCtx.destination);
-    let dest = out;
-    if (!win) {                                   // the loss bell: two octaves down, with the tinny top rolled off
-      const lp = audioCtx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1800; lp.Q.value = 0.5; lp.connect(out); dest = lp;
-    }
-    if (bell.buf) { const src = audioCtx.createBufferSource(); src.buffer = bell.buf; src.playbackRate.value = rate; src.connect(dest); src.start(t); return; }
-    const f0 = 1318.5 * rate, hold = win ? 1 : 2.2;   // E6 for a win, E4 for a loss (a deeper, longer ring)
-    [[1, 1, .9], [2.76, .42, .42], [5.4, .2, .22], [8.93, .09, .12]].forEach(([ratio, amp, dec]) => {   // struck-bar partials
-      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-      o.type = "sine"; o.frequency.value = f0 * ratio; o.connect(g); g.connect(dest);
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.26 * amp, t + 0.003);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dec * hold);
-      o.start(t); o.stop(t + dec * hold + 0.05);
-    });
-    const n = audioCtx.createBufferSource(), len = Math.floor(audioCtx.sampleRate * 0.012), buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
-    const ch = buf.getChannelData(0); for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len);   // the tiny strike click
-    const hp = audioCtx.createBiquadFilter(), ng = audioCtx.createGain(); hp.type = "highpass"; hp.frequency.value = win ? 3000 : 900; ng.gain.value = 0.05;
-    n.buffer = buf; n.connect(hp); hp.connect(ng); ng.connect(dest); n.start(t);
-  } catch (e) {}
-}
 const px = (v, sym) => v == null ? "—" : Number(v).toFixed(sym === state.symbol ? state.digits : (v < 20 ? 5 : 2));
 const signed = v => v == null ? "—" : `${v >= 0 ? "+" : ""}${fmt(v)}`;
 const cls = v => v > 0 ? "up" : v < 0 ? "down" : "";
@@ -561,13 +560,14 @@ async function pollBot() {
     for (const t of d.recent) {
       const before = state.bot.known.get(t.id);
       if (before === undefined && t.status === "open") {
-        toast(`Bot ${t.side.toUpperCase()} ${t.symbol} ${t.lots} @ ${px(t.entry, t.symbol)} · SL ${px(t.sl, t.symbol)} · TP ${px(t.tp, t.symbol)} (${t.mode})`);
-        beep([660, 880]);
+        notify({ kind: "info", title: `Bot ${t.side === "buy" ? "bought" : "sold"} ${t.lots} ${t.symbol} (${t.mode})`, body: `at ${px(t.entry, t.symbol)}, stop ${px(t.sl, t.symbol)}, target ${px(t.tp, t.symbol)}`, onClick: () => showTab("dash") });
+        playEvent("botOpen");
         $("#bot-card").classList.remove("live"); void $("#bot-card").offsetWidth; $("#bot-card").classList.add("live");
         tradeMoment();
       } else if (before === "open" && t.status === "closed") {
-        toast(`Bot closed #${t.id} ${t.symbol} · ${t.exit_reason} · ${signed(t.pnl)}${t.score != null ? ` · ${pts(t.score)} pts` : ""}`, t.pnl < 0);
-        if (!(alertsState.ok && (t.mode === "demo" || t.mode === "real"))) playBell(t.pnl >= 0);   // demo/real ring from /api/events
+        if (!(alertsState.ok && (t.mode === "demo" || t.mode === "real")))
+          notify({ kind: t.pnl >= 0 ? "tp" : "sl", title: `Bot closed #${t.id} (${t.mode})`, body: `${t.side} ${t.lots} ${t.symbol}, ${REASON[t.exit_reason] || t.exit_reason || "closed"}${t.score != null ? `, ${pts(t.score)} pts` : ""}`, amount: t.pnl, onClick: () => showTab("agent") });
+        if (!(alertsState.ok && (t.mode === "demo" || t.mode === "real"))) playEvent(t.pnl >= 0 ? "profit" : "loss");   // demo/real ring from /api/events
         state.cal.loaded = 0;                       // the calendar picks the closed trade up on its next look
       }
     }
@@ -805,7 +805,7 @@ function sizeTrade() {
 /* ---------- positions ---------- */
 async function loadPositions() {
   try {
-    const ps = await api("/api/positions"), box = $("#positions");
+    const ps = await getPositions(), box = $("#positions");
     $("#pos-count").textContent = ps.length ? `${ps.length} open` : ""; $("#open-count").textContent = ps.length;
     const seen = state.posSeen; state.posSeen = new Set(ps.map(p => p.ticket));
     guessCloses(ps);
@@ -849,8 +849,8 @@ async function loadProgress() {
   try { p = await api("/api/progress"); } catch (e) { return; }
   const prevStage = state.progress?.stage?.id;
   state.progress = p; state.mode = p.stage.mode;
-  if (p.event?.type === "promoted") { toast(`The bot moved up to ${p.event.to}.`); beep([660, 880, 1100]); }
-  if (p.event?.type === "demoted") { toast(`Drawdown limit hit. The bot moved back to ${p.event.to}.`, true); beep([520, 390]); }
+  if (p.event?.type === "promoted") { toast(`The bot moved up to ${p.event.to}.`); playEvent("promoted"); }
+  if (p.event?.type === "demoted") { toast(`Drawdown limit hit. The bot moved back to ${p.event.to}.`, true); playEvent("demoted"); }
   if (prevStage && prevStage !== p.stage.id) loadPlan();
   const idx = p.stages.findIndex(x => x.id === p.stage.id);
   const lock = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>`;
@@ -1004,6 +1004,7 @@ async function send(text) {
   }, 1000);
   try {
     const r = await api("/api/chat", { method: "POST", body: { text } }); pending.remove(); addMsg("assistant", r.reply, r.tools, true, r.backend); loadFacts();
+    if (state.tab !== "chat" || document.hidden) playEvent("hermes");
     if ((r.reply || "").startsWith("⚠")) brainStatus();       // set-up messages: refresh the status line
   }
   catch (e) { pending.remove(); addMsg("assistant", `Couldn't reach the assistant: ${e.message}`, null, true); }
@@ -1166,7 +1167,7 @@ function initFromSettings(keepSymbol = false) {
   bindSlider("#thr", "threshold", "", 2); bindSlider("#stake", "stake_pct", "% of balance", 2);
   if (!initFromSettings.bound) { $("#stake").addEventListener("change", () => setTimeout(loadPlan, 300)); initFromSettings.bound = true; }
   $$(".sym-txt").forEach(x => x.textContent = s.symbol); $("#days-txt").textContent = s.days_history;
-  loadBars(); updateDirty();
+  loadBars(); updateDirty(); syncSaved();
 }
 
 /* ---------- manual trading (UI by Chat B; the /api/manual/* backend is specced for Chat A in TWO_CHATS.md) ----------
@@ -1317,8 +1318,8 @@ async function manTrade(side) {
     const r = await api("/api/manual/order", { method: "POST", body });
     const d = man.q?.digits ?? 2, lv = r.ok && (r.sl || r.tp) ? `, TP ${fmt(r.tp, d)}, SL ${fmt(r.sl, d)}` : "";
     toast(r.ok ? `${orderText(side)} ${man.symbol} ${man.type === "market" ? `filled at ${fmt(r.price, d)}` : "placed"}${lv} · #${r.ticket}${r.note ? `. ${r.note}` : ""}` : `Order refused: ${r.comment}`, !r.ok || !!r.note);
-    beep(r.ok ? [660, 880] : [520, 390]);
-  } catch (e) { toast(e.message, true); }
+    playEvent(r.ok ? "orderOk" : "orderFail");
+  } catch (e) { toast(e.message, true); playEvent("orderFail"); }
   b.disabled = false; loadManPositions(); loadManOrders(); loadPositions();
 }
 $("#man-buy").onclick = () => manTrade("buy"); $("#man-sell").onclick = () => manTrade("sell");
@@ -1369,7 +1370,7 @@ $("#man-size").onclick = async () => {
 async function loadManPositions() {
   const tb = $("#man-pos tbody"), a = state.acct;
   if (a) setHTML($("#man-acct"), `<span>Balance <b>${fmt(a.balance)}</b></span><span>Equity <b>${fmt(a.equity)}</b></span><span>Margin <b>${fmt(a.margin)}</b></span><span>Free <b>${fmt(a.margin_free)}</b></span><span>Level <b>${a.margin_level ? Math.round(a.margin_level) + "%" : "–"}</b></span>`);
-  let ps; try { ps = await api("/api/positions"); } catch (e) { setHTML(tb, `<tr><td colspan="11" class="muted">${e.status === 503 ? "Open MT5 to see positions." : e.message}</td></tr>`); return; }
+  let ps; try { ps = await getPositions(); } catch (e) { setHTML(tb, `<tr><td colspan="11" class="muted">${e.status === 503 ? "Open MT5 to see positions." : e.message}</td></tr>`); return; }
   man.pos = ps;
   const sel = ps.filter(p => man.owner === "any" || p.owner === man.owner);
   const groups = { profit: sel.filter(p => p.profit > 0), loss: sel.filter(p => p.profit < 0), buys: sel.filter(p => p.side === "buy"), sells: sel.filter(p => p.side === "sell"), all: sel };
@@ -1514,7 +1515,7 @@ async function openManual() {
   realBanner(); renderKeysHint(); renderConn();
 }
 setInterval(() => {                               // only while the Manual tab is open: quote 1 s, positions 2 s, lists 3 s, history 15 s
-  if (state.tab !== "manual") return;
+  if (state.tab !== "manual" || document.hidden) return;
   man.tick++; loadManBars(); if (man.backend) loadManQuote(); else renderConn();
   if (man.tick % 2 === 0) { loadManPositions(); realBanner(); }
   if (man.tick % 3 === 0) { loadManQuotes(); loadManOrders(); if (man.auto) loadManAuto(); }
@@ -1569,7 +1570,8 @@ function renderConn() {
   if (el._k !== k) { el.className = `conn ${k}`; el._k = k; }
   if (el.lastChild.textContent !== txt) el.lastChild.textContent = txt;
   const block = k === "off" || k === "stale" || k === "closed";
-  man.blocked = block ? txt : null;
+  if ((k === "off" || k === "stale") && (man.connWas === "live" || man.connWas === "quiet")) feedLost();
+  man.connWas = k; man.blocked = block ? txt : null;
   $$("#man-buy, #man-sell").forEach(b => { b.classList.toggle("blocked", block); b.title = block ? `Can't trade: ${txt.toLowerCase()}` : ""; });
 }
 
@@ -1636,22 +1638,6 @@ function renderConn() {
    They press the same buttons, so the two-click confirm, one-click and the real-money check all still apply. */
 const pref = (k, dflt) => { try { const v = localStorage.getItem(k); return v == null ? dflt : v === "1"; } catch (e) { return dflt; } };
 const setPref = (k, on) => { try { localStorage.setItem(k, on ? "1" : "0"); } catch (e) {} };
-function renderKeysHint() {
-  setHTML($("#man-keys"), pref("manKeys", false)
-    ? `<kbd>B</kbd> buy <kbd>S</kbd> sell <kbd>Shift</kbd><kbd>X</kbd> close all <kbd>Esc</kbd> cancel <kbd>+</kbd><kbd>−</kbd> lots`
-    : `Keyboard shortcuts are off. <a href="#" data-goto="settings" data-sec="set-manual">Turn them on</a>`);
-}
-document.addEventListener("keydown", e => {
-  if (state.tab !== "manual" || !pref("manKeys", false) || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.target.closest("input, textarea, select, [contenteditable]") || $("#real-dlg").open) return;
-  const k = e.key.toLowerCase(), press = el => { if (!el || el.disabled) return; el.click(); if (el.animate && motionOK()) el.animate([{ transform: "scale(.96)" }, { transform: "none" }], { duration: 160 }); };
-  if (k === "b" && !e.shiftKey) { e.preventDefault(); press($("#man-buy")); }
-  else if (k === "s" && !e.shiftKey) { e.preventDefault(); press($("#man-sell")); }
-  else if (k === "x" && e.shiftKey) { e.preventDefault(); press($('#tab-manual [data-bulk="all"]')); }
-  else if (k === "escape") { disarm(); }
-  else if (k === "+" || k === "=") { e.preventDefault(); setVol(+$("#man-vol").value + volStep()); }
-  else if (k === "-" || k === "_") { e.preventDefault(); setVol(+$("#man-vol").value - volStep()); }
-});
 document.addEventListener("click", e => {          // links that open a Settings section
   const a = e.target.closest("[data-sec]"); if (!a) return; e.preventDefault();
   setTimeout(() => $(`#set-nav a[href="#${a.dataset.sec}"]`)?.click(), 60);
@@ -1684,27 +1670,24 @@ $("#bt-table").addEventListener("click", e => { const r = e.target.closest("tr")
 const selfClosed = new Set();
 const alertsState = { since: null, ok: null, prev: null, titleT: null };
 const ALERT = {
-  tp: { head: "Take profit hit", bell: true, cls: "tp" },
-  sl: { head: "Stop loss hit", bell: false, cls: "sl" },
+  tp: { head: "Take profit hit", cls: "tp" },
+  sl: { head: "Stop loss hit", cls: "sl" },
   be: { head: "Stop moved to break-even", tone: null, cls: "info" },
   trail: { head: "Trailing stop moved", tone: null, cls: "info" },
 };
 function showAlert(ev) {
-  const a = ALERT[ev.kind]; if (!a || !pref("tpslAlerts", true)) return;
+  let a = ALERT[ev.kind]; if (!a) return;
   if ((ev.kind === "trail") && alertsState.lastTrail === ev.ticket) return;   // one banner per trailing trade, not every step
   if (ev.kind === "trail") alertsState.lastTrail = ev.ticket;
+  if (a.cls === "info") playEvent("stopMoved");
+  else playEvent(ev.profit != null ? (ev.profit >= 0 ? "profit" : "loss") : ev.kind === "tp" ? "profit" : "loss");
+  if (ev.kind === "sl" && ev.profit > 0) a = { head: "Stop hit, in profit", cls: "tp" };   // a trailed or break-even stop
+  if (!pref("tpslAlerts", true)) return;
   const who = { bot: "Bot", hermes: "Hermes", you: "You" }[ev.owner] || "You";
-  const box = $("#alerts"), el = document.createElement("div");
-  el.className = `alert ${a.cls}`; el.setAttribute("role", "status");
-  el.innerHTML = `<div class="alert-body"><b>${a.head}${ev.guess ? " (probably)" : ""}</b>
-      <span><span class="${ev.side === "buy" ? "up" : "down"}">${ev.side === "buy" ? "▲" : "▼"}</span> ${ev.side || ""} ${ev.volume ?? ""} ${ev.symbol || ""}${ev.price ? ` at ${ev.price}` : ""}</span>
-      <small><span class="tag ${ev.owner || "you"}">${who}</span> #${ev.ticket ?? ""}</small></div>
-    ${ev.profit != null && a.cls !== "info" ? `<em class="num ${cls(ev.profit)}">${signed(ev.profit)}</em>` : ""}<button class="icon-btn" type="button" aria-label="Dismiss">×</button>`;
-  const bye = () => { if (el._bye) return; el._bye = true; el.classList.add("out"); setTimeout(() => el.remove(), 260); };
-  el.querySelector("button").onclick = bye; el.addEventListener("click", e => { if (!e.target.closest("button")) { bye(); showTab("manual"); } });
-  box.prepend(el); while (box.children.length > 4) box.lastElementChild.remove();
-  setTimeout(bye, a.cls === "info" ? 5000 : 8000);
-  if (a.bell != null) playBell(a.bell, true);
+  notify({ kind: a.cls === "info" ? "info" : a.cls, title: `${a.head}${ev.guess ? " (probably)" : ""}`,
+    html: `<span class="${ev.side === "buy" ? "up" : "down"}">${ev.side === "buy" ? "▲" : "▼"}</span> ${esc(ev.side || "")} ${ev.volume ?? ""} ${esc(ev.symbol || "")}${ev.price ? ` at ${ev.price}` : ""} <span class="tag ${esc(ev.owner || "you")}">${who}</span>`,
+    body: `${ev.side || ""} ${ev.volume ?? ""} ${ev.symbol || ""}${ev.price ? ` at ${ev.price}` : ""} (${who})`,
+    amount: ev.profit != null && a.cls !== "info" ? ev.profit : null, onClick: () => showTab("manual") });
   if (document.hidden && a.cls !== "info") {        // the taskbar title says it too while the window is in the background
     const t0 = document.title; document.title = `${a.head}: ${signed(ev.profit)}`;
     const back = () => { document.title = t0; document.removeEventListener("visibilitychange", back); };
@@ -1717,8 +1700,12 @@ async function pollEvents() {
     const r = await api(`/api/events${alertsState.since != null ? `?since=${alertsState.since}` : ""}`);
     alertsState.ok = true;
     if (alertsState.since != null) (r.events || []).forEach(ev => {
-      if (ev.kind === "close" && ev.profit != null && pref("tpslAlerts", true)) playBell(ev.profit >= 0, true);   // closed early or by hand: bell only
-      else showAlert(ev);
+      if (ev.kind === "close" && ev.profit != null) {           // closed early or by hand
+        playEvent(ev.profit >= 0 ? "profit" : "loss");
+        if (selfClosed.delete(ev.ticket) || !pref("tpslAlerts", true)) return;   // closed from this app: its own message already said so
+        const who = { bot: "Bot", hermes: "Hermes", you: "You" }[ev.owner] || "You";
+        notify({ kind: ev.profit >= 0 ? "tp" : "sl", title: `${who === "You" ? "Your" : `${who}'s`} trade closed`, body: `${ev.side || ""} ${ev.volume ?? ""} ${ev.symbol || ""}${ev.price ? ` at ${ev.price}` : ""}`, amount: ev.profit, onClick: () => showTab("manual") });
+      } else showAlert(ev);
     });
     alertsState.since = r.last_id;
   } catch (e) { if (e.status === 404) alertsState.ok = false; }
@@ -1878,11 +1865,10 @@ async function showReplay(t) {
 function openReplay(src, id) { rv.who = "all"; $$("#rv-who .chip").forEach(x => x.classList.toggle("active", x.dataset.w === "all")); rv.pending = `${src}-${id}`; showTab("review"); }
 function openReview() { loadReview(); loadWeek(); }
 $("#rv-list").addEventListener("click", e => { const r = e.target.closest("[data-k]"); const t = r && rv.trades.find(x => x.key === r.dataset.k); if (t) showReplay(t); });
-document.addEventListener("keydown", e => {        // ↑ ↓ step through the replay list
-  if (state.tab !== "review" || (e.key !== "ArrowDown" && e.key !== "ArrowUp") || e.target.closest("input, textarea, select")) return;
-  const list = filteredRv(), i = list.findIndex(t => t.key === rv.sel), n = list[Math.min(list.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)))];
-  if (n && n.key !== rv.sel) { e.preventDefault(); showReplay(n); $(`#rv-list [data-k="${n.key}"]`)?.scrollIntoView({ block: "nearest" }); }
-});
+function stepReplay(d) {                          // next / previous trade in the replay list (keys on the Keybinds page)
+  const list = filteredRv(), i = list.findIndex(t => t.key === rv.sel), n = list[Math.min(list.length - 1, Math.max(0, i + d))];
+  if (n && n.key !== rv.sel) { showReplay(n); $(`#rv-list [data-k="${n.key}"]`)?.scrollIntoView({ block: "nearest" }); }
+}
 [["#rv-days", "d", v => rv.days = +v], ["#rv-mode", "m", v => rv.mode = v], ["#rv-who", "w", v => rv.who = v]].forEach(([box, k, set]) =>
   $(box).addEventListener("click", e => {
     const b = e.target.closest(`[data-${k}]`); if (!b) return;
@@ -1943,7 +1929,7 @@ async function loadBackups() {
   let list; try { list = await api("/api/settings/backups"); bk.api = true; }
   catch (e) { bk.api = e.status !== 404; setHTML(box, `<p class="muted small">${bk.api ? e.message : "Saved backups wait for their backend (Chat A is building it). Restoring from a file and copying already work."}</p>`); $("#bk-now").disabled = !bk.api; return; }
   $("#bk-now").disabled = false;
-  setHTML(box, list.length ? `<table class="bk-table"><thead><tr><th>Backup</th><th>Saved</th><th>Size</th><th></th></tr></thead><tbody>${list.map(b => `<tr><td class="num">${b.name}</td><td>${String(b.time || "").replace("T", " ").slice(0, 16)}</td><td class="num">${b.size != null ? `${(b.size / 1024).toFixed(1)} KB` : ""}</td><td><button class="btn xs" type="button" data-restore="${b.name}">Restore</button></td></tr>`).join("")}</tbody></table>`
+  setHTML(box, list.length ? `<table class="bk-table"><thead><tr><th>Backup</th><th>Saved</th><th>Size</th><th></th></tr></thead><tbody>${list.map(b => `<tr><td class="num">${b.name}</td><td>${typeof b.time === "number" ? new Date(b.time * 1000).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : String(b.time || "").replace("T", " ").slice(0, 16)}</td><td class="num">${b.size != null ? `${(b.size / 1024).toFixed(1)} KB` : ""}</td><td><button class="btn xs" type="button" data-restore="${b.name}">Restore</button></td></tr>`).join("")}</tbody></table>`
     : `<p class="muted small">No backups yet. Back up now saves one.</p>`);
 }
 $("#bk-now").onclick = async () => {
@@ -1958,7 +1944,7 @@ $("#bk-list").addEventListener("click", async e => {          // two clicks: the
 });
 async function afterRestore(r) {
   toast(`Restored: ${r.changed?.length ?? 0} setting${r.changed?.length === 1 ? "" : "s"} changed${r.backup ? `; the old ones are in ${r.backup}` : ""}.`);
-  try { const s = await api("/api/status"); state.settings = s.settings; initFromSettings(true); updateDirty(); } catch (e) {}
+  try { const s = await api("/api/status"); state.settings = s.settings; keys.synced = snd.synced = false; initFromSettings(true); updateDirty(); } catch (e) {}
   loadBackups();
 }
 $("#bk-file-btn").onclick = () => $("#bk-file").click();
@@ -1992,10 +1978,8 @@ $("#bk-copy").onclick = async () => {
 };
 // Settings > Manual trading: this-PC switches
 (() => {
-  const k = $("#pref-keys"), t = $("#pref-tpsl");
-  k.checked = pref("manKeys", false); k.onchange = () => { setPref("manKeys", k.checked); renderKeysHint(); };
+  const t = $("#pref-tpsl");
   t.checked = pref("tpslAlerts", true); t.onchange = () => setPref("tpslAlerts", t.checked);
-  $("#bell-win").onclick = () => playBell(true, true); $("#bell-loss").onclick = () => playBell(false, true);
   $('#set-nav a[href="#set-backup"]').addEventListener("click", loadBackups);
   $$(".rail-btn").forEach(b => b.addEventListener("click", () => b.dataset.tab === "settings" && loadBackups()));
 })();
@@ -2042,23 +2026,608 @@ $("#setup-list").addEventListener("click", async e => {
   setTimeout(loadChecklist, 1500);
 });
 setTimeout(loadChecklist, 4000);
-setInterval(() => { setup.t++; if ($("#setup-drawer").classList.contains("open") || setup.t % 6 === 0) loadChecklist(); }, 5000);
+setInterval(() => { if (document.hidden) return; setup.t++; if ($("#setup-drawer").classList.contains("open") || setup.t % 6 === 0) loadChecklist(); }, 5000);
+
+/* ---------- saved objects: keybinds and sounds live in data/settings.json (the server keeps them and backups carry
+   them); the window's own storage holds a copy so they work before the first status answer ---------- */
+const esc = v => String(v ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const saved = {
+  timers: {},
+  local(key) { try { return JSON.parse(localStorage.getItem(key)) || null; } catch (e) { return null; } },
+  load(key) { const v = state.settings?.[key]; return v && typeof v === "object" && Object.keys(v).length ? v : saved.local(key); },
+  save(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+    if (!state.settings || !(key in state.settings)) return;
+    state.settings[key] = val;
+    clearTimeout(saved.timers[key]);            // one write per burst of slider moves
+    saved.timers[key] = setTimeout(() => api("/api/settings", { method: "POST", body: { [key]: val } }).catch(() => {}), 350);
+  },
+};
+function syncSaved() {                           // runs when settings arrive: the server's copy wins, else this PC's moves up
+  if (!state.settings) return;
+  if (snd.fresh && !snd.migrated) {              // first run of the Sounds page: an old "no bot sounds" choice starts it muted
+    snd.migrated = true;
+    const srv = state.settings.sounds;
+    if (!(srv && Object.keys(srv).length) && state.settings.alert_sound === false) { snd.data.master.mute = true; saved.save("sounds", snd.data); renderMute(); }
+  }
+  [["keybinds", keys], ["sounds", snd]].forEach(([key, obj]) => {
+    if (obj.synced || !(key in state.settings)) return;
+    obj.synced = true;
+    const srv = state.settings[key];
+    if (srv && typeof srv === "object" && Object.keys(srv).length) obj.adopt(srv);
+    else if (saved.local(key)) saved.save(key, obj.data);
+  });
+}
+
+/* ---------- keybinds: every shortcut can be changed on the Keys page. One dispatcher reads them; keys never fire
+   while you type in a box or while a dialog is open. ---------- */
+const KEY_GROUPS = {
+  manual: { label: "Trading on the Manual tab", on: false,
+    desc: "These place and close orders. Buy, Sell and the close buttons still ask twice unless one-click is on, and on a real account the first order still asks you to type REAL." },
+  app: { label: "Moving around", on: true, desc: "Switch tabs, realign charts, step through replays, mute. Safe to leave on." },
+};
+const TAB_NAME = { dash: "Market", manual: "Manual", agent: "Agent", review: "Review", train: "Train", quiz: "Quiz", chat: "Hermes", keys: "Keys", sounds: "Sounds", settings: "Settings" };
+function pressBtn(sel) {
+  const el = $(sel); if (!el || el.disabled) return;
+  el.click(); if (el.animate && motionOK()) el.animate([{ transform: "scale(.96)" }, { transform: "none" }], { duration: 160 });
+}
+function cancelArmed() {                         // Esc on the Manual tab: nothing waits for a second click any more
+  disarm();
+  $$("#tab-manual .bulk-btns .btn.armed").forEach(b => { b.classList.remove("armed"); b._html = null; });
+  clearTimeout(man.bulkT); if (man.chipArm != null) { clearTimeout(man.chipT); man.chipArm = null; }
+  loadManPositions();
+}
+function cycleSym(d) {
+  const list = state.settings?.symbols_watch || []; if (list.length < 2) return;
+  manPick(list[(list.indexOf(man.symbol) + d + list.length) % list.length]);
+}
+function realignHere() {
+  if (state.tab === "dash") realignChart(true);
+  else if (state.tab === "manual" && man.chart) { man.chart.priceScale("right").applyOptions({ autoScale: true }); man.chart.timeScale().scrollToRealTime(); }
+  else if (state.tab === "review" && rv.chart) { const t = rv.trades.find(x => x.key === rv.sel); if (t) showReplay(t); }
+}
+const KEY_ACTIONS = [
+  { id: "man.buy", group: "manual", tabs: ["manual"], label: "Buy", short: "Buy", key: "B", run: () => pressBtn("#man-buy") },
+  { id: "man.sell", group: "manual", tabs: ["manual"], label: "Sell", short: "Sell", key: "S", run: () => pressBtn("#man-sell") },
+  { id: "man.closeAll", group: "manual", tabs: ["manual"], label: "Close all", short: "Close all", key: "Shift+X", run: () => pressBtn('#tab-manual [data-bulk="all"]') },
+  { id: "man.closeProfit", group: "manual", tabs: ["manual"], label: "Close profitable", short: "Close +", key: "Shift+P", run: () => pressBtn('#tab-manual [data-bulk="profit"]') },
+  { id: "man.closeLoss", group: "manual", tabs: ["manual"], label: "Close negative", short: "Close −", key: "Shift+N", run: () => pressBtn('#tab-manual [data-bulk="loss"]') },
+  { id: "man.cancel", group: "manual", tabs: ["manual"], label: "Cancel what's waiting for a second click", short: "Cancel", key: "Escape", run: cancelArmed },
+  { id: "man.lotsUp", group: "manual", tabs: ["manual"], label: "One lot step more", short: "Lots +", key: "+", repeat: true, run: () => setVol(+$("#man-vol").value + volStep()) },
+  { id: "man.lotsDown", group: "manual", tabs: ["manual"], label: "One lot step less", short: "Lots −", key: "-", repeat: true, run: () => setVol(+$("#man-vol").value - volStep()) },
+  { id: "man.nextSym", group: "manual", tabs: ["manual"], label: "Next symbol", short: "Next sym", key: "]", run: () => cycleSym(1) },
+  { id: "man.prevSym", group: "manual", tabs: ["manual"], label: "Previous symbol", short: "Prev sym", key: "[", run: () => cycleSym(-1) },
+  { id: "man.market", group: "manual", tabs: ["manual"], label: "Order type: market", short: "Market", key: null, run: () => pressBtn('#man-type [data-type="market"]') },
+  { id: "man.limit", group: "manual", tabs: ["manual"], label: "Order type: limit", short: "Limit", key: null, run: () => pressBtn('#man-type [data-type="limit"]') },
+  { id: "man.stop", group: "manual", tabs: ["manual"], label: "Order type: stop", short: "Stop", key: null, run: () => pressBtn('#man-type [data-type="stop"]') },
+  ...Object.entries({ dash: "1", manual: "2", agent: "3", review: "4", train: "5", quiz: "6", chat: "7", keys: "8", sounds: "9", settings: "0" })
+    .map(([t, k]) => ({ id: `tab.${t}`, group: "app", label: `Go to ${TAB_NAME[t]}`, short: TAB_NAME[t], key: k, run: () => showTab(t) })),
+  { id: "chart.realign", group: "app", tabs: ["dash", "manual", "review"], label: "Realign the chart", short: "Realign", key: "R", run: realignHere },
+  { id: "log", group: "app", tabs: ["agent"], label: "Open or close the live log", short: "Log", key: "L", run: () => $("#log-drawer").classList.contains("open") ? closeLog() : openLog() },
+  { id: "review.next", group: "app", tabs: ["review"], label: "Next trade in the replay list", short: "Next", key: "ArrowDown", repeat: true, run: () => stepReplay(1) },
+  { id: "review.prev", group: "app", tabs: ["review"], label: "Previous trade in the replay list", short: "Prev", key: "ArrowUp", repeat: true, run: () => stepReplay(-1) },
+  { id: "hermes", group: "app", label: "Write to Hermes", short: "Hermes", key: "/", run: () => { showTab("chat"); setTimeout(() => $("#chat-input").focus(), 60); } },
+  { id: "mute", group: "app", label: "Mute or unmute every sound", short: "Mute", key: "M", run: () => toggleMute() },
+  { id: "setup", group: "app", label: "Open the setup checklist", short: "Setup", key: null, run: () => openSetup() },
+];
+const actById = id => KEY_ACTIONS.find(a => a.id === id);
+const RESERVED = { "Tab": "used to move between buttons", "Ctrl+C": "copy", "Ctrl+V": "paste", "Ctrl+X": "cut", "Ctrl+A": "select all",
+  "Ctrl+Z": "undo", "Ctrl+Y": "redo", "Ctrl+R": "reload", "Ctrl+Shift+R": "reload", "F5": "reload", "Ctrl+W": "close", "Ctrl+F": "find",
+  "Ctrl+P": "print", "Alt+F4": "close the window", "F11": "full screen", "F12": "developer tools", "Ctrl+Shift+I": "developer tools",
+  "Ctrl++": "zoom in", "Ctrl+-": "zoom out", "Ctrl+0": "zoom reset" };
+const CODE_BASE = { Minus: "-", Equal: "+", BracketLeft: "[", BracketRight: "]", Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/",
+  Backslash: "\\", Backquote: "`", NumpadAdd: "+", NumpadSubtract: "-", NumpadMultiply: "Num *", NumpadDivide: "Num /", NumpadDecimal: "Num .", NumpadEnter: "Enter", Space: "Space" };
+function comboOf(e) {                            // "Ctrl+Alt+Shift+Key": letters as printed on the key, the +/= key is always "+"
+  const k = e.key; if (!k || ["Shift", "Control", "Alt", "Meta", "CapsLock", "AltGraph", "OS"].includes(k)) return null;
+  let base;
+  if (/^Key[A-Z]$/.test(e.code)) base = k.length === 1 && /[a-z]/i.test(k) ? k.toUpperCase() : e.code.slice(3);
+  else if (/^Digit\d$/.test(e.code)) base = e.code.slice(5);
+  else if (/^Numpad\d$/.test(e.code)) base = `Num ${e.code.slice(6)}`;
+  else if (CODE_BASE[e.code]) base = CODE_BASE[e.code];
+  else base = k === " " ? "Space" : k.length === 1 ? k.toUpperCase() : k;
+  return `${e.ctrlKey || e.metaKey ? "Ctrl+" : ""}${e.altKey ? "Alt+" : ""}${e.shiftKey && base !== "+" ? "Shift+" : ""}${base}`;
+}
+const splitCombo = c => { const m = String(c).match(/^((?:Ctrl\+|Alt\+|Shift\+)*)(.+)$/); return { mods: m[1].split("+").filter(Boolean), base: m[2] }; };
+const KEY_NAME = { ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→", Escape: "Esc", "-": "−", Backspace: "⌫", Delete: "Del", PageUp: "PgUp", PageDown: "PgDn", Insert: "Ins" };
+const keyName = b => KEY_NAME[b] || b;
+const keyHTML = c => { const { mods, base } = splitCombo(c); return [...mods, keyName(base)].map(x => `<kbd>${esc(x)}</kbd>`).join(""); };
+const keyPlain = c => { const { mods, base } = splitCombo(c); return [...mods, keyName(base)].join("+"); };
+const overlap = (a, b) => !a.tabs || !b.tabs || a.tabs.some(t => b.tabs.includes(t));
+
+const keys = { data: null, capturing: null, undo: null, filter: "", flash: null, synced: false };
+function keysDefaults() {
+  return { bindings: Object.fromEntries(KEY_ACTIONS.map(a => [a.id, a.key])),
+           groups: { manual: pref("manKeys", KEY_GROUPS.manual.on), app: KEY_GROUPS.app.on } };   // manKeys: the old Manual-tab switch
+}
+keys.normalize = d => { const def = keysDefaults(); return { bindings: { ...def.bindings, ...(d?.bindings || {}) }, groups: { ...def.groups, ...(d?.groups || {}) } }; };
+keys.adopt = d => { keys.data = keys.normalize(d); renderKeys(); renderKeysHint(); };
+keys.data = keys.normalize(saved.load("keybinds"));
+const bindOf = a => keys.data.bindings[a.id] ?? null;
+
+document.addEventListener("keydown", e => {        // the one place shortcuts run
+  if (keys.capturing || e.defaultPrevented || document.querySelector("dialog[open]")) return;
+  if (e.target.closest?.("input, textarea, select, [contenteditable='true']")) return;
+  const combo = comboOf(e); if (!combo) return;
+  const a = KEY_ACTIONS.find(x => keys.data.groups[x.group] && bindOf(x) === combo && (!x.tabs || x.tabs.includes(state.tab)));
+  if (!a || (e.repeat && !a.repeat)) return;
+  e.preventDefault(); a.run();
+});
+function renderKeysHint() {                      // the line under the order ticket shows the keys as they are now
+  const el = $("#man-keys"); if (!el) return;
+  const show = ["man.buy", "man.sell", "man.closeAll", "man.cancel", "man.lotsUp", "man.lotsDown"].map(actById).filter(a => bindOf(a));
+  setHTML(el, keys.data.groups.manual
+    ? `${show.map(a => `<span class="kh">${keyHTML(bindOf(a))} ${esc(a.short.toLowerCase())}</span>`).join("")} <a href="#" data-goto="keys">change</a>`
+    : `Trading keys are off. <a href="#" data-goto="keys">Turn them on or change them</a>`);
+}
+const scopeText = a => !a.tabs ? "Anywhere" : `${a.tabs.map(t => TAB_NAME[t]).join(", ")} tab${a.tabs.length > 1 ? "s" : ""}`;
+function renderKeys() {
+  const box = $("#keys-groups"); if (!box) return;
+  const f = keys.filter.trim().toLowerCase();
+  const html = Object.entries(KEY_GROUPS).map(([g, G]) => {
+    const rows = KEY_ACTIONS.filter(a => a.group === g && (!f || `${a.label} ${scopeText(a)} ${bindOf(a) ? keyPlain(bindOf(a)) : ""}`.toLowerCase().includes(f)));
+    if (!rows.length) return "";
+    const on = keys.data.groups[g];
+    return `<div class="panel kg${on ? "" : " off"}" data-g="${g}">
+      <div class="panel-head"><h3>${G.label}</h3><label class="switch"><input type="checkbox" data-group="${g}"${on ? " checked" : ""}><span>${on ? "On" : "Off"}</span></label></div>
+      <p class="muted small kg-desc">${G.desc}</p>
+      <div class="kb-rows">${rows.map(a => { const b = bindOf(a), cap = keys.capturing === a.id;
+        return `<div class="kb-row${keys.flash === a.id ? " flash" : ""}" data-a="${a.id}">
+          <div class="kb-what"><b>${esc(a.label)}</b><span class="scope">${scopeText(a)}</span></div>
+          <button class="keycap-btn${b ? "" : " empty"}${cap ? " capturing" : ""}" type="button" data-bind="${a.id}" aria-label="Change the key for ${esc(a.label)}">${cap ? `<span class="cap-hint">Press a key…</span>` : b ? keyHTML(b) : `<span class="cap-hint">not set</span>`}</button>
+          <button class="icon-btn kb-reset" type="button" data-reset="${a.id}" title="Back to ${a.key ? esc(keyPlain(a.key)) : "no key"}"${b === a.key ? " hidden" : ""}>↺</button></div>`; }).join("")}</div></div>`;
+  }).join("");
+  setHTML(box, html || `<div class="empty-state"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg><div><b>Nothing matches “${esc(keys.filter)}”</b>Try an action (buy, close, replay) or a key (Shift, M).</div></div>`);
+  renderKeymap();
+  if (keys.capturing) $(`[data-bind="${keys.capturing}"]`)?.focus();
+}
+const KB_ROWS = [["`", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "+"], ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", "\\"],
+  ["A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'"], ["Z", "X", "C", "V", "B", "N", "M", ",", ".", "/"]];
+const KB_EXTRA = ["Escape", "Space", "ArrowLeft", "ArrowUp", "ArrowDown", "ArrowRight"];
+function renderKeymap() {                        // a small keyboard: lit keys do something, labelled with what
+  const box = $("#keymap"); if (!box) return;
+  const byBase = new Map();
+  KEY_ACTIONS.forEach(a => { const c = bindOf(a); if (!c) return; const { mods, base } = splitCombo(c); if (!byBase.has(base)) byBase.set(base, []); byBase.get(base).push({ a, mods }); });
+  const onMap = new Set([...KB_ROWS.flat(), ...KB_EXTRA]), extra = [...byBase.keys()].filter(b => !onMap.has(b));
+  const cap = b => {
+    const list = byBase.get(b) || [], top = list.find(x => x.a.group === "manual" && keys.data.groups.manual) || list.find(x => keys.data.groups[x.a.group]) || list[0];
+    const cls = !top ? "" : keys.data.groups[top.a.group] ? ` ${top.a.group}` : " off";
+    const tip = list.length ? list.map(x => `${keyPlain(bindOf(x.a))}: ${x.a.label}`).join("\n") : `${keyName(b)} is free`;
+    const mod = top ? top.mods.map(m => ({ Shift: "⇧", Ctrl: "Ctrl", Alt: "Alt" }[m])).join(" ") : "";
+    return `<button class="kcap${cls}${b === "Space" ? " wide" : ""}" type="button" data-cap="${esc(b)}" title="${esc(tip)}"><b>${esc(keyName(b))}</b>${top ? `<small>${mod ? `${mod} ` : ""}${esc(top.a.short)}${list.length > 1 ? ` +${list.length - 1}` : ""}</small>` : ""}</button>`;
+  };
+  setHTML(box, KB_ROWS.map((r, i) => `<div class="krow r${i}">${r.map(cap).join("")}</div>`).join("") + `<div class="krow r4">${[...KB_EXTRA, ...extra].map(cap).join("")}</div>`);
+}
+function keysNote(html, kind = "", undo = false) {
+  const el = $("#keys-note"); el.hidden = false; el.className = `keys-note ${kind}`;
+  el.innerHTML = `<span>${html}</span>${undo && keys.undo ? `<button class="btn xs" type="button" id="keys-undo">Undo</button>` : ""}`;
+  clearTimeout(keys.noteT); keys.noteT = setTimeout(() => { el.hidden = true; }, 9000);
+}
+function assign(id, combo) {
+  const a = actById(id); keys.undo = JSON.stringify(keys.data.bindings);
+  const clash = combo ? KEY_ACTIONS.filter(b => b.id !== id && bindOf(b) === combo && overlap(a, b)) : [];
+  clash.forEach(b => { keys.data.bindings[b.id] = null; });
+  keys.data.bindings[id] = combo; endCapture();
+  saved.save("keybinds", keys.data); keys.flash = id; renderKeys(); renderKeysHint();
+  clearTimeout(keys.flashT); keys.flashT = setTimeout(() => { keys.flash = null; renderKeys(); }, 1300);
+  if (clash.length) keysNote(`${keyHTML(combo)} was on ${clash.map(b => `<b>${esc(b.label)}</b>`).join(", ")}; ${clash.length > 1 ? "those have" : "that has"} no key now.`, "warn", true);
+  else keysNote(combo ? `<b>${esc(a.label)}</b> is now ${keyHTML(combo)}.` : `<b>${esc(a.label)}</b> has no key now.`, "", true);
+}
+function startCapture(id) {
+  endCapture(); keys.capturing = id; renderKeys();
+  keys.onKey = e => {
+    e.preventDefault(); e.stopPropagation();
+    const plain = !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
+    if (e.key === "Escape" && plain) { endCapture(); renderKeys(); return; }
+    if ((e.key === "Backspace" || e.key === "Delete") && plain) { assign(id, null); return; }
+    const combo = comboOf(e), btn = $(`[data-bind="${id}"]`);
+    if (!combo) { if (btn) btn.innerHTML = `<span class="cap-hint">${[e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift"].filter(Boolean).join(" + ")} + …</span>`; return; }
+    if (RESERVED[combo]) { keysNote(`${keyHTML(combo)} is ${RESERVED[combo]}. Pick another key.`, "warn"); return; }
+    assign(id, combo);
+  };
+  keys.onDown = ev => { if (!ev.target.closest?.(`[data-bind="${id}"]`)) { endCapture(); renderKeys(); } };
+  window.addEventListener("keydown", keys.onKey, true);
+  setTimeout(() => document.addEventListener("pointerdown", keys.onDown, true));
+}
+function endCapture() {
+  if (!keys.capturing) return;
+  window.removeEventListener("keydown", keys.onKey, true); document.removeEventListener("pointerdown", keys.onDown, true);
+  keys.capturing = null;
+}
+$("#keys-groups").addEventListener("click", e => {
+  const b = e.target.closest("[data-bind]");
+  if (b) { if (keys.capturing === b.dataset.bind) { endCapture(); renderKeys(); } else startCapture(b.dataset.bind); return; }
+  const r = e.target.closest("[data-reset]"); if (r) { const a = actById(r.dataset.reset); assign(a.id, a.key); }
+});
+$("#keys-groups").addEventListener("change", e => {
+  const g = e.target.dataset.group; if (!g) return;
+  keys.data.groups[g] = e.target.checked; saved.save("keybinds", keys.data); renderKeys(); renderKeysHint();
+  keysNote(`${KEY_GROUPS[g].label}: keys ${e.target.checked ? "on" : "off"}.`);
+});
+$("#keys-note").addEventListener("click", e => {
+  if (e.target.id !== "keys-undo" || !keys.undo) return;
+  keys.data.bindings = JSON.parse(keys.undo); keys.undo = null; saved.save("keybinds", keys.data); renderKeys(); renderKeysHint(); keysNote("Undone.");
+});
+$("#keys-find").addEventListener("input", e => { keys.filter = e.target.value; renderKeys(); });
+$("#keys-reset").onclick = () => {
+  const b = $("#keys-reset");
+  if (!b.classList.contains("armed")) { b.classList.add("armed", "danger-outline"); b.textContent = "Click again to reset"; clearTimeout(keys.resetT); keys.resetT = setTimeout(() => { b.classList.remove("armed", "danger-outline"); b.textContent = "Reset all keys"; }, 4000); return; }
+  clearTimeout(keys.resetT); b.classList.remove("armed", "danger-outline"); b.textContent = "Reset all keys";
+  keys.undo = JSON.stringify(keys.data.bindings); keys.data.bindings = keysDefaults().bindings;
+  saved.save("keybinds", keys.data); renderKeys(); renderKeysHint(); keysNote("Every key is back to its default.", "", true);
+};
+$("#keymap").addEventListener("click", e => {    // a lit key jumps to its action
+  const c = e.target.closest("[data-cap]"); if (!c) return;
+  const a = KEY_ACTIONS.find(x => bindOf(x) && splitCombo(bindOf(x)).base === c.dataset.cap);
+  if (!a) { keysNote(`${keyHTML(c.dataset.cap)} is free. Click the key next to any action and press it.`); return; }
+  if (keys.filter) { keys.filter = ""; $("#keys-find").value = ""; }
+  keys.flash = a.id; renderKeys(); $(`.kb-row[data-a="${a.id}"]`)?.scrollIntoView({ block: "center", behavior: motionOK() ? "smooth" : "auto" });
+  clearTimeout(keys.flashT); keys.flashT = setTimeout(() => { keys.flash = null; renderKeys(); }, 1300);
+});
+
+/* ---------- sounds: every sound the app makes is set on the Sounds page. Built-in sounds are made by the app
+   (Web Audio), your own files are kept in data/sounds/ by the server. Pitch moves a built-in sound without changing
+   its speed; on your own files it works like a record (lower = slower), which is how the loss bell was made. ---------- */
+function envTone(c, d, t, { f, type = "sine", peak = .2, a = .004, dec = .3, f2 = null, fT = .05 }) {
+  if (f >= c.sampleRate / 2) return 0;           // above what this context can play
+  const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.setValueAtTime(f, t);
+  if (f2) o.frequency.exponentialRampToValueAtTime(Math.max(20, f2), t + fT);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec);
+  o.connect(g); g.connect(d); o.start(t); o.stop(t + a + dec + .03); return a + dec;
+}
+function noiseHit(c, d, t, { dur = .012, hp = 3000, lp = 0, peak = .05 }) {
+  const len = Math.max(1, Math.floor(c.sampleRate * dur)), buf = c.createBuffer(1, len, c.sampleRate), ch = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const n = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+  n.buffer = buf; f.type = lp ? "lowpass" : "highpass"; f.frequency.value = Math.min(lp || hp, c.sampleRate / 2 - 100); g.gain.value = peak;
+  n.connect(f); f.connect(g); g.connect(d); n.start(t); return dur;
+}
+const notes = (c, d, t, list, r, L, o = {}) => { list.forEach((f, i) => envTone(c, d, t + i * .16 * L, { f: f * r, peak: .18, a: .02, dec: .2 * L, ...o })); return (list.length - 1) * .16 * L + .22 * L; };
+const VOICES = {
+  bell: { label: "Bell", note: "small, bright bell", len: .9, play(c, d, t, r, L) {
+    const f0 = 1318.5 * r; let end = 0;
+    [[1, 1, .9], [2.76, .42, .42], [5.4, .2, .22], [8.93, .09, .12]].forEach(([k, amp, dec]) => { end = Math.max(end, envTone(c, d, t, { f: f0 * k, peak: .26 * amp, a: .003, dec: dec * L })); });
+    noiseHit(c, d, t, { hp: 3000 * Math.min(r, 3), peak: .05 }); return end; } },
+  chime: { label: "Chime", note: "two rising notes", len: .38, play: (c, d, t, r, L) => notes(c, d, t, [660, 880], r, L) },
+  rise: { label: "Rise", note: "three rising notes", len: .54, play: (c, d, t, r, L) => notes(c, d, t, [660, 880, 1100], r, L) },
+  drop: { label: "Drop", note: "two falling notes", len: .38, play: (c, d, t, r, L) => notes(c, d, t, [520, 390], r, L) },
+  coin: { label: "Coin", note: "quick two-tone ding", len: .5, play(c, d, t, r, L) {
+    envTone(c, d, t, { f: 987.8 * r, type: "square", peak: .06, a: .002, dec: .07 * L });
+    return .075 * L + envTone(c, d, t + .075 * L, { f: 1318.5 * r, type: "square", peak: .06, a: .002, dec: .42 * L }); } },
+  pop: { label: "Pop", note: "soft bubble pop", len: .1, play: (c, d, t, r, L) => envTone(c, d, t, { f: 1100 * r, f2: 320 * r, fT: .06 * L, peak: .32, a: .003, dec: .1 * L }) },
+  tick: { label: "Tick", note: "tiny click", len: .03, play(c, d, t, r, L) {
+    noiseHit(c, d, t, { dur: .006 * L, hp: 3500 * Math.min(r, 3), peak: .18 }); return envTone(c, d, t, { f: 2400 * r, peak: .1, a: .001, dec: .025 * L }); } },
+  knock: { label: "Knock", note: "two wooden knocks", len: .28, play(c, d, t, r, L) {
+    [0, .15 * L].forEach(dt => { envTone(c, d, t + dt, { f: 190 * r, f2: 150 * r, fT: .08, peak: .5, a: .002, dec: .12 * L }); noiseHit(c, d, t + dt, { dur: .03, lp: 900 * r, peak: .25 }); });
+    return .28 * L; } },
+  gong: { label: "Gong", note: "low, long ring", len: 3.2, play(c, d, t, r, L) {
+    const f0 = 147 * r; let end = 0;
+    [[1, 1, 3.2], [1.004, .6, 3], [1.47, .55, 2.4], [2.09, .45, 1.9], [2.56, .3, 1.5], [3.14, .22, 1.1], [4.18, .12, .8]]
+      .forEach(([k, amp, dec]) => { end = Math.max(end, envTone(c, d, t, { f: f0 * k, peak: .2 * amp, a: .012, dec: dec * L })); });
+    noiseHit(c, d, t, { dur: .02, lp: 600 * r, peak: .2 }); return end; } },
+  alarm: { label: "Alarm", note: "urgent two-tone", len: .84, play(c, d, t, r, L) {
+    for (let i = 0; i < 6; i++) envTone(c, d, t + i * .14 * L, { f: (i % 2 ? 660 : 880) * r, type: "square", peak: .07, a: .005, dec: .11 * L });
+    return .84 * L; } },
+};
+const SOUND_BASE = { on: true, sound: "bell", pitch: 0, volume: .8, tone: 1, length: 1 };
+const SOUND_EVENTS = [
+  { id: "profit", label: "Trade closed in profit", short: "profit", desc: "Take profit hit, or closed early or by hand in profit: yours, the bot's and Hermes'.", def: { volume: .8 } },
+  { id: "loss", label: "Stop loss hit or losing close", short: "loss", desc: "Starts as the profit bell, two octaves deeper and softer.", def: { pitch: -24, volume: 1, tone: .43, length: 2.2 } },
+  { id: "botOpen", label: "Bot opened a trade", short: "bot opens", def: { sound: "chime", volume: .7 } },
+  { id: "orderOk", label: "Your order filled or was placed", short: "order filled", def: { sound: "coin", volume: .6 } },
+  { id: "orderFail", label: "Your order was refused", short: "order refused", def: { sound: "drop", volume: .7 } },
+  { id: "stopMoved", label: "Stop moved to break-even or trailed", short: "stop moved", desc: "Once per trade for trailing, so it doesn't tick on every step.", def: { on: false, sound: "tick", volume: .6 } },
+  { id: "promoted", label: "Bot moved up a stage", short: "stage up", def: { sound: "rise", volume: .7 } },
+  { id: "demoted", label: "Bot moved back a stage", short: "stage down", desc: "Its drawdown limit was hit.", def: { sound: "gong", volume: .8, tone: .6 } },
+  { id: "feedLost", label: "MT5 or the price feed went quiet", short: "feed lost", desc: "MT5 closed or lost its connection, or prices stopped while the market is open.", def: { sound: "alarm", volume: .5, tone: .7 } },
+  { id: "hermes", label: "Hermes replied", short: "Hermes", desc: "Only when you're not looking at the Hermes tab.", def: { sound: "pop", volume: .6 } },
+];
+const SND_MASTER = { volume: .8, mute: false, gap: .45, quiet: { on: false, from: "23:00", to: "07:00" } };
+const evDef = id => ({ ...SOUND_BASE, ...SOUND_EVENTS.find(e => e.id === id).def });
+const snd = { data: null, next: 0, synced: false, lostAt: 0 };
+snd.fresh = !saved.local("sounds");
+snd.normalize = d => {
+  const m = d?.master || {}, out = { master: { ...SND_MASTER, ...m, quiet: { ...SND_MASTER.quiet, ...(m.quiet || {}) } }, events: {} };
+  SOUND_EVENTS.forEach(e => {
+    const c = { ...evDef(e.id), ...(d?.events?.[e.id] || {}) };
+    if (!String(c.sound).startsWith("custom:") && !VOICES[c.sound]) c.sound = evDef(e.id).sound;
+    ["pitch", "volume", "tone", "length"].forEach(k => { c[k] = Number.isFinite(+c[k]) ? +c[k] : evDef(e.id)[k]; });
+    out.events[e.id] = c;
+  });
+  return out;
+};
+snd.adopt = d => { snd.data = snd.normalize(d); renderMute(); if (state.tab === "sounds") renderSounds(true); };
+snd.data = snd.normalize(saved.load("sounds"));
+
+function quietNow() {
+  const q = snd.data.master.quiet; if (!q.on) return false;
+  const mins = s => { const [h, m] = String(s).split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+  const d = new Date(), now = d.getHours() * 60 + d.getMinutes(), a = mins(q.from), b = mins(q.to);
+  return a === b ? false : a < b ? now >= a && now < b : now >= a || now < b;
+}
+function voiceChain(c, dest, cfg, vol) {          // volume, then (below full) a low-pass for the tone
+  const g = c.createGain(); g.gain.value = vol; g.connect(dest);
+  if (cfg.tone >= .995) return g;
+  const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = .5;
+  lp.frequency.value = Math.min(300 * Math.pow(20000 / 300, cfg.tone), c.sampleRate / 2 - 100); lp.connect(g); return lp;
+}
+function renderInto(c, d, t, cfg, buf) {         // plays the sound into d at t; returns its length in seconds
+  const r = 2 ** (cfg.pitch / 12);
+  if (buf) {
+    const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = r;
+    const full = buf.duration / r, len = full * Math.min(1, cfg.length);
+    if (cfg.length < 1) {                         // shorter: fade out instead of cutting
+      const g = c.createGain(); g.gain.setValueAtTime(1, t + Math.max(0, len - .06)); g.gain.linearRampToValueAtTime(0.0001, t + len);
+      s.connect(g); g.connect(d); s.start(t); s.stop(t + len + .02);
+    } else { s.connect(d); s.start(t); }
+    return len;
+  }
+  return (VOICES[cfg.sound] || VOICES.bell).play(c, d, t, r, cfg.length);
+}
+async function playSound(cfg, { queue = false, vol = null, evId = null } = {}) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const c = audioCtx; let buf = null;
+    if (String(cfg.sound).startsWith("custom:")) { buf = await customBuffer(cfg.sound.slice(7)); if (!buf) cfg = { ...cfg, sound: evId ? evDef(evId).sound : "bell" }; }
+    const t = queue ? Math.max(c.currentTime + .01, snd.next || 0) : c.currentTime + .01;
+    if (queue) snd.next = t + snd.data.master.gap;          // two things at once ring one after the other
+    return renderInto(c, voiceChain(c, c.destination, cfg, vol ?? cfg.volume * snd.data.master.volume), t, cfg, buf);
+  } catch (e) { return 0; }
+}
+function playEvent(id) {
+  const cfg = snd.data?.events?.[id], m = snd.data?.master;
+  if (!cfg?.on || !m || m.mute || quietNow()) return;
+  playSound(cfg, { queue: true, evId: id });
+}
+const preview = (cfg, evId) => playSound(cfg, { vol: cfg.volume * snd.data.master.volume, evId });   // always plays: it's a test
+function feedLost() { const now = Date.now(); if (now - snd.lostAt < 30000) return; snd.lostAt = now; playEvent("feedLost"); }
+function toggleMute(force) {
+  const m = snd.data.master; m.mute = force ?? !m.mute; saved.save("sounds", snd.data); renderMute();
+  if ($("#snd-mute")) $("#snd-mute").checked = m.mute;
+  toast(m.mute ? "Every sound is muted." : "Sounds are back on.");
+}
+function renderMute() {
+  const m = snd.data.master, q = !m.mute && quietNow(), pill = $("#mute-pill");
+  pill.hidden = !m.mute && !q;
+  $("#mute-txt").textContent = m.mute ? "Muted" : `Quiet till ${m.quiet.to}`;
+  pill.title = m.mute ? "Sounds are muted: click to turn them back on" : `Quiet hours: no sounds until ${m.quiet.to}. Click to open Sounds.`;
+  const qn = $("#snd-quiet-now"); if (qn) qn.hidden = !quietNow();
+}
+$("#mute-pill").onclick = () => { if (snd.data.master.mute) toggleMute(false); else showTab("sounds"); };
+setInterval(renderMute, 30000); renderMute();
+
+/* your own sounds: kept by the server (data/sounds/); decoded once, then reused */
+const lib = { list: [], bufs: new Map(), api: null };
+const b64 = buf => { const u = new Uint8Array(buf); let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+const fmtSize = n => n == null ? "" : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(1)} MB`;
+async function customBuffer(id) {
+  if (lib.bufs.has(id)) return lib.bufs.get(id);
+  const row = lib.list.find(r => r.id === id); if (!row) return null;
+  try {
+    const ab = await (await fetch(row.url || `/api/sounds/${encodeURIComponent(id)}`)).arrayBuffer();
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const buf = await audioCtx.decodeAudioData(ab); lib.bufs.set(id, buf); return buf;
+  } catch (e) { return null; }
+}
+async function libLoad() {
+  try { lib.list = await api("/api/sounds"); lib.api = true; } catch (e) { lib.api = e.status === 404 ? false : lib.api; }
+  if (state.tab === "sounds") { renderLib(); renderSounds(true); }
+}
+setTimeout(libLoad, 3000);                        // so an event set to your own sound can play it
+async function addSounds(files) {
+  if (lib.api === false) { toast("Adding your own sounds needs the newest server. Restart the app after it updates.", true); return; }
+  let added = 0;
+  for (const f of files) {
+    if (f.size > 5 * 1024 * 1024) { toast(`${f.name} is ${(f.size / 1048576).toFixed(1)} MB; the limit is 5 MB.`, true); continue; }
+    let data, buf;
+    try { data = await f.arrayBuffer(); audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); buf = await audioCtx.decodeAudioData(data.slice(0)); }
+    catch (e) { toast(`${f.name} couldn't be read as a sound.`, true); continue; }
+    try {
+      const row = await api("/api/sounds", { method: "POST", body: { name: f.name.replace(/\.[^.]+$/, "").slice(0, 40) || "sound", type: f.type || "", data: b64(data) } });
+      lib.bufs.set(row.id, buf); added++;
+      toast(`Added “${row.name}” (${buf.duration.toFixed(1)} s). Pick it for any event, or use "Use for…" below.`);
+    } catch (e) { toast(`${f.name}: ${e.message}`, true); }
+  }
+  if (added) await libLoad();
+}
+function renderLib() {
+  const box = $("#snd-lib-list"); if (!box) return;
+  $("#snd-lib-store").textContent = lib.api ? "kept in data/sounds/ on this PC" : lib.api === false ? "needs the newest server" : "";
+  setHTML(box, lib.list.map(r => {
+    const buf = lib.bufs.get(r.id), used = SOUND_EVENTS.filter(e => snd.data.events[e.id].sound === `custom:${r.id}`).map(e => e.short);
+    return `<div class="lib-row" data-id="${esc(r.id)}">
+      <button class="icon-btn play" type="button" data-lplay="${esc(r.id)}" aria-label="Play ${esc(r.name)}">▶</button>
+      <div class="lib-name"><b data-rename="${esc(r.id)}" title="Click to rename">${esc(r.name)}</b><small>${buf ? `${buf.duration.toFixed(1)} s, ` : ""}${fmtSize(r.size)}${used.length ? `, used for ${used.join(", ")}` : ""}</small></div>
+      <select data-use="${esc(r.id)}" aria-label="Use ${esc(r.name)} for"><option value="">Use for…</option>${SOUND_EVENTS.map(e => `<option value="${e.id}">${e.label}</option>`).join("")}</select>
+      <button class="btn xs danger-outline" type="button" data-ldel="${esc(r.id)}">Delete</button></div>`; }).join("")
+    || `<p class="muted small lib-empty">No sounds of your own yet.</p>`);
+  lib.list.filter(r => !lib.bufs.has(r.id)).forEach(r => customBuffer(r.id).then(b => { if (b) { clearTimeout(lib.rt); lib.rt = setTimeout(renderLib, 80); } }));
+}
+function soundOptions(sel) {
+  const mine = lib.list.map(r => `<option value="custom:${esc(r.id)}"${sel === `custom:${r.id}` ? " selected" : ""}>${esc(r.name)}</option>`).join("");
+  const missing = String(sel).startsWith("custom:") && !lib.list.some(r => `custom:${r.id}` === sel) ? `<option value="${esc(sel)}" selected>${lib.api === null ? "your sound (loading…)" : "missing sound: plays the default"}</option>` : "";
+  return `<optgroup label="Built-in">${Object.entries(VOICES).map(([k, v]) => `<option value="${k}"${sel === k ? " selected" : ""}>${v.label}</option>`).join("")}</optgroup>`
+    + (mine ? `<optgroup label="Your sounds">${mine}</optgroup>` : "") + missing;
+}
+const isCustom = c => String(c.sound).startsWith("custom:");
+const pitchTxt = p => p === 0 ? "0" : `${p > 0 ? "+" : "−"}${Math.abs(p)}${Math.abs(p) % 12 === 0 ? ` (${Math.abs(p) / 12} oct ${p > 0 ? "up" : "down"})` : ""}`;
+const toneTxt = t => t >= .995 ? "full" : t >= .7 ? "bright" : t >= .45 ? "warm" : t >= .25 ? "soft" : "muffled";
+const lenTxt = (L, c) => isCustom(c) && L >= 1 ? "full" : `×${L.toFixed(2).replace(/0$/, "")}`;
+const sameCfg = (c, id) => { const d = evDef(id); return ["on", "sound", "pitch", "volume", "tone", "length"].every(k => String(c[k]) === String(d[k])); };
+const ctl = (k, label, min, max, step, v) => `<label class="snd-ctl"><span>${label} <em data-v="${k}"></em></span><input type="range" min="${min}" max="${max}" step="${step}" value="${v}" data-k="${k}"></label>`;
+function renderSounds(force = false) {
+  const m = snd.data.master;
+  $("#snd-mute").checked = m.mute; $("#snd-vol").value = m.volume; $("#snd-gap").value = m.gap;
+  $("#snd-quiet").checked = m.quiet.on; $("#snd-qfrom").value = m.quiet.from; $("#snd-qto").value = m.quiet.to;
+  masterLabels();
+  const box = $("#snd-rows");
+  if (force || !box.childElementCount) {
+    box.innerHTML = SOUND_EVENTS.map(e => { const c = snd.data.events[e.id];
+      return `<div class="snd-row" data-e="${e.id}">
+        <label class="switch" title="Play this sound"><input type="checkbox" data-k="on"${c.on ? " checked" : ""} aria-label="${e.label}: on or off"></label>
+        <div class="snd-what"><b>${e.label}</b>${e.desc ? `<small>${e.desc}</small>` : ""}</div>
+        <canvas class="snd-wave" aria-hidden="true"></canvas>
+        <select data-k="sound" aria-label="Sound for ${e.label}">${soundOptions(c.sound)}</select>
+        <div class="snd-ctls">${ctl("pitch", "Pitch", -24, 24, 1, c.pitch)}${ctl("volume", "Volume", 0, 1, .01, c.volume)}${ctl("tone", "Tone", 0, 1, .01, c.tone)}${ctl("length", "Length", .25, 3, .05, c.length)}</div>
+        <span class="snd-acts"><button class="icon-btn play" type="button" data-play aria-label="Play ${e.label}">▶</button><button class="icon-btn" type="button" data-sreset title="Back to this event's default">↺</button></span></div>`; }).join("");
+    $$("#snd-rows .snd-row").forEach(r => { rowLabels(r); waveSoon(r); });
+  }
+  if (!$("#snd-voices").childElementCount) setHTML($("#snd-voices"), Object.entries(VOICES).map(([k, v]) => `<button class="voice" type="button" data-voice="${k}"><span class="v-play">▶</span><b>${v.label}</b><small>${v.note}</small></button>`).join(""));
+  renderLib(); renderMute();
+}
+function masterLabels() {
+  const m = snd.data.master;
+  $("#snd-vol-v").textContent = `${Math.round(m.volume * 100)}%`; $("#snd-gap-v").textContent = `${m.gap.toFixed(2)} s`;
+  $("#tab-sounds").classList.toggle("muted-all", m.mute);
+}
+function rowLabels(row) {
+  const id = row.dataset.e, c = snd.data.events[id];
+  row.querySelector('[data-v="pitch"]').textContent = pitchTxt(c.pitch);
+  row.querySelector('[data-v="volume"]').textContent = `${Math.round(c.volume * 100)}%`;
+  row.querySelector('[data-v="tone"]').textContent = toneTxt(c.tone);
+  row.querySelector('[data-v="length"]').textContent = lenTxt(c.length, c);
+  row.classList.toggle("off", !c.on); row.querySelector("[data-sreset]").hidden = sameCfg(c, id);
+}
+const waveT = new WeakMap();
+function waveSoon(row) { clearTimeout(waveT.get(row)); waveT.set(row, setTimeout(() => drawWave(row), 120)); }
+async function drawWave(row) {                   // the sound as it will play: rendered offline, 3 s window, same scale for all
+  const cv = row.querySelector("canvas"), id = row.dataset.e, cfg = snd.data.events[id]; if (!cv || !cv.clientWidth) return;
+  let src = cfg, buf = null;
+  if (isCustom(cfg)) { buf = await customBuffer(cfg.sound.slice(7)); if (!buf) src = { ...cfg, sound: evDef(id).sound }; }
+  const r = 2 ** (cfg.pitch / 12), dur = Math.min(3, (buf ? buf.duration / r * Math.min(1, cfg.length) : (VOICES[src.sound] || VOICES.bell).len * cfg.length) + .05);
+  const sr = 12000, oc = new OfflineAudioContext(1, Math.max(1, Math.ceil(sr * dur)), sr);
+  renderInto(oc, voiceChain(oc, oc.destination, src, cfg.volume), 0, src, buf);
+  let data; try { data = (await oc.startRendering()).getChannelData(0); } catch (e) { return; }
+  const dpr = window.devicePixelRatio || 1, W = cv.width = Math.round(cv.clientWidth * dpr), H = cv.height = Math.round(cv.clientHeight * dpr);
+  const g = cv.getContext("2d"), mid = H / 2, per = sr * 3 / W, scale = (H / 2 - 1) / .5;
+  g.clearRect(0, 0, W, H); g.fillStyle = cfg.on ? "#c9a24a" : "#4a525c";
+  for (let x = 0; x < W; x++) {
+    const a = Math.floor(x * per), b = Math.min(data.length, Math.floor((x + 1) * per)); if (a >= data.length) break;
+    let mn = 0, mx = 0; for (let i = a; i < b; i++) { const v = data[i]; if (v < mn) mn = v; else if (v > mx) mx = v; }
+    const top = Math.max(0, mid - mx * scale), bot = Math.min(H, mid - mn * scale); g.fillRect(x, top, 1, Math.max(1, bot - top));
+  }
+}
+(() => {                                          // Sounds page > Notifications
+  const r = $("#note-secs"), v = $("#note-secs-v"), show = () => { v.textContent = `${noteSecs().toFixed(1)} s`; };
+  r.value = noteSecs(); show();
+  r.oninput = () => { try { localStorage.setItem("noteSecs", r.value); } catch (e) {} show(); };
+  const sc = $("#pref-screen"); sc.checked = pref("screenNotes", true); sc.onchange = () => setPref("screenNotes", sc.checked);
+  $("#pref-desktop").onchange = async e => {
+    try { state.settings = { ...state.settings, ...(await api("/api/settings", { method: "POST", body: { desktop_alerts: e.target.checked } })) }; }
+    catch (err) { toast(err.message, true); }
+  };
+  $("#note-test").onclick = () => {
+    notify({ kind: "tp", title: "Take profit hit", html: `<span class="down">▼</span> sell 0.05 XAUUSD at 2,671.48 <span class="tag you">You</span>`, amount: 14.25, screen: false });
+    setTimeout(() => notify({ kind: "sl", title: "Stop loss hit", html: `<span class="up">▲</span> buy 0.02 XAUUSD at 2,663.68 <span class="tag bot">Bot</span>`, amount: -12.6, screen: false }), 160);
+    setTimeout(() => notify({ kind: "info", title: "Bot bought 0.02 XAUUSD (paper)", body: "at 2,673.26, stop 2,666.76, target 2,683.66", screen: false }), 320);
+  };
+})();
+function syncNoteSettings() {
+  const has = !!state.settings && "desktop_alerts" in state.settings;
+  $("#desk-row").hidden = !has; if (has) $("#pref-desktop").checked = !!state.settings.desktop_alerts;
+}
+function openSounds() { renderSounds(); syncNoteSettings(); if (lib.api !== true) libLoad(); else lib.list.length && renderLib(); }
+const saveSounds = () => saved.save("sounds", snd.data);
+$("#snd-rows").addEventListener("input", e => {
+  const k = e.target.dataset.k, row = e.target.closest(".snd-row"); if (!k || !row || e.target.type !== "range") return;
+  snd.data.events[row.dataset.e][k] = +e.target.value; rowLabels(row); waveSoon(row); saveSounds();
+});
+$("#snd-rows").addEventListener("change", e => {   // letting go of a control plays the result once
+  const k = e.target.dataset.k, row = e.target.closest(".snd-row"); if (!k || !row) return;
+  const id = row.dataset.e, c = snd.data.events[id];
+  if (k === "on") c.on = e.target.checked; else if (k === "sound") c.sound = e.target.value; else c[k] = +e.target.value;
+  rowLabels(row); waveSoon(row); saveSounds(); if (k === "sound") renderLib();
+  if (k !== "on" || c.on) preview(c, id);
+});
+$("#snd-rows").addEventListener("click", e => {
+  const row = e.target.closest(".snd-row"); if (!row) return;
+  const id = row.dataset.e;
+  if (e.target.closest("[data-play]")) { preview(snd.data.events[id], id); pulse(e.target.closest("[data-play]")); }
+  if (e.target.closest("[data-sreset]")) { snd.data.events[id] = evDef(id); saveSounds(); renderSounds(true); preview(snd.data.events[id], id); renderLib(); }
+});
+function pulse(el) { if (el?.animate && motionOK()) el.animate([{ transform: "scale(.88)" }, { transform: "none" }], { duration: 220, easing: "cubic-bezier(.34,1.56,.64,1)" }); }
+$("#snd-mute").onchange = e => toggleMute(e.target.checked);
+$("#snd-vol").oninput = e => { snd.data.master.volume = +e.target.value; masterLabels(); saveSounds(); };
+$("#snd-vol").onchange = () => preview(snd.data.events.profit, "profit");
+$("#snd-gap").oninput = e => { snd.data.master.gap = +e.target.value; masterLabels(); saveSounds(); };
+$("#snd-gap").onchange = () => { snd.next = 0; ["profit", "loss"].forEach(id => playSound(snd.data.events[id], { queue: true, vol: snd.data.events[id].volume * snd.data.master.volume, evId: id })); };
+$("#snd-quiet").onchange = e => { snd.data.master.quiet.on = e.target.checked; saveSounds(); renderMute(); };
+$("#snd-qfrom").onchange = e => { snd.data.master.quiet.from = e.target.value || "23:00"; saveSounds(); renderMute(); };
+$("#snd-qto").onchange = e => { snd.data.master.quiet.to = e.target.value || "07:00"; saveSounds(); renderMute(); };
+$("#snd-reset").onclick = () => {
+  const b = $("#snd-reset");
+  if (!b.classList.contains("armed")) { b.classList.add("armed", "danger-outline"); b.textContent = "Click again to reset"; clearTimeout(snd.resetT); snd.resetT = setTimeout(() => { b.classList.remove("armed", "danger-outline"); b.textContent = "Reset all sounds"; }, 4000); return; }
+  clearTimeout(snd.resetT); b.classList.remove("armed", "danger-outline"); b.textContent = "Reset all sounds";
+  snd.data = snd.normalize({}); saveSounds(); renderSounds(true); toast("Every sound is back to its default. Your own files are still there.");
+};
+$("#snd-voices").addEventListener("click", e => {
+  const v = e.target.closest("[data-voice]"); if (!v) return;
+  preview({ ...SOUND_BASE, sound: v.dataset.voice }); v.classList.add("playing"); setTimeout(() => v.classList.remove("playing"), 500);
+});
+$("#snd-add").onclick = () => $("#snd-file").click();
+$("#snd-file").onchange = e => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) addSounds(fs); };
+(() => {                                          // drag files onto the box
+  const z = $("#snd-drop"), on = e => { e.preventDefault(); z.classList.add("over"); }, off = () => z.classList.remove("over");
+  z.addEventListener("dragenter", on); z.addEventListener("dragover", on); z.addEventListener("dragleave", off);
+  z.addEventListener("drop", e => { e.preventDefault(); off(); const fs = [...(e.dataTransfer?.files || [])]; if (fs.length) addSounds(fs); });
+})();
+$("#snd-lib-list").addEventListener("click", async e => {
+  const p = e.target.closest("[data-lplay]"); if (p) { preview({ ...SOUND_BASE, sound: `custom:${p.dataset.lplay}` }); pulse(p); return; }
+  const d = e.target.closest("[data-ldel]");
+  if (d) {
+    if (!d.classList.contains("armed")) { d.classList.add("armed"); d.textContent = "Click again"; setTimeout(() => { d.classList.remove("armed"); d.textContent = "Delete"; }, 4000); return; }
+    const id = d.dataset.ldel;
+    try { await api(`/api/sounds/${encodeURIComponent(id)}`, { method: "DELETE" }); } catch (err) { toast(err.message, true); return; }
+    const back = SOUND_EVENTS.filter(ev => snd.data.events[ev.id].sound === `custom:${id}`);
+    back.forEach(ev => { snd.data.events[ev.id].sound = evDef(ev.id).sound; });
+    if (back.length) saveSounds();
+    lib.bufs.delete(id); toast(`Deleted.${back.length ? ` ${back.map(ev => ev.label).join(", ")} ${back.length > 1 ? "are" : "is"} back to the built-in sound.` : ""}`);
+    await libLoad(); renderSounds(true); return;
+  }
+  const n = e.target.closest("[data-rename]");
+  if (n && !n.querySelector("input")) {
+    const id = n.dataset.rename, old = n.textContent;
+    n.innerHTML = `<input value="${esc(old)}" maxlength="40" aria-label="New name">`; const i = n.querySelector("input"); i.focus(); i.select();
+    const done = async ok => {
+      i.onblur = null; const name = i.value.trim();
+      if (ok && name && name !== old) { try { await api(`/api/sounds/${encodeURIComponent(id)}/rename`, { method: "POST", body: { name } }); await libLoad(); renderSounds(true); return; } catch (err) { toast(err.message, true); } }
+      n.textContent = old;
+    };
+    i.onkeydown = ev => { if (ev.key === "Enter") { ev.preventDefault(); done(true); } if (ev.key === "Escape") { ev.preventDefault(); done(false); } };
+    i.onblur = () => done(true);
+  }
+});
+$("#snd-lib-list").addEventListener("change", e => {
+  const s = e.target.closest("[data-use]"); if (!s || !s.value) return;
+  const ev = s.value, id = s.dataset.use; s.value = "";
+  snd.data.events[ev].sound = `custom:${id}`; snd.data.events[ev].on = true; saveSounds(); renderSounds(true);
+  preview(snd.data.events[ev], ev); toast(`“${SOUND_EVENTS.find(x => x.id === ev).label}” now plays your sound.`);
+});
 
 /* ---------- boot ---------- */
 initChart();
 moveRailInd(); document.fonts?.ready.then(moveRailInd);
+/* polling: while the window is hidden (minimised or behind others), only what feeds alerts and sounds keeps going
+   (bot trades, account, positions, events); screens nobody can see wait and catch up the moment you come back */
+const seen = () => !document.hidden;
+let bgTick = 0;
 pollStatus().then(() => { pollAccount(); loadPositions(); brainStatus(); pollBot(); });
-setInterval(pollBot, 2000);
-loadProgress(); setInterval(loadProgress, 5000);
-setInterval(pollStatus, 2000);
+setInterval(() => { bgTick++; if (seen() || bgTick % 2 === 0) pollBot(); }, 2000);            // hidden: every 4 s
+loadProgress(); setInterval(() => { if (seen() || bgTick % 6 === 0) loadProgress(); }, 5000);   // hidden: stage moves still get noticed
+setInterval(() => seen() && pollStatus(), 2000);
 setInterval(pollAccount, 2000);
-setInterval(() => { if (state.tab === "dash" && !state.replay.view) loadBars(); loadPositions(); }, 3000);   // positions feed the top bar on every tab
-setInterval(() => state.tab === "dash" && state.replay.view && loadReplay(), 400);
-setInterval(() => state.tab === "agent" && (pollAgentLog(), loadJournal()), 2000);
-setInterval(() => state.tab === "agent" && loadPlan(), 10000);
-setInterval(() => state.tab === "train" && pollTrainLog(), 1500);
-setInterval(() => state.tab === "quiz" && loadQuiz(), 400);
-setInterval(brainStatus, 15000);
+setInterval(() => { if (seen() && state.tab === "dash" && !state.replay.view) loadBars(); loadPositions(); }, 3000);   // positions feed the top bar and alerts
+setInterval(() => seen() && state.tab === "dash" && state.replay.view && loadReplay(), 400);
+setInterval(() => seen() && state.tab === "agent" && (pollAgentLog(), loadJournal()), 2000);
+setInterval(() => seen() && state.tab === "agent" && loadPlan(), 10000);
+setInterval(() => seen() && state.tab === "train" && pollTrainLog(), 1500);
+setInterval(() => seen() && state.tab === "quiz" && loadQuiz(), 400);
+setInterval(() => seen() && brainStatus(), 15000);
+document.addEventListener("visibilitychange", () => {   // back in front: everything catches up at once
+  if (document.hidden) return;
+  pollStatus(); pollAccount(); loadPositions(); pollBot(); loadProgress(); brainStatus(); renderSessions(); renderMute();
+  if (state.tab === "dash" && !state.replay.view) loadBars();
+  if (state.tab === "manual") openManual();
+});
 
 /* ---------- quiz school (reinforcement learning on pro setups) ---------- */
 const quiz = { chart: null, series: null, lines: [], labels: null, picked: new Set(), cells: null, streaks: "",
@@ -2303,7 +2872,7 @@ $("#quiz-report-copy").onclick = async () => {
   }
   catch (e) { ta.value = report.md; ta.hidden = false; ta.focus(); ta.select(); toast("Press Ctrl+C to copy the selected report, then paste it to Claude."); }
 };
-setInterval(() => state.tab === "quiz" && Date.now() - report.loaded > 30000 && loadReport(false), 5000);
+setInterval(() => !document.hidden && state.tab === "quiz" && Date.now() - report.loaded > 30000 && loadReport(false), 5000);
 
 /* wipe: two clicks (the first arms it for 4 seconds) so it can't happen by accident */
 let wipeTimer = null;

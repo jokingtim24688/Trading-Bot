@@ -10,7 +10,7 @@
 ## Communities (subsystems)
 | Community | Page | Core nodes | Lane |
 |---|---|---|---|
-| Desktop app (tabs Market, Manual, Agent, Review, Train, Quiz, Hermes, Settings) | [app.md](app.md) | `app/main.py`, `app/server.py`, `app/static/*` | B: static + window · A: server, jobs, settings |
+| Desktop app (tabs Market, Manual, Agent, Review, Train, Quiz, Hermes, Keys, Sounds, Settings) | [app.md](app.md) | `app/main.py`, `app/server.py`, `app/static/*` | B: static + window · A: server, jobs, settings |
 | Hermes assistant + memory | [hermes.md](hermes.md) | `app/brain.py`, `app/memory.py`, `app/tools.py`, `hermes/` | A |
 | M1 trading agent | [agent.md](agent.md) | `agent/run.py`, `agent/features.py`, `agent/model.py`, `agent/risk.py`, `agent/broker.py` | A |
 | MT5 MCP bridge | [mcp.md](mcp.md) | `mcp_server/mt5_mcp.py` | A |
@@ -76,4 +76,6 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: 11 features UI: real-account guard, connection pill, drag SL/TP, keys, BE/trailing, TP/SL alerts, Review tab
   (you vs bot, trade replay, weekly summary), settings backup, setup checklist; see app.md "11 features".
 - 2026-09-24: Hermes tab shows Hermes Agent vs local model (header + each reply), agent_step, still-working timer, 3 settings.
+- 2026-09-24: Keys page (rebind everything, keyboard map), Sounds page (10 events, pitch/volume/tone/length, your own files),
+  custom top-right notifications (in app + on screen), speed pass; see app.md "Keys, Sounds, notifications, speed".
 <!-- Chat B: add new lines above this marker -->

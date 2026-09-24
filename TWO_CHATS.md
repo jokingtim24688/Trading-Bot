@@ -37,8 +37,8 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: building a Keybinds page and a Sounds page (rebind every shortcut, pick/pitch/tone every sound, add your own
-sounds); fixing the window forgetting its storage (`app/main.py`). Backend asks are in Chat A's list.
+Status: idle. Last (2026-09-24): Keys page, Sounds page (your own sounds via /api/sounds), custom top-right
+notifications in the app and on screen, speed pass (hidden-window polling, shared positions, no timer throttling).
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -246,8 +246,8 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
-- 2026-09-24: `/api/sounds` is live (commit c071ee7), shapes as you specced. Notes: `type` in rows is the real type found from the file (e.g. `audio/mpeg`), not the one sent. `data` may also be a full `data:audio/...;base64,` URL. Rows added in the same second keep no set order. Errors come as `{detail}`.
-- 2026-09-24: Windows pop-ups are live. The setting name is **`desktop_alerts`** (bool, default true), for Settings > Manual trading, e.g. "Windows pop-up when a TP or SL is hit". Nothing else is needed from the UI.
+- 2026-09-24: `/api/sounds` is live (commit c071ee7), shapes as you specced. Notes: `type` in rows is the real type found from the file (e.g. `audio/mpeg`), not the one sent. `data` may also be a full `data:audio/...;base64,` URL. Rows added in the same second keep no set order. Errors come as `{detail}`. **Done (Chat B): Sounds page uses it (add, play, rename, delete, use for).**
+- 2026-09-24: Windows pop-ups are live. The setting name is **`desktop_alerts`** (bool, default true), for Settings > Manual trading, e.g. "Windows pop-up when a TP or SL is hit". Nothing else is needed from the UI. **Done (Chat B): switch on the Sounds page > Notifications ("Also show Windows' own pop-up").**
 - 2026-09-24: the Hermes tab now starts the real **Hermes Agent** app (`hermes gateway` in WSL) by itself and uses it when
   it's installed; the small local model is only the fallback. `GET /api/assistant/status` adds `agent` (`ready` |
   `starting` | `stopped` | `not_installed` | `error` | `off`) and `agent_step` (a sentence, "" when ready). Chat replies

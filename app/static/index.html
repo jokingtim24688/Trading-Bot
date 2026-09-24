@@ -30,6 +30,8 @@
   <button class="rail-btn" data-tab="train" title="Train"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-3 3 2 5-6"/><circle cx="19" cy="8" r="1.5"/></svg><span>Train</span></button>
   <button class="rail-btn" data-tab="quiz" title="Quiz school"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.5.2-.8.6-.8 1.1v.5M12 16.5h.01"/></svg><span>Quiz</span></button>
   <button class="rail-btn" data-tab="chat" title="Assistant"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Hermes</span></button>
+  <button class="rail-btn" data-tab="keys" title="Keybinds: change what every key does"><svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg><span>Keys</span></button>
+  <button class="rail-btn" data-tab="sounds" title="Sounds: pick, pitch and add your own"><svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg><span>Sounds</span></button>
   <button class="rail-btn" data-tab="settings" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Settings</span></button>
 </nav>
 
@@ -43,6 +45,7 @@
   </div>
   <div class="sessions" id="sessions" title="Market sessions in broker server time, the hours the bot's inputs use"></div>
   <div class="strip-right">
+    <button id="mute-pill" class="pill mute-pill" type="button" hidden title="Sounds are off: click to turn them back on"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span id="mute-txt">Muted</span></button>
     <button id="setup-pill" class="pill setup-pill" type="button" hidden aria-controls="setup-drawer" title="What's left to set up"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18h2"/></svg>Setup <b id="setup-count" class="num">0/0</b></button>
     <span id="agent-pill" class="pill">agent idle</span>
     <div class="sys-wrap">
@@ -436,6 +439,66 @@
     </div>
   </section>
 
+  <!-- KEYBINDS -->
+  <section id="tab-keys" class="tab">
+    <div class="panel keys-top">
+      <div class="keys-intro">
+        <div><h3>Keybinds</h3>
+          <p class="muted small">Click a key on the right of any action, then press the new key (with Ctrl, Alt or Shift if you like). <kbd>Esc</kbd> cancels, <kbd>Backspace</kbd> clears it. Keys never fire while you're typing in a box.</p></div>
+        <div class="keys-tools"><input id="keys-find" type="search" placeholder="Find an action or a key" autocomplete="off" spellcheck="false"><button class="btn" id="keys-reset" type="button">Reset all keys</button></div>
+      </div>
+      <div class="keymap" id="keymap" aria-label="Keyboard map: which keys do something"></div>
+      <div class="keymap-legend"><span class="klg manual">Trading</span><span class="klg app">Moving around</span><span class="klg off">Group switched off</span><span class="muted small">Click a lit key to jump to its action.</span></div>
+      <p id="keys-note" class="keys-note" role="status" hidden></p>
+    </div>
+    <div id="keys-groups" class="keys-groups"></div>
+  </section>
+
+  <!-- SOUNDS -->
+  <section id="tab-sounds" class="tab">
+    <div class="panel snd-master">
+      <div class="panel-head"><h3>Sounds and notifications</h3><label class="switch"><input type="checkbox" id="snd-mute"><span>Mute every sound</span></label></div>
+      <div class="snd-master-grid">
+        <label class="snd-ctl"><span>Master volume <em id="snd-vol-v"></em></span><input type="range" id="snd-vol" min="0" max="1" step="0.01"></label>
+        <label class="snd-ctl"><span>Gap between back-to-back sounds <em id="snd-gap-v"></em></span><input type="range" id="snd-gap" min="0" max="1.5" step="0.05"></label>
+        <div class="snd-quiet"><label class="switch"><input type="checkbox" id="snd-quiet"><span>Quiet hours</span></label>
+          <span class="row gap"><span class="muted small">from</span><input type="time" id="snd-qfrom"><span class="muted small">to</span><input type="time" id="snd-qto"></span>
+          <span id="snd-quiet-now" class="tag quiet-now" hidden>quiet right now</span></div>
+        <button class="btn" id="snd-reset" type="button">Reset all sounds</button>
+      </div>
+      <p class="muted small">Every change saves by itself and plays once so you hear it. The play buttons always play, even when muted or in quiet hours.</p>
+    </div>
+    <div class="panel snd-notes">
+      <div class="panel-head"><h3>Notifications</h3><button class="btn xs" id="note-test" type="button">Show a test</button></div>
+      <div class="note-set">
+        <label class="snd-ctl"><span>Each one stays for <em id="note-secs-v"></em></span><input type="range" id="note-secs" min="0.6" max="6" step="0.1"></label>
+        <label class="check"><input type="checkbox" id="pref-tpsl"> Take profit, stop loss and closed-trade notifications</label>
+        <label class="check"><input type="checkbox" id="pref-screen"> Pop up at the top right of the screen when the app isn't in front</label>
+        <label class="check" id="desk-row" hidden><input type="checkbox" id="pref-desktop"> Also show Windows' own pop-up (bottom right)</label>
+      </div>
+      <p class="muted small">They show at the top right, several at once, each new one below the others. Hover one to keep it open; click it to close it.</p>
+    </div>
+    <div class="panel snd-events">
+      <div class="panel-head"><h3>When it plays</h3><span class="muted small">pitch in semitones: −12 is one octave down, +12 one octave up</span></div>
+      <div id="snd-rows" class="snd-rows"></div>
+    </div>
+    <div class="two-even snd-bottom">
+      <div class="panel snd-lib">
+        <div class="panel-head"><h3>Your sounds</h3><span id="snd-lib-store" class="muted small"></span></div>
+        <div class="dropzone" id="snd-drop">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+          <div><b>Drop sound files here</b>or <button class="linklike" id="snd-add" type="button">choose files</button>. WAV, MP3, OGG, M4A or FLAC, up to 5 MB each. Then pick them for any event above.</div>
+          <input type="file" id="snd-file" accept="audio/*,.wav,.mp3,.ogg,.m4a,.aac,.flac,.webm" multiple hidden>
+        </div>
+        <div id="snd-lib-list" class="snd-lib-list"></div>
+      </div>
+      <div class="panel snd-builtins">
+        <div class="panel-head"><h3>Built-in sounds</h3><span class="muted small">made by the app, so they never go missing</span></div>
+        <div id="snd-voices" class="snd-voices"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- SETTINGS -->
   <section id="tab-settings" class="tab">
     <div class="set-layout">
@@ -455,7 +518,6 @@
           <label>MT5 terminal path (optional)<input name="terminal_path" placeholder="C:\Program Files\MetaTrader 5\terminal64.exe"></label>
           <label>Point size of symbol<input name="point" type="number" step="any"></label>
           <label>History to download<span class="u" data-u="days"><input name="days_history" type="number"></span></label>
-          <label class="check"><input type="checkbox" name="alert_sound"> Play a sound when the bot opens or closes a trade</label>
           <label class="check"><input type="checkbox" name="practice"> Practice mode on Paper and Replay</label>
           <span class="help">Trades the model's best ~10% of readings instead of the confidence threshold, so Paper and Replay produce trades to learn from.</span>
           <label class="check"><input type="checkbox" name="auto_promote_demo"> Move from Paper to Demo automatically when the Paper gate is passed</label>
@@ -483,11 +545,7 @@
           <label>Move the stop to break-even after (0 = off)<span class="u" data-u="points"><input name="manual_be_points" type="number" min="0" step="10"></span></label>
           <label>Trailing stop distance (0 = off)<span class="u" data-u="points"><input name="manual_trail_points" type="number" min="0" step="10"></span></label>
           <span class="help span-all">Used for every new manual order; change them per order in the ticket or per trade in Positions. The app moves the stop for you, even with the Manual tab closed.</span>
-          <label class="check"><input type="checkbox" id="pref-keys"> Keyboard shortcuts on the Manual tab</label>
-          <span class="help"><kbd>B</kbd> buy, <kbd>S</kbd> sell, <kbd>Shift</kbd>+<kbd>X</kbd> close all, <kbd>Esc</kbd> cancel, <kbd>+</kbd>/<kbd>−</kbd> lots. Buy, Sell and Close all still ask twice unless one-click is on.</span>
-          <label class="check"><input type="checkbox" id="pref-tpsl"> Bell when a trade closes, and a banner when a take profit or stop loss is hit</label>
-          <span class="help">For every trade: yours, the bot's and Hermes'. A profit rings a bright bell; a stop loss or any loss rings the same bell, deeper (two octaves down). This PC only.
-            <span class="bell-test"><button class="btn xs" type="button" id="bell-win">Play profit bell</button><button class="btn xs" type="button" id="bell-loss">Play loss bell</button></span></span>
+          <p class="set-link span-all">Keyboard shortcuts are on the <a href="#" data-goto="keys">Keys page</a>. Every sound (pitch, volume, your own files) and how notifications behave are on the <a href="#" data-goto="sounds">Sounds page</a>.</p>
         </fieldset>
         <fieldset class="panel" id="set-quiz"><legend>Quiz school<small>how the practice quiz runs</small></legend>
           <label>Question creators when Build quiz is pressed (0 = up to 10)<span class="u" data-u="creators"><input name="quiz_workers" type="number" min="0" max="16"></span></label>
@@ -550,7 +608,7 @@
   <p class="muted small">Optional steps can wait. Reopen this list any time from Setup in the top bar.</p>
 </aside>
 
-<div id="alerts" class="alerts" aria-live="polite"></div>
+
 
 <dialog id="real-dlg" class="dlg glass" aria-labelledby="real-h">
   <form method="dialog">
@@ -561,7 +619,7 @@
   </form>
 </dialog>
 
-<div id="toast" class="toast glass" role="status" aria-live="polite"></div>
+<div id="notes" class="notes" aria-live="polite"></div>
 <script src="/static/app.js"></script>
 </body>
 </html>

@@ -782,4 +782,37 @@ Each chat writes only in its own section below, and adds new entries just above 
   about twice as long, has its tinny top rolled off (low-pass at 1.8 kHz) and is a little louder so it doesn't sound
   weaker. A custom sound file plays at quarter speed for a loss. Re-rendered the WAV for the user.
 
+### 2026-09-24: Keys page, Sounds page, custom notifications, speed pass
+- The user asked for a separate keybind page, custom sounds with pitch and every other sound setting, notifications at
+  the top right (custom, several at once, newest below, fading after 1.2 s, animations kept), and for everything to be
+  as optimised as it can be. Backend asks went into Chat A's list the moment they came up (settings keys + sound files,
+  a `sync_bot_ledger` throttle, `desktop_alerts` off by default); Chat A built the first in c071ee7.
+- Keys page (new rail tab): every shortcut listed by group (Trading on the Manual tab, off by default; Moving around, on)
+  with a scope tag; click a key, press the new one (Ctrl/Alt/Shift allowed), Esc cancels, Backspace clears; a key
+  already used where it would clash moves over and the old action shows "no key" with Undo; copy/paste/reload and
+  similar keys are refused; search; reset one or all; a keyboard map lights the keys in use (click one to jump to it).
+  New actions: tabs 1-0, realign chart (R), live log (L), write to Hermes (/), mute (M), next/previous symbol ([ ]),
+  order type, close profitable/negative. One dispatcher runs them; never while typing or with a dialog open. Saved in
+  `data/settings.json` (`keybinds`), so backups carry them.
+- Sounds page (new rail tab): 10 events (profit, loss, bot opened, order filled, refused, stop moved, stage up/down,
+  feed lost, Hermes replied), each with on/off, sound, pitch (±24 semitones), volume, tone and length, a live waveform
+  of exactly what will play, play and reset; master volume, mute everything, the gap between back-to-back sounds, quiet
+  hours; 10 built-in sounds made by the app; your own files (drop or choose; WAV/MP3/OGG/M4A/FLAC up to 5 MB, kept in
+  `data/sounds/` by the server) with rename, delete and "Use for". Every change saves and plays once. `M` or the Muted
+  pill in the top bar toggles mute. The old `alert_sound` switch left Settings (false starts the page muted once).
+- Notifications: one custom stack at the top right for every message (orders, closes, TP/SL, bot trades, errors):
+  several at once, each new one below the others, 1.2 s each (changeable), a thin timer line, hover keeps one open,
+  click closes, slide-in, fade-out and the rest glide up. When the app isn't in front the same cards pop up at the top
+  right of the screen in a small always-on-top window that never takes focus (`app/main.py` + `app/static/notify.html`).
+  Settings on the Sounds page, including Chat A's `desktop_alerts` (Windows' own pop-up, bottom right).
+- Speed: while the window is hidden only bot trades, account, positions and events keep polling (everything else waits
+  and catches up on return); the Market and Manual tabs share one positions request; WebView2 no longer slows timers
+  while minimised, so alerts and sounds stay on time; the window keeps its storage between restarts (pywebview's
+  private mode wiped it every time).
+- Fixed on the way: backup times showed as raw numbers.
+- Tested in the sandbox against Chat A's real routes: rebinding, clashes and undo, reserved keys, keys driving the app,
+  mute pill, sound rows and waveforms, pitch saved to the server, upload, use-for, delete, notification stacking and
+  timing, the on-screen pop-up page, hidden-window polling, earlier suites again: 0 errors. The pop-up window itself
+  needs Windows (pywebview); it can't run in the cloud.
+
 <!-- Chat B: add new entries above this line -->

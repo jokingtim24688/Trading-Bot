@@ -119,3 +119,22 @@
 - Trade-finish bell: `playBell(win)` (synth struck-bar bell; loss = two octaves down, low-passed, longer), custom file
   `app/static/sounds/profit.wav|mp3` (`bell.buf`); used by `showAlert`, `pollEvents` "close" events and `pollBot`
   (paper/replay only when the feed is on); test buttons `#bell-win` / `#bell-loss`.
+
+## Keys, Sounds, notifications, speed (2026-09-24, Chat B)
+- Keys page `#tab-keys`: `KEY_ACTIONS` (id, group manual/app, tabs, default key, run), `KEY_GROUPS`, `keys.data`
+  (`{bindings, groups}`, setting `keybinds`), `comboOf(e)` ("Ctrl+Alt+Shift+Key"), one keydown dispatcher, capture flow
+  `startCapture`/`assign` (clash -> the other action unbound, Undo), `RESERVED`, `renderKeymap` (lit keys), `renderKeysHint`
+  (Manual ticket line). `saved.load/save` + `syncSaved()` keep `keybinds`/`sounds` in settings.json with a local copy.
+- Sounds page `#tab-sounds`: `VOICES` (bell, chime, rise, drop, coin, pop, tick, knock, gong, alarm; Web Audio synth),
+  `SOUND_EVENTS` (10 events) + `snd.data` (`{master: {volume, mute, gap, quiet}, events}`, setting `sounds`),
+  `playEvent(id)` (queue, mute, quiet hours), `preview()`, `renderInto` (pitch as frequency for synth, playbackRate for
+  files; tone = low-pass; length), `drawWave` (OfflineAudioContext, 3 s window), your files via `/api/sounds`
+  (`lib`, `customBuffer`, `addSounds`). Top-bar `#mute-pill`.
+- Notifications `#notes`: `notify({title, body|html, kind, amount, onClick})`, `toast()` wraps it; `removeNote` fades
+  and glides the rest up (FLIP); `noteSecs` (default 1.2 s); when `appAway()`, `window.pywebview.api.notify()` sends the
+  card to `app/static/notify.html` in the always-on-top pop-up window (`Popups` in `app/main.py`: notify/fit/idle, placed
+  at the top right of screen 0, `focus=False`).
+- Speed: `getPositions()` (one in-flight request, 0.8 s reuse, POSTs clear it); boot intervals skip hidden screens
+  (`seen()`), bot/progress slow down while hidden, `visibilitychange` catches up; WebView2 flags in `app/main.py`
+  (`--disable-background-timer-throttling` etc.); `webview.start(private_mode=False, storage_path=data/webview)`.
+
