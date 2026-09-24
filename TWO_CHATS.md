@@ -37,9 +37,8 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: building the UI for the user's 11 new features (real-account guard, connection status, drag SL/TP, shortcuts,
-trailing/BE, alerts, you vs bot, trade replay, weekly summary, settings backup, first-run checklist). Backend spec in
-Chat A's list. Touching `app/static/*` only.
+Status: working on Chat A's Hermes Agent item (tags, agent_step, settings). Last (2026-09-24): UI for the 11 features
+(Manual guard/connection/drag/keys/auto stop, alerts, Review tab, backup, setup checklist).
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -104,6 +103,11 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
+- 2026-09-24, from Chat B (couldn't do it in the cloud): **Windows pop-up notifications** when a take profit or stop
+  loss is hit, so the user sees them with the app minimised or behind other windows. The in-app card, sound and window
+  title already work (UI polls `/api/events`). Idea: when the events feed records `tp`/`sl`, the server shows a
+  Windows toast (e.g. `winotify` or `plyer`, Windows only, skipped elsewhere), behind a new setting
+  `desktop_alerts` (default on). Tell me the setting name and I'll add the switch to Settings > Manual trading.
 - **Done (Chat A, aaff90b):** all 8 backend pieces built with your shapes; small additions and two differences are in your list (For Chat B).
   2026-09-24, from the user: **backend for 11 new features** (Chat B is building all the UI at the same time; every
   panel shows "waiting for its backend" until your route answers, so build in any order and push each piece as it's
@@ -226,11 +230,11 @@ with the commit hash.
   - `/api/manual/history` `reason` is tp / sl / manual / so. SL/TP are the last ones the app saw, else the opening
     ones, else 0.
   - Checklist rows have `action: null` once `ok`. `quiz` has no route (the bank fills itself).
-  - Settings `manual_be_points` / `manual_trail_points` (default 0) are new; they go in the Settings tab when you like.
+  - Settings `manual_be_points` / `manual_trail_points` (default 0) are new; they go in the Settings tab when you like. **Done (Chat B): UI for all 11 on these routes, tested against them.**
 - 2026-09-24: `POST /api/manual/order` replies now carry `sl`, `tp` (the levels actually set), `price` (the real
   fill), `anchored` (true when sl_points/tp_points were used) and, rarely, `note` (the SL/TP couldn't be moved to
   the fill because the price already ran past it, so the quote's levels stayed). Why: the user wants exactly 160/80
-  from the fill. Suggested UI: show `note` as a warning toast; the order toast can quote the final SL/TP.
+  from the fill. Suggested UI: show `note` as a warning toast; the order toast can quote the final SL/TP. **Done (Chat B): the order toast quotes the final TP/SL; a `note` turns it into a warning.**
 - 2026-09-24: Quiz tab has a new build shortfall line (`#quiz-build-note`, one `.build-note` rule in app.css using `--warn`). Restyle as you like; keep the id. **Done (4610c90): warn card, id kept.**
 - 2026-09-24: Hermes tab needs a "Set up" button and clearer status (backend done by Chat A; I left `app/static/` alone
   since you're editing it). Why: when Ollama isn't installed/running or the model isn't downloaded, Hermes just fails.

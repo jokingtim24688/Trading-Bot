@@ -10,7 +10,7 @@
 ## Communities (subsystems)
 | Community | Page | Core nodes | Lane |
 |---|---|---|---|
-| Desktop app (tabs Market, Manual, Agent, Train, Quiz, Hermes, Settings) | [app.md](app.md) | `app/main.py`, `app/server.py`, `app/static/*` | B: static + window · A: server, jobs, settings |
+| Desktop app (tabs Market, Manual, Agent, Review, Train, Quiz, Hermes, Settings) | [app.md](app.md) | `app/main.py`, `app/server.py`, `app/static/*` | B: static + window · A: server, jobs, settings |
 | Hermes assistant + memory | [hermes.md](hermes.md) | `app/brain.py`, `app/memory.py`, `app/tools.py`, `hermes/` | A |
 | M1 trading agent | [agent.md](agent.md) | `agent/run.py`, `agent/features.py`, `agent/model.py`, `agent/risk.py`, `agent/broker.py` | A |
 | MT5 MCP bridge | [mcp.md](mcp.md) | `mcp_server/mt5_mcp.py` | A |
@@ -70,4 +70,6 @@ Each chat adds lines only to its own list, just above its marker line.
   leaderboard + log drawer, Settings menu + save bar; see app.md "UI, round 2".
 - 2026-09-24: Manual tab round 2: chart with SELL/BUY under it, TP 160 / SL 80 points, open-trades strip with Close all /
   profitable / negative above the chart; Latest lesson + caution chips; "Always on" rule in TWO_CHATS.md.
+- 2026-09-24: 11 features UI: real-account guard, connection pill, drag SL/TP, keys, BE/trailing, TP/SL alerts, Review tab
+  (you vs bot, trade replay, weekly summary), settings backup, setup checklist; see app.md "11 features".
 <!-- Chat B: add new lines above this marker -->

@@ -26,6 +26,7 @@
   <button class="rail-btn active" data-tab="dash" title="Dashboard"><svg viewBox="0 0 24 24"><path d="M3 20h18M5 16l4-5 4 3 6-8"/></svg><span>Market</span></button>
   <button class="rail-btn" data-tab="manual" title="Trade by hand"><svg viewBox="0 0 24 24"><path d="M7 17V7M7 7l-3 3M7 7l3 3M17 7v10M17 17l-3-3M17 17l3-3"/></svg><span>Manual</span></button>
   <button class="rail-btn" data-tab="agent" title="Agent"><svg viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="11" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9 15.5h6"/></svg><span>Agent</span></button>
+  <button class="rail-btn" data-tab="review" title="Review your trades and the bot's"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Review</span></button>
   <button class="rail-btn" data-tab="train" title="Train"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-3 3 2 5-6"/><circle cx="19" cy="8" r="1.5"/></svg><span>Train</span></button>
   <button class="rail-btn" data-tab="quiz" title="Quiz school"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.5.2-.8.6-.8 1.1v.5M12 16.5h.01"/></svg><span>Quiz</span></button>
   <button class="rail-btn" data-tab="chat" title="Assistant"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Hermes</span></button>
@@ -42,6 +43,7 @@
   </div>
   <div class="sessions" id="sessions" title="Market sessions in broker server time, the hours the bot's inputs use"></div>
   <div class="strip-right">
+    <button id="setup-pill" class="pill setup-pill" type="button" hidden aria-controls="setup-drawer" title="What's left to set up"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18h2"/></svg>Setup <b id="setup-count" class="num">0/0</b></button>
     <span id="agent-pill" class="pill">agent idle</span>
     <div class="sys-wrap">
       <button class="sys-btn" id="sys-btn" type="button" aria-expanded="false" aria-controls="sys-pop" title="PC resources">
@@ -128,6 +130,7 @@
   <section id="tab-manual" class="tab">
     <div id="man-backend" class="empty-state man-banner" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>
       <div><b>Placing orders needs its backend</b>Chat A is building it from the spec in TWO_CHATS.md. Until then you can already watch prices and close positions (one at a time or in bulk) from here.</div></div>
+    <div id="man-real" class="real-banner" hidden><b>Real account</b><span>Every order from this tab uses real money on <span id="man-real-acct"></span>. The first order asks you to type REAL.</span></div>
     <div class="man-grid">
       <div class="man-left">
         <div class="panel ticket">
@@ -146,6 +149,11 @@
             <label>Take profit<span class="u" data-u="points above"><input id="man-tp-pts" type="number" min="1" step="10" value="160"></span></label>
             <label>Stop loss<span class="u" data-u="points below"><input id="man-sl-pts" type="number" min="1" step="10" value="80"></span></label>
           </div>
+          <div class="form-row auto-row">
+            <label>Break-even after<span class="u" data-u="points"><input id="man-be-pts" type="number" min="0" step="10" value="0"></span></label>
+            <label>Trailing stop<span class="u" data-u="points"><input id="man-trail-pts" type="number" min="0" step="10" value="0"></span></label>
+          </div>
+          <small id="man-auto-note" class="muted small auto-note"></small>
           <table class="levels" id="man-levels" aria-label="Where the take profit and stop loss land"><thead><tr><th></th><th>Entry</th><th>Take profit</th><th>Stop loss</th></tr></thead><tbody></tbody></table>
           <div class="man-risk"><span id="man-risk-txt" class="muted small"></span>
             <span class="row gap"><input id="man-risk" type="number" step="0.1" min="0.1" max="5" value="0.5" title="% of equity"><span class="muted small">%</span><button class="btn xs" id="man-size" type="button" title="Set the lots so the stop loss risks this % of equity">Size from stop</button></span></div>
@@ -155,6 +163,7 @@
               <label>Pending order lasts<select id="man-exp"><option value="gtc">Until cancelled</option><option value="today">Today only</option></select></label>
             </div></details>
           <p id="man-msg" class="note"></p>
+          <p id="man-keys" class="keys-hint"></p>
         </div>
         <div class="panel quotes">
           <div class="panel-head"><h3>Quotes</h3><span class="muted small">click to trade</span></div>
@@ -175,7 +184,8 @@
           <div class="trade-chips" id="man-open"></div>
         </div>
         <div class="panel man-chart-panel">
-          <div class="chart-head"><div class="quote"><span id="man-sym" class="man-sym">—</span><span class="tf">M1</span><span class="muted small">double-click the chart to realign</span></div></div>
+          <div class="chart-head"><div class="quote"><span id="man-sym" class="man-sym">—</span><span class="tf">M1</span><span class="muted small">drag an SL or TP line to move it; double-click to realign</span></div>
+            <span id="man-conn" class="conn" role="status"><i></i><span>Connecting…</span></span></div>
           <div class="man-chart-wrap"><div id="man-chart"></div></div>
           <div class="quote-row trade-bar">
             <button class="side-btn sell" id="man-sell" type="button"><small>SELL</small><b class="num flashable" id="man-bid">—</b><em id="man-sell-note"></em></button>
@@ -185,7 +195,7 @@
         </div>
         <div class="panel">
           <div class="panel-head"><h3>Positions</h3><span id="man-acct" class="man-acct"></span></div>
-          <div class="table-wrap"><table id="man-pos"><thead><tr><th>Symbol</th><th>Who</th><th>Side</th><th>Lots</th><th>Open</th><th>Now</th><th>SL</th><th>TP</th><th>P/L</th><th></th></tr></thead><tbody></tbody></table></div>
+          <div class="table-wrap"><table id="man-pos"><thead><tr><th>Symbol</th><th>Who</th><th>Side</th><th>Lots</th><th>Open</th><th>Now</th><th>SL</th><th>TP</th><th>Auto</th><th>P/L</th><th></th></tr></thead><tbody></tbody></table></div>
           <div class="bulk-btns bulk-more"><button class="btn xs" data-bulk="buys" type="button">Close buys</button><button class="btn xs" data-bulk="sells" type="button">Close sells</button></div>
         </div>
         <div class="panel">
@@ -193,7 +203,7 @@
           <div class="table-wrap"><table id="man-orders"><thead><tr><th>Symbol</th><th>Type</th><th>Lots</th><th>Price</th><th>SL</th><th>TP</th><th>Placed</th><th></th></tr></thead><tbody></tbody></table></div>
         </div>
         <div class="panel">
-          <div class="panel-head"><h3>History today</h3><span id="man-hist-meta" class="muted small"></span></div>
+          <div class="panel-head"><h3>History today</h3><span id="man-hist-meta" class="muted small"></span><span class="muted small">click a trade to replay it</span></div>
           <div class="table-wrap"><table id="man-hist"><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Lots</th><th>Open</th><th>Close</th><th>P/L</th><th>Who</th></tr></thead><tbody></tbody></table></div>
         </div>
       </div>
@@ -391,15 +401,52 @@
     </div>
   </section>
 
+  <!-- REVIEW -->
+  <section id="tab-review" class="tab">
+    <div class="panel rv-cmp">
+      <div class="panel-head"><h3>You vs the bot</h3>
+        <div class="row gap wrap">
+          <div class="chips" id="rv-days" role="radiogroup" aria-label="Period"><button class="chip" data-d="7" type="button">7 days</button><button class="chip active" data-d="30" type="button">30 days</button><button class="chip" data-d="90" type="button">90 days</button><button class="chip" data-d="0" type="button">All</button></div>
+          <div class="chips" id="rv-mode" role="radiogroup" aria-label="Which bot trades"><button class="chip active" data-m="paper" type="button">Bot on Paper</button><button class="chip" data-m="demo" type="button">Demo</button><button class="chip" data-m="real" type="button">Real</button><button class="chip" data-m="all" type="button">All</button></div>
+        </div></div>
+      <div class="rv-top">
+        <div class="vs" id="rv-vs"></div>
+        <div class="rv-curve"><div class="rv-legend"><span class="you">You</span><span class="bot">Bot</span><span class="muted small">running P/L</span></div><div class="rv-curve-wrap"><div id="rv-curve"></div></div></div>
+      </div>
+      <div class="rv-hours" id="rv-hours"></div>
+      <p id="rv-note" class="muted small"></p>
+    </div>
+    <div class="panel rv-replay">
+      <div class="panel-head"><h3>Trade replay</h3><span class="muted small">pick a closed trade; ↑ ↓ step through them</span>
+        <div class="chips" id="rv-who" role="radiogroup" aria-label="Whose trades"><button class="chip active" data-w="all" type="button">Everyone's</button><button class="chip" data-w="you" type="button">Mine</button><button class="chip" data-w="bot" type="button">Bot</button></div></div>
+      <div class="rv-grid">
+        <div class="rv-list" id="rv-list" role="listbox" aria-label="Closed trades" tabindex="0"></div>
+        <div class="rv-view">
+          <div class="rv-title" id="rv-title"></div>
+          <div class="rv-chart-wrap"><div id="rv-chart"></div></div>
+          <div class="rv-facts" id="rv-facts"></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel rv-week">
+      <div class="panel-head"><h3>Weekly summary</h3>
+        <div class="row gap"><button class="icon-btn" id="rv-prev" type="button" aria-label="Week before">‹</button><span id="rv-week-label" class="num"></span><button class="icon-btn" id="rv-next" type="button" aria-label="Week after">›</button>
+          <span id="rv-src" class="tag" hidden></span><button class="btn xs" id="rv-regen" type="button">Write it again</button></div></div>
+      <div id="rv-week"></div>
+    </div>
+  </section>
+
   <!-- SETTINGS -->
   <section id="tab-settings" class="tab">
     <div class="set-layout">
       <nav class="set-nav" id="set-nav" aria-label="Settings sections">
         <a href="#set-trading" class="on">Trading<span class="dot"></span></a>
         <a href="#set-money">Bot money rules<span class="dot"></span></a>
+        <a href="#set-manual">Manual trading<span class="dot"></span></a>
         <a href="#set-quiz">Quiz school<span class="dot"></span></a>
         <a href="#set-hermes">Hermes<span class="dot"></span></a>
         <a href="#set-display">Display<span class="dot"></span></a>
+        <a href="#set-backup">Backup<span class="dot"></span></a>
       </nav>
       <form id="settings-form" class="settings">
         <fieldset class="panel" id="set-trading"><legend>Trading<small>what the bot trades and how it behaves</small></legend>
@@ -432,6 +479,15 @@
           <p class="muted small span-all">Score: 1 point = $1. Each trade earns or loses its dollar result (a +$100 trade = +100 points). A stop-loss hit costs the penalty × its loss (−$20 × 1.5 = −30). A trade the bot closes early only costs what it actually lost (−$20 = −20).</p>
           <p class="muted small span-all">Stake is the margin the trade uses. If the stake is below the symbol's minimum lot, the minimum lot is used. Take profit eases from the small-stake % to the large-stake % as stakes grow. Retrain after changing the stop or take-profit rules so the model learns the new exits.</p>
         </fieldset>
+        <fieldset class="panel" id="set-manual"><legend>Manual trading<small>your own trades from the Manual tab</small></legend>
+          <label>Move the stop to break-even after (0 = off)<span class="u" data-u="points"><input name="manual_be_points" type="number" min="0" step="10"></span></label>
+          <label>Trailing stop distance (0 = off)<span class="u" data-u="points"><input name="manual_trail_points" type="number" min="0" step="10"></span></label>
+          <span class="help span-all">Used for every new manual order; change them per order in the ticket or per trade in Positions. The app moves the stop for you, even with the Manual tab closed.</span>
+          <label class="check"><input type="checkbox" id="pref-keys"> Keyboard shortcuts on the Manual tab</label>
+          <span class="help"><kbd>B</kbd> buy, <kbd>S</kbd> sell, <kbd>Shift</kbd>+<kbd>X</kbd> close all, <kbd>Esc</kbd> cancel, <kbd>+</kbd>/<kbd>−</kbd> lots. Buy, Sell and Close all still ask twice unless one-click is on.</span>
+          <label class="check"><input type="checkbox" id="pref-tpsl"> Sound and a banner when a take profit or stop loss is hit</label>
+          <span class="help">For every trade: yours, the bot's and Hermes'. This PC only.</span>
+        </fieldset>
         <fieldset class="panel" id="set-quiz"><legend>Quiz school<small>how the practice quiz runs</small></legend>
           <label>Question creators when Build quiz is pressed (0 = up to 10)<span class="u" data-u="creators"><input name="quiz_workers" type="number" min="0" max="16"></span></label>
           <label class="check"><input type="checkbox" name="quiz_bank_auto"> Keep making questions in the background</label>
@@ -459,6 +515,12 @@
           <label class="check"><input type="checkbox" id="pref-sessions"> Show session bands and prior-day levels on the chart</label>
           <span class="help">Saved in the app window, not in data/settings.json.</span>
         </fieldset>
+        <fieldset class="panel" id="set-backup"><legend>Backup<small>save and restore your settings</small></legend>
+          <div class="span-all bk-actions"><button class="btn" type="button" id="bk-now">Back up now</button><button class="btn" type="button" id="bk-file-btn">Restore from a file…</button><input type="file" id="bk-file" accept=".json,application/json" hidden><button class="btn ghost" type="button" id="bk-copy">Copy settings as text</button></div>
+          <div class="span-all bk-preview" id="bk-preview" hidden></div>
+          <div class="span-all bk-list" id="bk-list"></div>
+          <span class="help span-all">Backups go to data/backups/ on this PC. Restoring backs up your current settings first, so you can always go back. The Hermes API key is left out of copied text.</span>
+        </fieldset>
         <div class="savebar glass" id="savebar">
           <span class="dirty" id="set-dirty"><i></i><span id="set-dirty-txt">All changes saved</span></span>
           <span class="row gap"><span id="settings-msg" class="muted small"></span><button class="btn" type="button" id="set-discard" disabled>Discard</button><button class="btn primary" type="submit" id="set-save" disabled>Save settings</button></span>
@@ -474,6 +536,25 @@
     <div><b>Not started yet</b>Press Start agent. It acts when the next M1 candle closes, and its output streams here.</div></div>
   <pre id="agent-log" class="console" hidden></pre>
 </aside>
+
+<aside class="setup-drawer glass" id="setup-drawer" aria-label="Get set up">
+  <div class="panel-head"><h3>Get set up</h3><button class="icon-btn" id="setup-close" type="button" aria-label="Close">×</button></div>
+  <div class="setup-prog"><i id="setup-bar"></i></div>
+  <p id="setup-sum" class="muted small"></p>
+  <ol class="setup-list" id="setup-list"></ol>
+  <p class="muted small">Optional steps can wait. Reopen this list any time from Setup in the top bar.</p>
+</aside>
+
+<div id="alerts" class="alerts" aria-live="polite"></div>
+
+<dialog id="real-dlg" class="dlg glass" aria-labelledby="real-h">
+  <form method="dialog">
+    <h3 id="real-h">Trade real money?</h3>
+    <p>You're about to send an order on <b id="real-acct"></b>, a <b>real</b> account. Until you close the app, orders from the Manual tab go straight to the market with real money.</p>
+    <label>Type REAL to continue<input id="real-input" autocomplete="off" spellcheck="false"></label>
+    <div class="dlg-btns"><button class="btn" value="cancel">Cancel</button><button class="btn danger" id="real-ok" value="ok" disabled>Trade real money</button></div>
+  </form>
+</dialog>
 
 <div id="toast" class="toast glass" role="status" aria-live="polite"></div>
 <script src="/static/app.js"></script>

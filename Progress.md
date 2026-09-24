@@ -691,4 +691,29 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Tested against Chat A's real `/api/manual/*` with a fake MT5: levels right for both sides, hover preview lines,
   two-click buy filled, chip arming, fallback quote, 0 console errors. Screenshots sent to the user.
 
+### 2026-09-24: 11 new features (UI), tested on Chat A's backend
+- The user picked 1, 3, 4, 5, 6, 7, 8, 9, 10, 12 and 13 from my list. I wrote the backend spec into Chat A's list
+  first (ecc1e10); Chat A built it (aaff90b) while I built the UI.
+- 1 Real-account guard: red banner on the Manual tab, type REAL once per app session before the first real order (also
+  before one-click can go on), hold × for 1 s to quick-close a trade on real money.
+- 3 Connection: a pill in the chart head (live / quiet / no new price / MT5 offline / market closed); Buy and Sell grey
+  out and refuse while it's red, amber or closed.
+- 4 Drag SL/TP lines on the Manual chart: the label shows points and money while you drag; a level on the wrong side
+  snaps back; letting go moves it in MT5.
+- 5 Keyboard shortcuts (off by default, Settings > Manual trading): B, S, Shift+X, Esc, +/-.
+- 6 Break-even and trailing stop: in the ticket for the next order, per trade in Positions (Auto), defaults in Settings.
+- 7 Alerts: a card (bottom-left, 8 s) and a sound when a take profit or stop loss is hit, for every owner; the window
+  title says it while the app is in the background.
+- 8, 9, 10 New Review tab: You vs the bot (scorecard, running P/L chart, best hours), Trade replay (list + chart with
+  entry/SL/TP/exit; History rows on Manual and Bot trades rows on Agent open it; arrow keys step), Weekly summary
+  (Hermes or rule-based, week picker, Write it again).
+- 12 Settings > Backup: back up now, restore a backup, restore from a file (shows what would change first), copy as
+  text without the Hermes key.
+- 13 Setup pill in the top bar and a checklist drawer that opens once on a fresh install, with Fix buttons.
+- Fixed on the way: Manual History crashed on real rows (time is a number); Save in the per-trade editors did nothing
+  (it looked for the ticket on the editor row).
+- Tested in the sandbox (fake MT5) three ways: routes missing, mocked, and Chat A's real routes. Every control driven
+  in headless Chromium, 0 errors. Couldn't do here: Windows pop-up notifications outside the app window (handed to
+  Chat A) and a run on the real MT5 terminal.
+
 <!-- Chat B: add new entries above this line -->

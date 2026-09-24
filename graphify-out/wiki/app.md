@@ -82,3 +82,27 @@
   `sl_points`/`tp_points`. `man.quoteOk` falls back to the bars quote when `/api/manual/quote` fails.
 - Agent "What the bot has learned": `.lesson` box (`latest_lesson`, time, mistakes) and `.rule-chip.caution` chips
   from `cautions`; Quiz question view badges `q.bot` questions "your bot's trade".
+
+## 11 features (2026-09-24, Chat B UI; backend by Chat A in aaff90b)
+- Real-account guard: `#man-real` banner + `#tab-manual.is-real`; `realCheck()` opens `#real-dlg` (type REAL, once per
+  app session: `man.realSession`) before the first real order or turning one-click on; quick-close chips need a 1 s hold
+  on real (`man.holding`).
+- Connection: `#man-conn` from quote `connected` / `tick_age` / `market_open` (fallback: MT5 errors, weekend, price
+  unchanged); `man.blocked` greys out Buy/Sell (`.side-btn.blocked`) and stops `manTrade`.
+- Drag SL/TP: `man.lines` = `{line, price, meta: {ticket, kind}}`; capture-phase pointer handlers on `#man-chart`,
+  title shows points and money, bad side snaps back, drop sends `/api/manual/modify`.
+- Keys (`localStorage manKeys`, Settings > Manual trading): B, S, Shift+X, Esc, +/-; they click the same buttons.
+- Break-even / trailing: ticket `#man-be-pts` / `#man-trail-pts` (sent as `be_points` / `trail_points`), Positions
+  "Auto" column (`autoCell`) + editor -> `POST /api/manual/auto`; `loadManAuto` reads `GET /api/manual/auto`.
+- Alerts: `pollEvents` (`/api/events?since=` every 3 s, every tab) -> `showAlert` cards in `#alerts` (bottom-left) +
+  `beep(tone, true)`; pref `tpslAlerts`; fallback `guessCloses` from vanished positions; `selfClosed` skips your own.
+- Review tab `#tab-review` (`rv` state): `/api/stats/compare` (fallback `statsOf` on `/api/bot/trades` +
+  `/api/manual/history`) -> `renderVs`, `renderCurve` (two line series), `renderHours`; Trade replay list + chart
+  (`showReplay`, `autoscaleInfoProvider` keeps entry/SL/TP/exit in view; `openReplay(src, id)` from Manual History
+  and Agent Bot trades rows); Weekly summary `/api/review/weekly` (`working` poll), `/api/review/weeks`.
+- Settings: `#set-manual` (`manual_be_points`, `manual_trail_points`, prefs), `#set-backup` (`/api/settings/backup`,
+  `/backups`, `/restore`; file restore falls back to `POST /api/settings`; copy leaves out `hermes_key`). Fields the
+  backend doesn't know yet are disabled and never sent (`label.waiting`).
+- Setup: `#setup-pill` + `#setup-drawer` from `/api/setup/checklist` (fallback `localChecklist`), opens once on a fresh
+  install (`setupSeen`).
+
