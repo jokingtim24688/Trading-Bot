@@ -1684,7 +1684,7 @@ function showAlert(ev) {
   if (ev.kind === "sl" && ev.profit > 0) a = { head: "Stop hit, in profit", cls: "tp" };   // a trailed or break-even stop
   if (!pref("tpslAlerts", true)) return;
   const who = { bot: "Bot", hermes: "Hermes", you: "You" }[ev.owner] || "You";
-  notify({ kind: a.cls === "info" ? "info" : a.cls, title: `${a.head}${ev.guess ? " (probably)" : ""}`,
+  notify({ screen: !pop.feed, kind: a.cls === "info" ? "info" : a.cls, title: `${a.head}${ev.guess ? " (probably)" : ""}`,
     html: `<span class="${ev.side === "buy" ? "up" : "down"}">${ev.side === "buy" ? "▲" : "▼"}</span> ${esc(ev.side || "")} ${ev.volume ?? ""} ${esc(ev.symbol || "")}${ev.price ? ` at ${ev.price}` : ""} <span class="tag ${esc(ev.owner || "you")}">${who}</span>`,
     body: `${ev.side || ""} ${ev.volume ?? ""} ${ev.symbol || ""}${ev.price ? ` at ${ev.price}` : ""} (${who})`,
     amount: ev.profit != null && a.cls !== "info" ? ev.profit : null, onClick: () => showTab("manual") });
@@ -1704,7 +1704,7 @@ async function pollEvents() {
         playEvent(ev.profit >= 0 ? "profit" : "loss");
         if (selfClosed.delete(ev.ticket) || !pref("tpslAlerts", true)) return;   // closed from this app: its own message already said so
         const who = { bot: "Bot", hermes: "Hermes", you: "You" }[ev.owner] || "You";
-        notify({ kind: ev.profit >= 0 ? "tp" : "sl", title: `${who === "You" ? "Your" : `${who}'s`} trade closed`, body: `${ev.side || ""} ${ev.volume ?? ""} ${ev.symbol || ""}${ev.price ? ` at ${ev.price}` : ""}`, amount: ev.profit, onClick: () => showTab("manual") });
+        notify({ screen: !pop.feed, kind: ev.profit >= 0 ? "tp" : "sl", title: `${who === "You" ? "Your" : `${who}'s`} trade closed`, body: `${ev.side || ""} ${ev.volume ?? ""} ${ev.symbol || ""}${ev.price ? ` at ${ev.price}` : ""}`, amount: ev.profit, onClick: () => showTab("manual") });
       } else showAlert(ev);
     });
     alertsState.since = r.last_id;
@@ -2521,6 +2521,25 @@ async function drawWave(row) {                   // the sound as it will play: r
     setTimeout(() => notify({ kind: "info", title: "Bot bought 0.02 XAUUSD (paper)", body: "at 2,673.26, stop 2,666.76, target 2,683.66", screen: false }), 320);
   };
 })();
+/* the pop-up window at the top right of the screen (desktop app only): Python shows it above full-screen apps and
+   reads TP/SL alerts from the events feed itself; the page tells it the settings and which screen to use */
+const pop = { feed: false, ready: false };
+const popScreen = () => { try { return +(localStorage.getItem("popScreen") || 0); } catch (e) { return 0; } };
+function popConfigure() {
+  window.pywebview?.api?.configure?.({ secs: noteSecs(), screen: pref("screenNotes", true), tpsl: pref("tpslAlerts", true), monitor: popScreen() })?.catch?.(() => {});
+}
+async function popInit() {
+  const a = window.pywebview?.api; if (!a?.notify || pop.ready) return; pop.ready = true;
+  try { pop.feed = !!(await a.feed()); } catch (e) {}
+  popConfigure();
+  let list = []; try { list = await a.screens() || []; } catch (e) {}
+  $("#pop-row").hidden = false;
+  setHTML($("#pop-screen"), (list.length ? list : [{ i: 0, label: "Main screen" }]).map(x => `<option value="${x.i}"${x.i === popScreen() ? " selected" : ""}>${esc(x.label)}</option>`).join(""));
+}
+window.addEventListener("pywebviewready", popInit); setTimeout(popInit, 1500); setTimeout(popInit, 5000);
+$("#pop-screen").onchange = e => { try { localStorage.setItem("popScreen", e.target.value); } catch (err) {} popConfigure(); $("#pop-test").click(); };
+$("#pop-test").onclick = () => window.pywebview?.api?.notify?.({ title: "Pop-ups appear here", body: "Above every window, full-screen apps included.", kind: "info", secs: Math.max(3, noteSecs()) });
+["#note-secs", "#pref-screen", "#pref-tpsl"].forEach(sel => $(sel).addEventListener("change", popConfigure));
 function syncNoteSettings() {
   const has = !!state.settings && "desktop_alerts" in state.settings;
   $("#desk-row").hidden = !has; if (has) $("#pref-desktop").checked = !!state.settings.desktop_alerts;

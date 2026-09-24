@@ -835,7 +835,7 @@ label.waiting { opacity: .5; }
 .notes { position: fixed; top: 68px; right: 14px; z-index: 60; width: min(360px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .note { pointer-events: auto; position: relative; overflow: hidden; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center;
   padding: 10px 12px 12px; border-radius: var(--r-md); cursor: pointer; color: var(--text);
-  background: rgba(24,28,34,.9); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  background: rgba(24,28,34,.96); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
   border: 1px solid rgba(255,255,255,.08); box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 14px 38px rgba(0,0,0,.5);
   animation: note-in .38s var(--ease-spring) both; }
 @supports not (backdrop-filter: blur(1px)) { .note { background: #181c22; } }
@@ -973,4 +973,7 @@ label.waiting { opacity: .5; }
 .mute-pill svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .set-link { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
 .set-link a { color: var(--gold); }
+.pop-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 12px; font-size: 12.5px; }
+.pop-row[hidden] { display: none; }
+.pop-row select { width: auto; padding: 5px 8px; margin-left: 6px; }
 

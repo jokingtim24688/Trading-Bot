@@ -137,4 +137,9 @@
 - Speed: `getPositions()` (one in-flight request, 0.8 s reuse, POSTs clear it); boot intervals skip hidden screens
   (`seen()`), bot/progress slow down while hidden, `visibilitychange` catches up; WebView2 flags in `app/main.py`
   (`--disable-background-timer-throttling` etc.); `webview.start(private_mode=False, storage_path=data/webview)`.
+- Screen pop-ups (update): `Popups(port)` in `app/main.py` exposes notify/configure/feed/screens/ready/fit/idle
+  (internals start with "_"); `_Win` (ctypes: FindWindowW, SetWindowPos HWND_TOPMOST + SWP_NOACTIVATE, WS_EX_TOOLWINDOW |
+  WS_EX_NOACTIVATE, EnumDisplayMonitors work areas, GetDpiForWindow); `_watch` reads `/api/events` every 0.7 s and shows
+  TP/SL/close/be/trail when the main window isn't in front; page side `pop` (`popInit`, `popConfigure`,
+  `#pop-screen`, `#pop-test`), feed alerts use `screen: !pop.feed`.
 

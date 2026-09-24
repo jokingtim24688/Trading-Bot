@@ -78,4 +78,5 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: Hermes tab shows Hermes Agent vs local model (header + each reply), agent_step, still-working timer, 3 settings.
 - 2026-09-24: Keys page (rebind everything, keyboard map), Sounds page (10 events, pitch/volume/tone/length, your own files),
   custom top-right notifications (in app + on screen), speed pass; see app.md "Keys, Sounds, notifications, speed".
+- 2026-09-24: screen pop-ups above full-screen apps and while minimised (Win32 tool window, Python reads the events feed), screen picker.
 <!-- Chat B: add new lines above this marker -->

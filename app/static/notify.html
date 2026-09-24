@@ -52,6 +52,8 @@
     if (el._gone) return; el._gone = true; el.classList.add("out");
     setTimeout(() => { el.remove(); fit(); }, 300);
   }
+  // tell the app this page is up, so notifications sent while it loaded are shown now
+  window.addEventListener("pywebviewready", () => { const a = api(); if (a && a.ready) a.ready(); });
   window.addNote = p => {                          // p = {title, body, kind, amount (text), secs}
     const kind = ICON[p.kind] ? p.kind : "info", el = document.createElement("div");
     el.className = `note ${kind}`;

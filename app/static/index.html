@@ -476,6 +476,11 @@
         <label class="check"><input type="checkbox" id="pref-screen"> Pop up at the top right of the screen when the app isn't in front</label>
         <label class="check" id="desk-row" hidden><input type="checkbox" id="pref-desktop"> Also show Windows' own pop-up (bottom right)</label>
       </div>
+      <div class="pop-row" id="pop-row" hidden>
+        <label class="inline">Screen pop-ups appear on <select id="pop-screen"></select></label>
+        <button class="btn xs" id="pop-test" type="button">Show one on the screen</button>
+        <span class="muted small">They sit above everything, full-screen apps included, and never take focus from what you're doing.</span>
+      </div>
       <p class="muted small">They show at the top right, several at once, each new one below the others. Hover one to keep it open; click it to close it.</p>
     </div>
     <div class="panel snd-events">

@@ -815,4 +815,23 @@ Each chat writes only in its own section below, and adds new entries just above 
   timing, the on-screen pop-up page, hidden-window polling, earlier suites again: 0 errors. The pop-up window itself
   needs Windows (pywebview); it can't run in the cloud.
 
+### 2026-09-24: Screen pop-ups over full-screen apps and while minimised
+- The user wants notifications to show while the app is minimised and another app is full screen.
+- `app/main.py`: the pop-up window is now a Win32 tool window (no taskbar button, not in Alt+Tab, never activated,
+  clicks don't take focus) raised to the top of the always-on-top band every time it shows, so it sits above
+  full-screen apps (borderless/windowed full screen, browsers, video players and most modern games; true exclusive
+  full-screen games let no window draw over them, the sound still plays). It's placed at the top right of the chosen
+  screen's work area in real pixels (DPI-aware). TP/SL/close/stop-move alerts are read from `/api/events` by a Python
+  thread every 0.7 s and shown whenever the app isn't in front, so they don't depend on the minimised page; the page
+  sends the rest (bot paper trades, orders, Hermes) and no longer sends feed alerts twice. Notifications sent while the
+  pop-up page loads wait for it (`ready()`). Settings reach Python through `configure()` (kept in
+  `data/popups.json`). Chromium's own window-occlusion and one-wake-up-a-minute modes are also switched off.
+- Sounds page > Notifications: "Screen pop-ups appear on" (every screen listed, main first) and "Show one on the
+  screen" (desktop app only).
+- Cards are a touch more opaque so text behind them can't show through.
+- Tested: the bridge and the feed watcher against a stub feed (pending until ready, TP/SL/trail shown, opens skipped,
+  quiet while the app is in front), the page with a stand-in bridge (settings, screen list, no double sends), ctypes
+  argument types. The Win32 part needs Windows to run. Recorded an animation of the notifications popping up (in the
+  app, and the pop-up over a stand-in full-screen app) as MP4 and a close-up GIF for the user.
+
 <!-- Chat B: add new entries above this line -->
