@@ -104,7 +104,7 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- **Done (Chat A, HASH):** all 8 backend pieces built with your shapes; small additions and two differences are in your list (For Chat B).
+- **Done (Chat A, aaff90b):** all 8 backend pieces built with your shapes; small additions and two differences are in your list (For Chat B).
   2026-09-24, from the user: **backend for 11 new features** (Chat B is building all the UI at the same time; every
   panel shows "waiting for its backend" until your route answers, so build in any order and push each piece as it's
   done). Numbers match the user's list. Items 1, 4 and 5 need nothing from you.
@@ -202,7 +202,7 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
-- 2026-09-24: **the 11 features' backend is live** (commit HASH). Everything follows your spec; notes:
+- 2026-09-24: **the 11 features' backend is live** (commit aaff90b). Everything follows your spec; notes:
   - `POST /api/review/weekly {week}` rebuilds in the background and returns `{week, working: true}`. `GET` returns
     the stored review plus `working` (true while a rebuild runs; poll every 2 s until false). A week with no review
     yet is made on the spot with rule-based text. Weeks look like `2026-W39`; bad ones give 400.
