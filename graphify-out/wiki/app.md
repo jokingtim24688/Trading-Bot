@@ -35,7 +35,7 @@
 - Chart: `wireChartAuto`/`realignChart` (Auto button `#chart-auto`, 10 s realign after `chartTouched`, dblclick, resize);
   lazy history `state.win` + `loadLatestWindow`/`loadOlder`/`loadNewer`/`trimOldest` (HIST: FIRST 300, CHUNK 500, MAX
   1800), fed by `subscribeVisibleLogicalRangeChange`; live poll `/api/bars?count=3` + `series.update`.
-- Agent: calendar `renderCalendar`/`loadCalendar` (`/api/bars`-style fetch of `/api/bot/trades?limit=3000` once a minute
+- Agent: calendar `renderCalendar`/`loadCalendar` (fetches `/api/bot/trades?limit=3000` once a minute
   on the Agent tab; `state.cal`), day filter `#bt-day`.
 - Motion helpers at the top of app.js: `motionOK`, `setHTML` (skip unchanged markup), `flash`, `tweenNum`, `setNum`;
   `moveRailInd`; `tradeMoment`. CSS tokens `--ease-out`, `--ease-spring`; reduced motion via the OS or

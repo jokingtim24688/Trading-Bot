@@ -29,7 +29,7 @@ Owns what the app does:
 ### Chat B (chat 2): UI & Polish
 
 Status: idle. Last (2026-09-24): chart auto-align + lazy history, P/L calendar, Train dropdowns, copy-only Weak spots,
-animations, empty states, Hermes set-up UI. Next: design proposals for the user to pick from.
+animations, empty states, Hermes set-up UI. Next: waiting for the user to pick from 3 design proposals.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab

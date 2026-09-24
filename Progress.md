@@ -471,4 +471,18 @@ Each chat writes only in its own section below, and adds new entries just above 
   0 console errors, 0 long tasks over 50 ms in 8 s of running. 12 images sent to the user.
 - Handed to Chat A (user request): make the model learn from each mistake.
 
+### 2026-09-24: Three design proposals (mockups only, not built)
+- Sent as images for the user to pick from; built in the sandbox by injecting CSS/markup into the running app:
+  1. Market: trader-first top bar (account chip with server, equity, today, floating, open count, session clock for
+     London/New York/Asia, agent status; RAM/VRAM behind a small button); the bot gets its own colour (baby blue) on
+     badges, the bot card edge and its entry lines; ▲/▼ for buy/sell; bot card as a label/value grid; Replay as its own
+     button; chart with the Asia range box, London/New York open lines and prior-day high/low.
+  2. Agent: one control bar (stage ladder drawn as a path with locks on the real-money stages, Start/Stop, Live log
+     drawer button, both sliders); Paper gate and the trade plan side by side; "Which setups make money" leaderboard
+     (net P/L per setup, trades, win %) next to "What the bot has learned"; Bot trades unchanged below.
+  3. Settings: side menu (Trading, Bot money rules, Quiz school, Hermes, Display), sections as cards in three
+     columns, units inside the inputs, help lines under switches, quiz settings in their own section, and a save bar
+     that stays visible and names the unsaved change.
+- Next: the user picks which to build.
+
 <!-- Chat B: add new entries above this line -->
