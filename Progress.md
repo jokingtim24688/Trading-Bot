@@ -317,3 +317,29 @@
 - Chart inputs vectorised (identical) and saved as data/quiz_c.npy.
 - Build progress file + Quiz tab progress bar with one bar per slice.
 - Result: 20k-question build 58 s -> 18 s cold, 11 s from cache (4-core sandbox).
+
+---
+
+# Two chats (from 2026-09-24)
+
+Two Claude chats now work on this repo at once (see `TWO_CHATS.md`). Everything above is the history from before.
+Each chat writes only in its own section below, and adds new entries just above its own marker line.
+
+## Chat A log (Backend & Skills)
+
+### 2026-09-24: Two-chat setup
+- Request: the user will run two chats at once on this project and wants a file telling both chats what to do, plus
+  a prompt to brief the second chat. Skills come later (Chat A's lane).
+- `TWO_CHATS.md`: lanes (A = backend & skills, B = UI & polish with the anti-vibe-polish skill), the shared branch
+  `claude/keen-planck-wi3cn5`, a 9-step git routine for every task, shared-file rules, a "never" list, handoff lists.
+- `CLAUDE.md`: short pointer so every new chat reads `TWO_CHATS.md` automatically.
+- `Progress.md` and the wiki index now have one section per chat with marker lines, so the two chats' notes don't
+  collide in a merge.
+- Found: the GitHub default branch `claude/laughing-bell-3vt2c7` is 18 commits behind the shared branch, so a new chat
+  starts on old code. The Chat B prompt switches it to the shared branch first.
+
+<!-- Chat A: add new entries above this line -->
+
+## Chat B log (UI & Polish)
+
+<!-- Chat B: add new entries above this line -->
