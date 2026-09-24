@@ -229,3 +229,21 @@
 - Skills: `.claude/skills/quiz-school/` (how to run, read and un-stick the quiz) and `.claude/skills/quiz-lessons/`
   (rewritten by the quiz after every run: finished/stuck and exam accuracy per setup, which setups to trust).
 - Short test (100 questions, synthetic): 75/75 finished in 58 rounds, 227 inputs, exam 68%, lessons written.
+
+## 2026-09-24: Quiz v4 - custom size up to 100,000, advanced question builder
+- Size: free number box (40 to 100,000, with suggestions); board squares shrink to 2 px above 20,000.
+- Builder:
+  - 18 setups: added Asian low/high raided, H1 uptrend pullback/downtrend bounce (20 EMA), held above/below the
+    prior-day high/low, fade a >4 ATR stretch from the session average.
+  - Traps (15%): a setup whose stop was hit within the hour -> "stay out", teaching when to skip a setup.
+  - Answer mix: ~65% clean trades, 15% traps, 20% stay-out spots.
+  - Best examples first (fastest, least heat), interleaved across years.
+  - Spacing 60 -> 30 -> 15 min only when more are needed.
+  - Contradiction/near-copy removal with automatic top-up.
+  - Every question graded easy/medium/hard by look-alike agreement.
+  - Outcomes computed for all candidates at once (numpy).
+- Training: curriculum (easy + medium first, hard join at 90% finished or after 60 rounds); results group all traps
+  in one row; lessons skill lists the question mix.
+- Synthetic tests (4 years of candles): 1,000 built in 21 s with all 18 setups (337 buy / 335 sell / 328 stay out,
+  102 traps; 511 easy / 282 medium / 207 hard); 20,000 requested -> 19,264 built in 64 s (history nearly full at
+  15-minute spacing); training: curriculum added 158 hard, 742/750 in a 400-round test cap, exam 73.6%.

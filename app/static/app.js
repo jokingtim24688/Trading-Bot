@@ -640,8 +640,8 @@ function showQuestion(q, title, agent) {
 function boardLayout(n) {
   const cv = $("#quiz-board"), w = cv.clientWidth || 600;
   let cell = Math.floor(Math.sqrt((w * 200) / Math.max(1, n)));
-  cell = Math.max(4, Math.min(12, cell));
-  const gap = cell >= 9 ? 2 : 1, cols = Math.max(1, Math.floor((w + gap) / (cell + gap))), rows = Math.ceil(n / cols);
+  cell = Math.max(n > 20000 ? 2 : 4, Math.min(12, cell));                 // tiny squares for huge quizzes
+  const gap = cell >= 9 ? 2 : cell >= 4 ? 1 : 0, cols = Math.max(1, Math.floor((w + gap) / (cell + gap))), rows = Math.ceil(n / cols);
   return { cell, gap, cols, rows, w, h: rows * (cell + gap) };
 }
 function drawBoard() {
@@ -658,8 +658,12 @@ function drawBoard() {
     g.fillStyle = c === "5" ? "#c9a24a" : c === "u" ? "#4a4f58" : c === "0" ? "#232830" : `rgba(201,162,74,${0.12 + 0.12 * +c})`;
     g.fillRect(x, y, L.cell, L.cell);
     const id = ids ? ids[k] : k + 1;
-    if (miss === id) { g.strokeStyle = "#e0574f"; g.lineWidth = 1.5; g.strokeRect(x + .75, y + .75, L.cell - 1.5, L.cell - 1.5); }
-    if (quiz.picked.has(id)) { g.strokeStyle = "#e6e2d8"; g.lineWidth = 1.5; g.strokeRect(x + .75, y + .75, L.cell - 1.5, L.cell - 1.5); }
+    const mark = (color) => {                  // outline on normal squares, solid fill when squares are tiny
+      if (L.cell < 5) { g.fillStyle = color; g.fillRect(x, y, L.cell, L.cell); }
+      else { g.strokeStyle = color; g.lineWidth = 1.5; g.strokeRect(x + .75, y + .75, L.cell - 1.5, L.cell - 1.5); }
+    };
+    if (miss === id) mark("#e0574f");
+    if (quiz.picked.has(id)) mark("#e6e2d8");
     if (cur === id) { curXY = [x, y]; }
   }
   if (curXY) {                                   // the question it is working on right now: baby blue, drawn on top
@@ -683,7 +687,8 @@ $("#quiz-board").addEventListener("mousemove", e => {
   if (!h) { tip.hidden = true; return; }
   const c = quiz.streaks[h.k], lb = quiz.labels;
   const name = lb ? lb.names[lb.setups[h.k]] : "", ans = lb ? ACT[lb.answers[h.k]] : "";
-  tip.textContent = `Q${h.id} · ${name} · ${ans} · ${c === "5" ? "finished" : c === "u" ? "stuck, looping" : `streak ${c}/5`}${quiz.st.current === h.id && quiz.st.running ? " · working on it now" : ""}`;
+  const lvl = lb?.difficulty?.[h.k];
+  tip.textContent = `Q${h.id} · ${name} · ${ans}${lvl ? ` · ${lvl}` : ""} · ${c === "5" ? "finished" : c === "u" ? "stuck, looping" : `streak ${c}/5`}${quiz.st.current === h.id && quiz.st.running ? " · working on it now" : ""}`;
   tip.hidden = false;
   tip.style.left = Math.min(h.x + 12, $("#quiz-board").clientWidth - tip.offsetWidth - 4) + "px"; tip.style.top = (h.y + 14) + "px";
 });
@@ -765,7 +770,16 @@ async function startQuiz(body, msg) {
   try { await api("/api/quiz/train", { method: "POST", body }); quiz.mistakeAt = -1; quiz.viewing = null; quiz.lastPts = null; toast(msg); loadQuiz(); }
   catch (e) { toast(e.message, true); }
 }
-$("#quiz-build").onclick = async () => { try { await api("/api/quiz/build", { method: "POST", body: { questions: +$("#quiz-n").value } }); quiz.streaks = ""; toast("Finding pro setups in your history. This takes a minute."); } catch (e) { toast(e.message, true); } };
+$("#quiz-build").onclick = async () => {
+  const n = Math.max(40, Math.min(100000, Math.round(+$("#quiz-n").value || 1000)));
+  $("#quiz-n").value = n;
+  try {
+    await api("/api/quiz/build", { method: "POST", body: { questions: n } });
+    quiz.streaks = "";
+    toast(n > 20000 ? `Building ${n.toLocaleString()} questions: a few minutes. Training a quiz this size takes a while per round; Continue picks up where it left off.`
+      : `Finding ${n.toLocaleString()} pro setups in your history. This takes a minute.`);
+  } catch (e) { toast(e.message, true); }
+};
 $("#quiz-start").onclick = () => startQuiz({}, "Starting over with a fresh agent. Points are its reward.");
 $("#quiz-resume").onclick = () => startQuiz({ resume: true }, "Continuing where it left off.");
 $("#quiz-focus").onclick = () => startQuiz({ focus: [...quiz.picked] }, `Working on ${quiz.picked.size.toLocaleString()} picked question(s).`);

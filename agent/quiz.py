@@ -67,13 +67,12 @@ MASTERY = 5                       # correct answers in a row per question
 HORIZON = 240                     # candles a quiz trade may take to resolve (4 hours)
 CLEAN_MINUTES = 180               # a clean pro winner reaches its target within 3 hours...
 CLEAN_MAE = 0.6                   # ...without first going more than 60% of the way to its stop
-SPACING = 60                      # candles between questions (1 hour)
 BEFORE, AFTER = 90, 60            # chart candles before the question and revealed after it
 EXPLORE = 0.05                    # share of answers picked at random...
 EXPLORE_MAX = 0.5                 # ...rising to half the time on a question it keeps missing
 EXTRA = 2                         # unfinished questions are asked this many extra times per round (7 more once stuck)
 HIDDEN = 64
-MAX_QUESTIONS = 10_000
+MAX_QUESTIONS = 100_000
 SESSION = (10, 20)                # server hours pros are active in (London open to late New York)
 
 PRO_SETUPS = {
@@ -89,19 +88,59 @@ PRO_SETUPS = {
     "fvg_bear": ("sell", "A strong push down left a bearish fair value gap with the H1 trend down. Pros sell in the trend direction."),
     "pdl_test": ("buy", "Price tested yesterday's low and held it. Pros buy the defended level with a stop under it."),
     "pdh_test": ("sell", "Price tested yesterday's high and was rejected. Pros sell the defended level with a stop above it."),
+    "asia_sweep_long": ("buy", "London/New York pushed under the Asian range low, ran the stops there, and came back inside. "
+                               "Pros buy the raid of the Asian low."),
+    "asia_sweep_short": ("sell", "London/New York pushed over the Asian range high, ran the stops there, and came back inside. "
+                                 "Pros sell the raid of the Asian high."),
+    "trend_pullback_long": ("buy", "The H1 trend is up and price pulled back under the 20 EMA, then closed back above it. "
+                                   "Pros buy the pullback in the trend."),
+    "trend_pullback_short": ("sell", "The H1 trend is down and price bounced over the 20 EMA, then closed back below it. "
+                                     "Pros sell the bounce in the trend."),
+    "pdh_break": ("buy", "Price broke above yesterday's high and held there with the H1 trend up. Pros go with the acceptance "
+                         "above the level."),
+    "pdl_break": ("sell", "Price broke below yesterday's low and held there with the H1 trend down. Pros go with the acceptance "
+                          "below the level."),
+    "fade_stretch_long": ("buy", "Price is stretched more than 4 ATR under the session average and just printed a strong "
+                                 "up candle. Pros fade the overextension back toward the average."),
+    "fade_stretch_short": ("sell", "Price is stretched more than 4 ATR over the session average and just printed a strong "
+                                   "down candle. Pros fade the overextension back toward the average."),
+}
+QUIZ_NAMES = {
+    "asia_sweep_long": "Asian low raided", "asia_sweep_short": "Asian high raided",
+    "trend_pullback_long": "H1 uptrend pullback", "trend_pullback_short": "H1 downtrend bounce",
+    "pdh_break": "Held above prior-day high", "pdl_break": "Held below prior-day low",
+    "fade_stretch_long": "Fade stretch below average", "fade_stretch_short": "Fade stretch above average",
 }
 WAIT_NAME = "No setup (stay out)"
 WAIT_TEXT = ("Price is in the middle of the day's range with no key level, sweep or breakout nearby. Pros stay out here: "
              "neither a buy nor a sell with the same stop would have been a clean trade.")
+TRAP_SHARE, WAIT_SHARE = 0.15, 0.20       # the rest are clean pro trades
+TRAP_MINUTES = 60                          # a trap: the setup's stop was hit within the hour
+SPACINGS = (60, 30, 15)                    # minutes between questions; tightens only when more are needed
 
 
-def setup_name(key: str) -> str:
-    return WAIT_NAME if key == "wait" else SETUP_NAMES.get(key, key)
+def setup_name(key: str, trap: bool = False) -> str:
+    if key == "wait":
+        return WAIT_NAME
+    name = QUIZ_NAMES.get(key) or SETUP_NAMES.get(key, key)
+    return f"{name} (trap)" if trap else name
+
+
+def group_name(q: dict) -> str:
+    """How results are grouped: by setup, with every trap question in one group."""
+    return "Traps (setup failed: stay out)" if q.get("trap") else setup_name(q["setup"])
 
 
 def explain(q: dict) -> str:
-    text = WAIT_TEXT if q["setup"] == "wait" else PRO_SETUPS[q["setup"]][1]
+    if q["setup"] == "wait":
+        return WAIT_TEXT
     t = q.get("trade")
+    if q.get("trap"):
+        side = PRO_SETUPS[q["setup"]][0]
+        text = (f"This looks like a {setup_name(q['setup'])} {side}, but it failed: a {side} here hit its stop"
+                + (f" {t['minutes']} minutes later" if t else " quickly") + ". The lesson: skip it in this context.")
+        return text
+    text = PRO_SETUPS[q["setup"]][1]
     if t:
         text += (f" Entry {t['entry']:.2f}, stop {t['stop']:.2f}, target {t['target']:.2f} (2R): it reached the target "
                  f"{t['minutes']} minutes later.")
@@ -129,26 +168,35 @@ def _first(cond: pd.Series) -> pd.Series:
 
 
 def _candidates(f: pd.DataFrame) -> dict[str, np.ndarray]:
-    """Candle positions where each pro setup first appears (in session hours)."""
+    """Candle positions where each pro setup first appears (in session hours), plus quiet no-setup spots."""
     h1 = f["h1_structure"]
-    sweep_lo_now = f["sweep_long"].eq(1) & f["sweep_long"].shift(1).eq(0)
-    sweep_hi_now = f["sweep_short"].eq(1) & f["sweep_short"].shift(1).eq(0)
-    orb_up = _first((f["lon_or_pos"] > 0.2) | (f["ny_or_pos"] > 0.2))
-    orb_dn = _first((f["lon_or_pos"] < -0.2) | (f["ny_or_pos"] < -0.2))
     sa = f["sess_avg_dist"]
-    reclaim_up = (sa > 0) & (sa.shift(1) < 0) & (h1 >= 1)
-    reclaim_dn = (sa < 0) & (sa.shift(1) > 0) & (h1 <= -1)
     gap = f["fvg_net10"].diff()
-    fvg_up = (gap >= 1) & (h1 >= 1)
-    fvg_dn = (gap <= -1) & (h1 <= -1)
     pdl, pdh = f["pdl_dist"], f["pdh_dist"]
-    pdl_hold = (pdl.between(0, 0.4)) & (f["body"] > 0.2) & (pdl.shift(3) > 0.8)
-    pdh_hold = (pdh.between(-0.4, 0)) & (f["body"] < -0.2) & (pdh.shift(3) < -0.8)
+    alo, ahi = f["asia_lo_dist"], f["asia_hi_dist"]
+    e20 = f["dist_ema20"]
+    conds = {
+        "sweep_long": f["sweep_long"].eq(1) & f["sweep_long"].shift(1).eq(0),
+        "sweep_short": f["sweep_short"].eq(1) & f["sweep_short"].shift(1).eq(0),
+        "orb_long": _first((f["lon_or_pos"] > 0.2) | (f["ny_or_pos"] > 0.2)),
+        "orb_short": _first((f["lon_or_pos"] < -0.2) | (f["ny_or_pos"] < -0.2)),
+        "avg_reclaim_long": (sa > 0) & (sa.shift(1) < 0) & (h1 >= 1),
+        "avg_reclaim_short": (sa < 0) & (sa.shift(1) > 0) & (h1 <= -1),
+        "fvg_bull": (gap >= 1) & (h1 >= 1),
+        "fvg_bear": (gap <= -1) & (h1 <= -1),
+        "pdl_test": pdl.between(0, 0.4) & (f["body"] > 0.2) & (pdl.shift(3) > 0.8),
+        "pdh_test": pdh.between(-0.4, 0) & (f["body"] < -0.2) & (pdh.shift(3) < -0.8),
+        "asia_sweep_long": (alo > 0.1) & (alo.shift(1) <= 0.1) & (alo.rolling(15).min() < -0.3),
+        "asia_sweep_short": (ahi < -0.1) & (ahi.shift(1) >= -0.1) & (ahi.rolling(15).max() > 0.3),
+        "trend_pullback_long": (h1 >= 2) & (e20 > 0) & (e20.shift(1) <= 0) & (f["dist_ema200"] > 0) & (f["body"] > 0),
+        "trend_pullback_short": (h1 <= -2) & (e20 < 0) & (e20.shift(1) >= 0) & (f["dist_ema200"] < 0) & (f["body"] < 0),
+        "pdh_break": _first(pdh > 0.3) & (h1 >= 1),
+        "pdl_break": _first(pdl < -0.3) & (h1 <= -1),
+        "fade_stretch_long": (sa < -4) & (f["body"] > 0.5),
+        "fade_stretch_short": (sa > 4) & (f["body"] < -0.5),
+    }
     hours = f.index.hour
     ok = ((hours >= SESSION[0]) & (hours < SESSION[1])) & f.notna().all(axis=1).to_numpy()
-    conds = {"sweep_long": sweep_lo_now, "sweep_short": sweep_hi_now, "orb_long": orb_up, "orb_short": orb_dn,
-             "avg_reclaim_long": reclaim_up, "avg_reclaim_short": reclaim_dn, "fvg_bull": fvg_up, "fvg_bear": fvg_dn,
-             "pdl_test": pdl_hold, "pdh_test": pdh_hold}
     out = {k: np.flatnonzero(v.fillna(False).to_numpy() & ok) for k, v in conds.items()}
     quiet = ((f["day_range_pos"].between(0.35, 0.65)) & (f["sweep_long"] == 0) & (f["sweep_short"] == 0)
              & (f["lon_or_pos"] == 0) & (f["ny_or_pos"] == 0) & (f["sess_avg_dist"].abs().between(0.5, 2.5))
@@ -157,48 +205,83 @@ def _candidates(f: pd.DataFrame) -> dict[str, np.ndarray]:
     return out
 
 
-def _trade(df_np, i: int, side: str, stop_dist: float, spread: float):
-    """Walk forward a pro-style trade (target 2R). Returns (won, minutes, stop, target, worst move against it in R)."""
+def _outcomes(df_np, idx: np.ndarray, side: str, sd: np.ndarray, spread: np.ndarray):
+    """All pro-style trades (target 2R) walked forward together. Returns won, minutes, worst move against (R), stop,
+    target and entry arrays."""
     o, h, l, c = df_np
-    entry = c[i] + spread if side == "buy" else c[i]
-    stop = entry - stop_dist if side == "buy" else entry + stop_dist
-    target = entry + 2 * stop_dist if side == "buy" else entry - 2 * stop_dist
-    mae = 0.0
-    for k in range(i + 1, min(len(c), i + 1 + HORIZON)):
+    n = len(c)
+    sp = spread[idx]
+    entry = c[idx] + sp if side == "buy" else c[idx]
+    stop = entry - sd if side == "buy" else entry + sd
+    target = entry + 2 * sd if side == "buy" else entry - 2 * sd
+    done = np.zeros(len(idx), bool)
+    won = np.zeros(len(idx), bool)
+    mins = np.full(len(idx), HORIZON)
+    mae = np.zeros(len(idx))
+    for k in range(1, HORIZON + 1):
+        j = np.minimum(idx + k, n - 1)
+        act = ~done & (idx + k < n)
+        if not act.any():
+            break
         if side == "buy":
-            mae = max(mae, (entry - l[k]) / stop_dist)
-            if l[k] <= stop:
-                return False, k - i, stop, target, mae
-            if h[k] >= target:
-                return True, k - i, stop, target, mae
+            adverse = (entry - l[j]) / sd
+            hit_s, hit_t = l[j] <= stop, h[j] >= target
         else:
-            mae = max(mae, (h[k] + spread - entry) / stop_dist)
-            if h[k] + spread >= stop:
-                return False, k - i, stop, target, mae
-            if l[k] + spread <= target:
-                return True, k - i, stop, target, mae
-    return False, HORIZON, stop, target, mae
+            adverse = (h[j] + sp - entry) / sd
+            hit_s, hit_t = h[j] + sp >= stop, l[j] + sp <= target
+        mae = np.where(act, np.maximum(mae, adverse), mae)
+        ns, nt = act & hit_s, act & hit_t & ~hit_s
+        won |= nt
+        mins[ns | nt] = k
+        done |= ns | nt
+    return won, mins, mae, stop, target, entry
 
 
-def _conflicts(Xz: np.ndarray, answers: np.ndarray, thr: float = 3.0, k: int = 5) -> set:
-    """Questions no one could answer from the chart: a near-twin has the other answer, or most of its closest
-    look-alikes (4 of 5) do. Those are coin flips, not lessons."""
-    bad = set()
-    sq = (Xz ** 2).sum(1)
-    for s in range(0, len(Xz), 1000):
-        blk = Xz[s:s + 1000]
-        d2 = sq[s:s + 1000, None] + sq[None, :] - 2 * blk @ Xz.T
+def _stop_dist(kind, idx, df_np, a, spread):
+    if kind.startswith("sweep") or kind.startswith("asia_sweep"):     # stop just beyond the sweep's wick
+        o, h, l, c = df_np
+        lo = np.min(np.stack([l[idx - k] for k in range(5)]), 0)
+        hi = np.max(np.stack([h[idx - k] for k in range(5)]), 0)
+        sd = (c[idx] + spread[idx] - lo) if PRO_SETUPS[kind][0] == "buy" else (hi - c[idx])
+        return np.clip(sd + 0.2 * a[idx], 0.8 * a[idx], 3 * a[idx])
+    return 1.5 * a[idx]
+
+
+def _year_balanced(idx: np.ndarray, quality: np.ndarray, years: np.ndarray) -> np.ndarray:
+    """Best examples first, but taking turns across years so no single market period dominates."""
+    order = np.lexsort((-quality, years))
+    by_year = {}
+    for i in order:
+        by_year.setdefault(years[i], []).append(i)
+    out, lists = [], [v for _, v in sorted(by_year.items())]
+    for k in range(max((len(v) for v in lists), default=0)):
+        out.extend(v[k] for v in lists if k < len(v))
+    return idx[np.array(out, int)] if out else idx[:0]
+
+
+def _neighbours(Xz: np.ndarray, answers: np.ndarray, k: int = 5, twin: float = 3.0, dup: float = 1.0):
+    """For every question: the share of its k closest look-alikes with the same answer, whether a near-twin has the
+    other answer (a contradiction), and whether a near-copy with the same answer came earlier (a duplicate)."""
+    n = len(Xz)
+    same_share = np.ones(n)
+    contra = np.zeros(n, bool)
+    dupe = np.zeros(n, bool)
+    Xf = Xz.astype(np.float32)
+    sq = (Xf ** 2).sum(1)
+    step = max(100, min(1000, 30_000_000 // max(1, n)))
+    for s in range(0, n, step):
+        blk = Xf[s:s + step]
+        d2 = sq[s:s + step, None] + sq[None, :] - 2 * blk @ Xf.T
         rows = np.arange(len(blk))
-        d2[rows, rows + s] = np.inf                      # not its own neighbour
-        diff = answers[s:s + 1000, None] != answers[None, :]
-        ii, jj = np.nonzero((d2 < thr * thr) & diff)
-        for a, b in zip(ii + s, jj):
-            bad.add(int(max(a, b)))
-        if len(Xz) > k:
+        d2[rows, rows + s] = np.inf
+        diff = answers[s:s + step, None] != answers[None, :]
+        contra[s:s + step] = ((d2 < twin * twin) & diff).any(1)
+        earlier = np.arange(n)[None, :] < (rows + s)[:, None]
+        dupe[s:s + step] = ((d2 < dup * dup) & ~diff & earlier).any(1)
+        if n > k:
             nn = np.argpartition(d2, k, axis=1)[:, :k]
-            opposite = (answers[nn] != answers[s:s + 1000, None]).sum(1)
-            bad.update(int(v) for v in np.flatnonzero(opposite >= k - 1) + s)
-    return bad
+            same_share[s:s + step] = (answers[nn] == answers[s:s + step, None]).mean(1)
+    return same_share, contra, dupe
 
 
 def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.25, point: float = 0.01, seed: int = 7):
@@ -210,83 +293,117 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
     a = atr(df, 14).to_numpy()
     df_np = tuple(df[k].to_numpy() for k in ("open", "high", "low", "close"))
     spread = df["spread"].to_numpy(dtype=float) * point
+    years = df.index.year.to_numpy()
     cands = _candidates(f)
-    for k, v in cands.items():
-        print(f"  {setup_name(k)}: {len(v):,} candidates", flush=True)
-
     rng = np.random.default_rng(seed)
-    want = int(n_questions * 1.3) + 10                   # extra, some get dropped as contradictions
-    n_wait = max(4, round(want * 0.2))
-    kinds = [k for k in PRO_SETUPS if len(cands[k])]
-    if not kinds:
-        raise SystemExit("No pro setups found. Download more history (Train tab) and try again.")
-    orders = {k: rng.permutation(cands[k]) for k in kinds + ["wait"]}
-    pos = {k: 0 for k in orders}
-    taken = set()                                        # 1-hour buckets already used
+    usable = lambda v: v[(v >= 3000) & (v + HORIZON < len(df)) & (a[v] > 0)]      # noqa: E731
 
-    def free(i):
-        b = i // SPACING
-        return not ({b - 1, b, b + 1} & taken)
-
-    def take(kind):
-        arr = orders[kind]
-        while pos[kind] < len(arr):
-            i = int(arr[pos[kind]])
-            pos[kind] += 1
-            if i < 3000 or i + HORIZON >= len(df) or not free(i) or not a[i] > 0:
-                continue
-            if kind == "wait":                           # neither a buy nor a sell would have been a clean pro trade
-                sd = 1.5 * a[i]
-                if any(w and m <= CLEAN_MINUTES and e <= CLEAN_MAE
-                       for w, m, _, _, e in (_trade(df_np, i, s_, sd, spread[i]) for s_ in ("buy", "sell"))):
-                    continue
-                return i, "wait", None
-            side = PRO_SETUPS[kind][0]
-            if kind.startswith("sweep"):                 # stop just beyond the sweep's wick
-                if side == "buy":
-                    sd = df_np[3][i] + spread[i] - df_np[2][i - 4:i + 1].min() + 0.2 * a[i]
-                else:
-                    sd = df_np[1][i - 4:i + 1].max() - df_np[3][i] + 0.2 * a[i]
-                sd = float(np.clip(sd, 0.8 * a[i], 3 * a[i]))
-            else:
-                sd = 1.5 * a[i]
-            won, mins, stop, target, mae = _trade(df_np, i, side, sd, spread[i])
-            if won and mins <= CLEAN_MINUTES and mae <= CLEAN_MAE:
-                return i, side, {"minutes": int(mins), "stop": round(float(stop), 2), "target": round(float(target), 2),
-                                 "entry": round(float(df_np[3][i] + (spread[i] if side == "buy" else 0)), 2)}
-        return None
-
-    picks = []
-    plan = [kinds[j % len(kinds)] for j in range(want - n_wait)] + ["wait"] * n_wait
-    plan = [plan[k] for k in rng.permutation(len(plan))]  # stay-out spots mixed in, not left for last
-    last_print = time.time()
-    for kind in plan:
-        got = take(kind)
-        if got is None and kind != "wait":
-            for other in kinds:
-                got = take(other)
-                if got:
-                    kind = other
-                    break
-        if got is None:
+    # score every candidate at once: clean pro winners, traps (quick failures) and clean stay-out spots
+    pools = {}                                            # (kind, answer, trap) -> ordered candle positions
+    trades = {}                                           # candle -> trade details for the explanation
+    print("checking what happened after every candidate...", flush=True)
+    for kind, (side, _) in PRO_SETUPS.items():
+        idx = usable(cands[kind])
+        if not len(idx):
             continue
-        i, answer, trade = got
-        taken.add(i // SPACING)
-        picks.append((i, kind, answer, trade))
-        if time.time() - last_print > 2:
-            print(f"  found {len(picks):,} of {want:,}...", flush=True)
-            last_print = time.time()
+        sd = _stop_dist(kind, idx, df_np, a, spread)
+        won, mins, mae, stop, target, entry = _outcomes(df_np, idx, side, sd, spread)
+        clean = won & (mins <= CLEAN_MINUTES) & (mae <= CLEAN_MAE)
+        trap = ~won & (mins <= TRAP_MINUTES)
+        for mask, is_trap, quality in ((clean, False, (1 - mae) + (1 - mins / CLEAN_MINUTES)), (trap, True, 1 - mins / TRAP_MINUTES)):
+            sel = np.flatnonzero(mask)
+            pools[(kind, "wait" if is_trap else side, is_trap)] = _year_balanced(idx[sel], quality[sel], years[idx[sel]])
+            for k in sel:
+                trades[int(idx[k])] = {"minutes": int(mins[k]), "stop": round(float(stop[k]), 2),
+                                       "target": round(float(target[k]), 2), "entry": round(float(entry[k]), 2)}
+        print(f"  {setup_name(kind)}: {len(idx):,} seen, {int(clean.sum()):,} clean winners, {int(trap.sum()):,} traps",
+              flush=True)
+    idx = usable(cands["wait"])
+    if len(idx):
+        sd = 1.5 * a[idx]
+        wb, mb, eb, *_ = _outcomes(df_np, idx, "buy", sd, spread)
+        ws, ms, es, *_ = _outcomes(df_np, idx, "sell", sd, spread)
+        clean_b = wb & (mb <= CLEAN_MINUTES) & (eb <= CLEAN_MAE)
+        clean_s = ws & (ms <= CLEAN_MINUTES) & (es <= CLEAN_MAE)
+        sel = np.flatnonzero(~clean_b & ~clean_s)
+        pools[("wait", "wait", False)] = _year_balanced(idx[sel], rng.random(len(sel)), years[idx[sel]])
+        print(f"  {WAIT_NAME}: {len(idx):,} seen, {len(sel):,} clean stay-out spots", flush=True)
+    if not any(len(v) for k, v in pools.items() if k[0] != "wait"):
+        raise SystemExit("No pro setups found. Download more history (Train tab) and try again.")
+
+    # plan: 65% clean trades (round-robin over setups), 15% traps, 20% stay-out; spread through the plan
+    trade_keys = [k for k in pools if not k[2] and k[0] != "wait" and len(pools[k])]
+    trap_keys = [k for k in pools if k[2] and len(pools[k])]
+    pos = {k: 0 for k in pools}
+    occupied = np.zeros(len(df), bool)
+    spacing_at = [0]                                      # which of SPACINGS is in use
+
+    def make_plan(count):
+        n_trap, n_wait = round(count * TRAP_SHARE), round(count * WAIT_SHARE)
+        plan = ([trade_keys[j % len(trade_keys)] for j in range(count - n_trap - n_wait)]
+                + ([trap_keys[j % len(trap_keys)] for j in range(n_trap)] if trap_keys else [])
+                + [("wait", "wait", False)] * n_wait)
+        return [plan[k] for k in rng.permutation(len(plan))]
+
+    def select(plan):
+        """Best-first picks for the plan; spacing tightens only when the history runs out of room."""
+        taken = []
+        while True:
+            spacing, missing = SPACINGS[spacing_at[0]], []
+            for key in plan:
+                got = None
+                for k in [key] + [x for x in pools if x[1] == key[1] and x[2] == key[2] and x != key]:   # same answer
+                    arr = pools.get(k, [])
+                    while pos[k] < len(arr):
+                        i = int(arr[pos[k]])
+                        pos[k] += 1
+                        if not occupied[max(0, i - spacing + 1):i + spacing].any():
+                            got = (i, k)
+                            break
+                    if got:
+                        break
+                if got is None:
+                    missing.append(key)
+                    continue
+                i, (kind, answer, is_trap) = got
+                occupied[i] = True
+                taken.append((i, kind, answer, is_trap))
+            if not missing or spacing_at[0] == len(SPACINGS) - 1:
+                return taken
+            spacing_at[0] += 1
+            print(f"  {len(missing):,} more needed: allowing questions {SPACINGS[spacing_at[0]]} minutes apart", flush=True)
+            plan = missing
+            for k in pos:                                   # re-scan with the tighter spacing
+                pos[k] = 0
+
+    picks = select(make_plan(int(n_questions * 1.35) + 20))
     if len(picks) < 10:
         raise SystemExit(f"Only found {len(picks)} usable questions. Download more history and try again.")
 
+    # remove contradictions and near-copies (topping up with fresh candidates when many get dropped), and grade the
+    # rest by how much their look-alikes agree
     sample = f.dropna().sample(min(50_000, len(f.dropna())), random_state=seed)
     mean, std = sample.mean().to_numpy(), sample.std().replace(0, 1).to_numpy()
-    X = f.iloc[[p[0] for p in picks]].to_numpy(dtype=np.float32)
-    Xz = np.clip(np.nan_to_num((X - mean) / std), -5, 5)
-    bad = _conflicts(Xz, np.array([p[2] for p in picks]))
-    keep = [k for k in rng.permutation(len(picks)) if k not in bad][:n_questions]     # shuffled, so every kind survives
-    print(f"  dropped {len(bad):,} questions whose look-alikes have the opposite answer (no one could tell them apart)",
-          flush=True)
+    for attempt in range(4):
+        X = f.iloc[[p[0] for p in picks]].to_numpy(dtype=np.float32)
+        Xz = np.clip(np.nan_to_num((X - mean) / std), -5, 5)
+        answers = np.array([p[2] for p in picks])
+        print(f"  comparing {len(picks):,} questions with each other...", flush=True)
+        same_share, contra, dupe = _neighbours(Xz, answers)
+        bad = contra | dupe | (same_share <= 0.2)
+        good = int((~bad).sum())
+        if good >= n_questions or attempt == 3:
+            break
+        rate = good / len(picks)
+        more = select(make_plan(int((n_questions - good) / max(rate, 0.3) * 1.2) + 20))
+        if not more:
+            break
+        print(f"  {len(picks) - good:,} dropped so far: adding {len(more):,} fresh candidates to replace them", flush=True)
+        picks += more
+    print(f"  dropped {int((contra | (same_share <= 0.2)).sum()):,} whose look-alikes have the other answer and "
+          f"{int((dupe & ~contra).sum()):,} near-copies", flush=True)
+    keep = [k for k in rng.permutation(len(picks)) if not bad[k]][:n_questions]
+    difficulty = np.where(same_share >= 0.8, "easy", np.where(same_share >= 0.5, "medium", "hard"))
 
     n = len(keep)
     n_exam = max(3, round(n * exam_share))
@@ -298,11 +415,12 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
     ohlc = np.stack(df_np, axis=1).astype(np.float32)
     questions = []
     for qid, k in enumerate(keep):
-        i, kind, answer, trade = picks[k]
+        i, kind, answer, is_trap = picks[k]
         lo, hi = i - BEFORE + 1, min(len(df), i + AFTER + 1)
         bars[qid, : hi - lo] = ohlc[lo:hi]
         times[qid, : hi - lo] = epoch[lo:hi]
-        questions.append({"id": qid + 1, "time": str(df.index[i])[:16], "setup": kind, "answer": answer, "trade": trade,
+        questions.append({"id": qid + 1, "time": str(df.index[i])[:16], "setup": kind, "answer": answer, "trap": bool(is_trap),
+                          "trade": trades.get(i) if kind != "wait" else None, "difficulty": str(difficulty[k]),
                           "set": "exam" if qid >= n - n_exam else "practice"})
     DATA.mkdir(exist_ok=True)
     np.save(QX, X[keep])
@@ -313,9 +431,12 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
             "mastery": MASTERY, "practice": n - n_exam, "exam": n_exam, "questions": questions}
     _write(QUIZ, quiz)
     by = pd.Series([q["answer"] for q in questions]).value_counts().to_dict()
+    lv = pd.Series([q["difficulty"] for q in questions]).value_counts().to_dict()
+    traps = sum(q["trap"] for q in questions)
     if n < n_questions:
         print(f"  your history only had room for {n:,} clean questions; download more years (Train tab) for more", flush=True)
-    print(f"saved {n:,} questions ({n - n_exam:,} practice, {n_exam:,} exam; answers {by})", flush=True)
+    print(f"saved {n:,} questions ({n - n_exam:,} practice, {n_exam:,} exam; answers {by}; {traps:,} traps; "
+          f"difficulty {lv}; {len({q['setup'] for q in questions} - {'wait'})} pro setup types)", flush=True)
     return quiz
 
 
@@ -329,7 +450,7 @@ def question_view(qid: int, quiz: dict | None = None) -> dict:
     t = np.load(QTIMES, mmap_mode="r")[qid - 1]
     rows = [{"time": int(tt), "open": round(float(r[0]), 2), "high": round(float(r[1]), 2), "low": round(float(r[2]), 2),
              "close": round(float(r[3]), 2)} for r, tt in zip(b, t) if tt > 0]
-    q.update(setup_name=setup_name(q["setup"]), explanation=explain(q), bars=rows[:BEFORE], after=rows[BEFORE:])
+    q.update(setup_name=setup_name(q["setup"], q.get("trap")), explanation=explain(q), bars=rows[:BEFORE], after=rows[BEFORE:])
     return q
 
 
@@ -474,6 +595,8 @@ def quiz_inputs(quiz: dict, pol: QuizPolicy) -> np.ndarray:
 
 
 STALL_ROUNDS = 100                # rounds without a newly finished question before it changes tactics
+CURRICULUM_SHARE = 0.9            # hard questions join once this share of the easy and medium ones is finished...
+CURRICULUM_ROUNDS = 60            # ...or after this many rounds, whichever comes first
 STUCK_AFTER = 30                  # rounds since its last right answer before a question counts as stuck
 
 
@@ -509,6 +632,15 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
         if str(pr["built"]) == quiz["built"] and len(pr["streak"]) == n:
             streak, right, asked, done_q, expect = (pr[k].copy() for k in ("streak", "right", "asked", "done", "expect"))
     pool = prac
+    held_back = prac[:0]                                  # hard questions waiting for the curriculum
+    if not focus:
+        diff = np.array([q.get("difficulty", "easy") for q in qs])
+        hard = prac[(diff[prac] == "hard") & ~done_q[prac]]
+        if 0 < len(hard) < len(prac):
+            held_back, pool = hard, prac[~np.isin(prac, hard)]
+            print(f"curriculum: starting with the {len(pool):,} easy and medium questions; the {len(hard):,} hard ones "
+                  f"join once {round(CURRICULUM_SHARE * 100)}% of those are finished (or after {CURRICULUM_ROUNDS} rounds)",
+                  flush=True)
     if focus:
         want_ids = {int(v) - 1 for v in focus}
         pool = np.array([i for i in prac if i in want_ids and not done_q[i]], dtype=int)
@@ -520,7 +652,8 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
     per_round, recent = [], deque(maxlen=1000)
     mistake = None
     best_mastered, best_round = int(done_q[pool].sum()), 0
-    level, note = 0, ""
+    level = 0
+    note = f"easy and medium first; {len(held_back):,} hard questions join later" if len(held_back) else ""
     started, last_write, last_saved = time.time(), 0.0, time.time()
     ctl, ctl_read, due = read_control(), time.time(), time.time()
     print(f"quiz: {len(prac):,} practice questions, {len(exam):,} exam questions, {X.shape[1]} inputs each "
@@ -537,7 +670,7 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
         if not len(idx):
             return []
         worst = idx[np.lexsort((streak[idx], right[idx] / asked[idx]))[:k]]
-        return [{"id": int(i) + 1, "setup_name": setup_name(qs[i]["setup"]), "answer": qs[i]["answer"],
+        return [{"id": int(i) + 1, "setup_name": setup_name(qs[i]["setup"], qs[i].get("trap")), "answer": qs[i]["answer"],
                  "right": int(right[i]), "asked": int(asked[i]), "streak": int(streak[i])} for i in worst]
 
     def state(rnd, done=False, stopped=False, exam_result=None, reason="", current=None):
@@ -623,6 +756,12 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
         if rnd % 10 == 0 or mastered == len(pool):
             print(f"round {rnd}: {int(done_q[prac].sum()):,}/{len(prac):,} finished ({MASTERY} right in a row), "
                   f"{round_points:+,d} points this round, {points:+,d} total" + (f" | {note}" if note else ""), flush=True)
+        if len(held_back) and (done_q[pool].mean() >= CURRICULUM_SHARE or rnd >= CURRICULUM_ROUNDS):
+            pool = np.concatenate([pool, held_back])       # curriculum: now the hard ones
+            note = f"added the {len(held_back):,} hard questions"
+            held_back = held_back[:0]
+            best_mastered, best_round = int(done_q[pool].sum()), rnd
+            print(note, flush=True)
         if done_q[pool].all():
             reason = "every chosen question finished" if focus else "every practice question finished"
             break
@@ -652,8 +791,8 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
         pts = sum(points_for(ACTIONS[a], qs[i]["answer"])[0] for a, i in zip(pe, exam))
         by = {}
         for i, good in zip(exam, ok):
-            r_, t_ = by.get(setup_name(qs[i]["setup"]), (0, 0))
-            by[setup_name(qs[i]["setup"])] = (r_ + int(good), t_ + 1)
+            r_, t_ = by.get(group_name(qs[i]), (0, 0))
+            by[group_name(qs[i])] = (r_ + int(good), t_ + 1)
         exam_result = {"right": int(ok.sum()), "total": int(len(exam)), "pct": round(100 * ok.mean(), 1), "points": int(pts),
                        "by_setup": {k: list(v) for k, v in sorted(by.items())}}
     mastered = int(done_q[prac].sum())
@@ -681,7 +820,7 @@ def write_lessons(quiz, prac, done_q, right, asked, stuck, exam_result, pol, rnd
     qs = quiz["questions"]
     rows = {}
     for i in prac:
-        name = setup_name(qs[i]["setup"])
+        name = group_name(qs[i])
         r = rows.setdefault(name, [0, 0, 0, 0, 0])      # questions, finished, right, asked, stuck
         r[0] += 1
         r[1] += int(done_q[i])
@@ -714,6 +853,7 @@ Agent: {pol.hidden} units, {len(pol.features) + pol.chart} inputs (indicators + 
 
 - Practice finished (right 5 times in a row): {int(done_q[prac].sum()):,} of {len(prac):,}
 - Exam: {exam_line}
+- Question mix: {len({q['setup'] for q in qs if q['setup'] != 'wait'})} pro setup types, {sum(bool(q.get('trap')) for q in qs):,} traps (setups that failed: stay out), {sum(q['setup'] == 'wait' for q in qs):,} stay-out spots; difficulty {', '.join(f"{lvl} {sum(q.get('difficulty') == lvl for q in qs):,}" for lvl in ('easy', 'medium', 'hard'))}
 - Stuck right now: {int(stuck[prac].sum()):,}{(' (for example Q' + ', Q'.join(map(str, stuck_ids)) + ')') if stuck_ids else ''}
 
 ## By setup

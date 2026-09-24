@@ -171,9 +171,11 @@
       <div class="quiz-side">
         <div class="panel">
           <div class="panel-head"><h3>Quiz school</h3><span id="quiz-status" class="muted small"></span></div>
-          <p class="muted small" style="margin:4px 0 10px">Real gold charts where a pro setup worked, or where pros would stay out. The agent answers <b>what do you do?</b> and points are its only reward: right <b class="up">+10</b>, wrong way <b class="down">&minus;10</b>, traded when it should stay out <b class="down">&minus;5</b>, missed a good trade <b class="down">&minus;3</b>. A question is finished once it's right 5 times in a row.</p>
+          <p class="muted small" style="margin:4px 0 10px">Real gold charts where one of 18 pro setups worked, where one failed (a trap: stay out), or where pros would stay out. The agent answers <b>what do you do?</b> and points are its only reward: right <b class="up">+10</b>, wrong way <b class="down">&minus;10</b>, traded when it should stay out <b class="down">&minus;5</b>, missed a good trade <b class="down">&minus;3</b>. A question is finished once it's right 5 times in a row.</p>
           <div class="row-inline">
-            <select id="quiz-n"><option value="40">40 questions</option><option value="100">100</option><option value="500">500</option><option value="1000" selected>1,000</option><option value="2500">2,500</option><option value="5000">5,000</option><option value="10000">10,000</option></select>
+            <label class="quiz-n-label" for="quiz-n"><span class="muted small">Questions</span>
+              <input id="quiz-n" type="number" min="40" max="100000" step="10" value="1000" list="quiz-n-list" inputmode="numeric"></label>
+            <datalist id="quiz-n-list"><option value="100"></option><option value="1000"></option><option value="5000"></option><option value="10000"></option><option value="25000"></option><option value="50000"></option><option value="100000"></option></datalist>
             <button id="quiz-build" class="btn">Build quiz</button>
           </div>
           <div class="row-inline" style="margin-top:8px">

@@ -6,11 +6,33 @@ description: How to run, read and un-stick the Trading Bot's Quiz school - the r
 # Quiz school
 
 The quiz trains a small neural network (`agent/quiz.py`) with reinforcement learning. Each question is a real
-XAUUSD M1 moment from the downloaded history:
-- **Buy/sell questions:** a professional setup appeared (liquidity sweep, opening-range breakout, session-average
-  reclaim, fair value gap, prior-day level test) and a pro-style trade reached 2R cleanly. That means within 3 hours,
-  without first going more than 60% of the way to its stop.
-- **Stay-out questions:** neither side would have been a clean trade.
+XAUUSD M1 moment from the downloaded history, in one of three kinds:
+
+| Kind | Share | Answer | What it is |
+|---|---|---|---|
+| Clean pro trade | about 65% | buy/sell | One of 18 setups appeared and a pro-style trade reached 2R cleanly: within 3 hours, without first going more than 60% of the way to its stop |
+| Trap | about 15% | stay out | The setup appeared but its stop was hit within the hour. Teaches when to skip a setup |
+| Stay-out spot | about 20% | stay out | Middle of the day's range, no level or setup, and neither side would have been a clean trade |
+
+The 18 setups:
+- Liquidity sweep of recent highs/lows.
+- London/NY opening-range breakout.
+- Session-average reclaim/loss.
+- Fair value gap with the H1 trend.
+- Prior-day high/low test.
+- Asian range high/low raided.
+- H1 trend pullback to the 20 EMA.
+- Break-and-hold of the prior-day high/low.
+- Fading a stretch more than 4 ATR from the session average.
+
+How the builder picks questions:
+- Cleanest, fastest examples first, spread evenly across the years.
+- Round-robin over the setups.
+- An hour apart, tightening to 30, then 15 minutes, only when more questions are needed.
+- It drops contradictions (a near-twin, or most of the 5 closest look-alikes, has the other answer) and near-copies,
+  then tops up with fresh candidates.
+- Each question is graded **easy/medium/hard** by how much its look-alikes agree. Training starts with easy and medium
+  and adds the hard ones once 90% of those are finished (or after 60 rounds).
 
 The agent sees 227 inputs: 49 indicator readings plus the chart itself (the last 40 candles and a 90-candle outline).
 Its only goal is points:
@@ -26,9 +48,10 @@ A question is **finished** once it is answered right 5 times in a row. Practice 
 are an **exam** it never trains on.
 
 ## Running it (Quiz tab)
-1. Train tab: **Download history**. More years means more questions (4 years is about 5,000 clean questions;
-   10,000 needs most of 2009+).
-2. Quiz tab: pick a size, then **Build quiz**. Rebuild after an app update that changes the inputs.
+1. Train tab: **Download history**. More years means more questions. With tightened spacing, 4 years holds roughly
+   19,000; the full 2009+ history holds several times that.
+2. Quiz tab: type any size from 40 to 100,000 (suggestions in the box), then **Build quiz**. If the history runs out
+   of room, the build says how many it found. Rebuild after an app update that changes the builder.
 3. Start the quiz:
    - **Start over:** a fresh agent.
    - **Continue:** the saved agent and progress, saved every 20 seconds.
@@ -40,7 +63,7 @@ On the board, each square is one practice question:
 | Square | Meaning |
 |---|---|
 | Dark | Not right yet |
-| Gold shades | On a streak |
+| Gold shades | On a streak (squares shrink to 2 px for quizzes over 20,000) |
 | Solid gold | Finished |
 | Grey | Stuck (it is looping on it) |
 | Baby blue | The question it is on right now |
@@ -78,7 +101,7 @@ Work through these in order:
 
 ## Command line
 ```
-python -m agent.quiz build --questions 5000
+python -m agent.quiz build --questions 25000
 python -m agent.quiz train                   # fresh; loops until everything is finished (Stop from the app)
 python -m agent.quiz train --resume          # continue the saved agent
 python -m agent.quiz train --focus 46,120,733

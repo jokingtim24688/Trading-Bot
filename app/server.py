@@ -409,7 +409,7 @@ QUIZ_DIR = ROOT / "data"
 @app.post("/api/quiz/build")
 def quiz_build(body: dict = Body(default={})):
     s = settings.load()
-    n = max(34, min(10_000, int(body.get("questions", 40))))
+    n = max(34, min(100_000, int(body.get("questions", 40))))
     try:
         jobs.start("quiz", ["-m", "agent.quiz", "build", "--symbol", s["symbol"], "--questions", str(n), "--point", str(s["point"])])
     except RuntimeError as e:
@@ -473,11 +473,13 @@ def quiz_labels():
     from agent import quiz as q
     qz = q._load_json(q.QUIZ, None)
     if not qz:
-        return {"built": None, "names": [], "ids": [], "setups": [], "answers": []}
+        return {"built": None, "names": [], "ids": [], "setups": [], "answers": [], "difficulty": []}
     prac = [x for x in qz["questions"] if x["set"] == "practice"]
-    names = sorted({q.setup_name(x["setup"]) for x in prac})
-    return {"built": qz["built"], "names": names, "ids": [x["id"] for x in prac],
-            "setups": [names.index(q.setup_name(x["setup"])) for x in prac], "answers": [x["answer"] for x in prac]}
+    label = [q.setup_name(x["setup"], x.get("trap")) for x in prac]
+    names = sorted(set(label))
+    where = {nm: k for k, nm in enumerate(names)}
+    return {"built": qz["built"], "names": names, "ids": [x["id"] for x in prac], "setups": [where[nm] for nm in label],
+            "answers": [x["answer"] for x in prac], "difficulty": [x.get("difficulty", "") for x in prac]}
 
 
 @app.get("/api/quiz/question/{qid}")
