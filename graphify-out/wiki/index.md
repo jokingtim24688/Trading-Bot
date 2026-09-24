@@ -4,14 +4,17 @@
 > To regenerate automatically on your PC: `pip install graphifyy`, then run graphify on the repo (use its `--wiki` option).
 > Start here for any question about this repo, and open the linked page for detail.
 
+**Two chats work on this repo at once.** Read [TWO_CHATS.md](../../TWO_CHATS.md) before changing anything: lanes
+(A = backend & skills, B = UI & polish), the shared branch `claude/laughing-bell-3vt2c7`, and the git routine.
+
 ## Communities (subsystems)
-| Community | Page | Core nodes |
-|---|---|---|
-| Desktop app | [app.md](app.md) | `app/main.py`, `app/server.py`, `app/static/*` |
-| Hermes assistant + memory | [hermes.md](hermes.md) | `app/brain.py`, `app/memory.py`, `app/tools.py`, `hermes/` |
-| M1 trading agent | [agent.md](agent.md) | `agent/run.py`, `agent/features.py`, `agent/model.py`, `agent/risk.py`, `agent/broker.py` |
-| MT5 MCP bridge | [mcp.md](mcp.md) | `mcp_server/mt5_mcp.py` |
-| mt5-trading skill + Claude subagent | [skill.md](skill.md) | `.claude/skills/mt5-trading/`, `.claude/agents/mt5-m1-trader.md` |
+| Community | Page | Core nodes | Lane |
+|---|---|---|---|
+| Desktop app | [app.md](app.md) | `app/main.py`, `app/server.py`, `app/static/*` | B: static + window · A: server, jobs, settings |
+| Hermes assistant + memory | [hermes.md](hermes.md) | `app/brain.py`, `app/memory.py`, `app/tools.py`, `hermes/` | A |
+| M1 trading agent | [agent.md](agent.md) | `agent/run.py`, `agent/features.py`, `agent/model.py`, `agent/risk.py`, `agent/broker.py` | A |
+| MT5 MCP bridge | [mcp.md](mcp.md) | `mcp_server/mt5_mcp.py` | A |
+| mt5-trading skill + Claude subagent | [skill.md](skill.md) | `.claude/skills/mt5-trading/`, `.claude/agents/mt5-m1-trader.md` | A |
 
 ## God nodes (most connected)
 1. **MetaTrader5 terminal** (external): used by `app/mt5_service.py`, `agent/broker.py`, `mcp_server/mt5_mcp.py`, `scripts/fetch_m1.py`, `scripts/position_size.py`
@@ -34,9 +37,21 @@
 
 ## Other
 - `simulation/bot-simulation.html`: standalone simulated trading session (synthetic prices, real stake rules); published artifact https://claude.ai/artifact/2NHXbvdi3XurmF51kRbEzw
-- [Progress.md](../../Progress.md): session log of work done.
+- [Progress.md](../../Progress.md): session log of work done; since 2026-09-24 one section per chat at the end.
+- [TWO_CHATS.md](../../TWO_CHATS.md): how the two chats split the work and share the branch; `CLAUDE.md` points every
+  new chat to it.
 - Hardware: Ryzen 5 7600 (6C/12T, AVX-512), RTX 4060 8 GB. See [agent.md](agent.md#hardware).
 
 - 2026-09-23: extra history (agent/history.py, Train-tab download) and practice-cutoff display, see agent.md / app.md.
 - 2026-09-23: Quiz school (agent/quiz.py, Quiz tab): reinforcement learning on real pro setups, reward = points.
+
+## Recent changes, by chat
+Each chat adds lines only to its own list, just above its marker line.
+
+### Chat A (Backend & Skills)
+- 2026-09-24: two-chat setup: `TWO_CHATS.md`, `CLAUDE.md`, per-chat sections in `Progress.md` and here.
 - 2026-09-24: Quiz builds no longer cap near 18k (look-alike majority vote, top-ups until target, capped back-fill, shortfall note in Quiz tab).
+<!-- Chat A: add new lines above this marker -->
+
+### Chat B (UI & Polish)
+<!-- Chat B: add new lines above this marker -->

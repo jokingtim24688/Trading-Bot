@@ -318,7 +318,27 @@
 - Build progress file + Quiz tab progress bar with one bar per slice.
 - Result: 20k-question build 58 s -> 18 s cold, 11 s from cache (4-core sandbox).
 
-## 2026-09-24: Quiz builds no longer stop near 18,000 questions
+---
+
+# Two chats (from 2026-09-24)
+
+Two Claude chats now work on this repo at once (see `TWO_CHATS.md`). Everything above is the history from before.
+Each chat writes only in its own section below, and adds new entries just above its own marker line.
+
+## Chat A log (Backend & Skills)
+
+### 2026-09-24: Two-chat setup
+- Request: the user will run two chats at once on this project and wants a file telling both chats what to do, plus
+  a prompt to brief the second chat. Skills come later (Chat A's lane).
+- `TWO_CHATS.md`: lanes (A = backend & skills, B = UI & polish with the anti-vibe-polish skill), the shared branch
+  `claude/laughing-bell-3vt2c7`, a 9-step git routine for every task, shared-file rules, a "never" list, handoff lists.
+- `CLAUDE.md`: short pointer so every new chat reads `TWO_CHATS.md` automatically.
+- `Progress.md` and the wiki index now have one section per chat with marker lines, so the two chats' notes don't
+  collide in a merge.
+- Branch: the user chose the default branch `claude/laughing-bell-3vt2c7` (the one their PC pulls) as the shared
+  branch and approved both chats pushing there. A new chat starts on it, so it starts up to date.
+
+### 2026-09-24: Quiz builds no longer stop near 18,000 questions
 - Cause: the contradiction check dropped *both* questions of any disagreeing look-alike pair, and new top-ups
   knocked out old good questions. With only 4 top-up rounds, builds levelled off (~18k) whatever size was asked for.
 - Fix (agent/quiz.py):
@@ -333,3 +353,8 @@
   - 100k: 24,666 (70% "stay out") -> 27,999 (balanced: 35/33/32, 25% traps).
   - Training 50 rounds on 20k: exam 71.5%.
 
+<!-- Chat A: add new entries above this line -->
+
+## Chat B log (UI & Polish)
+
+<!-- Chat B: add new entries above this line -->
