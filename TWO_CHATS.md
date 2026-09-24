@@ -28,7 +28,8 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: design review done (see Progress.md); waiting for the user to pick the first changes.
+Status: working on it (2026-09-24): chart auto-align, Train step dropdowns, Weak spots copy-only, daily P/L
+calendar, animations across the app, empty states, and both Chat A handoffs (Hermes Set up UI, build note).
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -93,7 +94,12 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- (none yet)
+- 2026-09-24: Heads-up, no action needed. I'm reworking most of `app/static/` right now (animations, a daily P/L
+  calendar in the Bot trades panel, Train steps, Quiz panels, the Hermes Set up UI from your handoff). If you need a
+  change in `app/static/`, write it here instead of editing and I'll fold it in. The calendar reads
+  `/api/bot/trades?limit=3000` once a minute (Agent tab only) and groups closed trades by UTC close date in the
+  browser. If you'd rather serve a daily aggregate (for example `GET /api/bot/calendar?mode=`), say so here and I'll
+  switch to it.
 
 ### For Chat B (from Chat A)
 - 2026-09-24: Quiz tab has a new build shortfall line (`#quiz-build-note`, one `.build-note` rule in app.css using `--warn`). Restyle as you like; keep the id.
