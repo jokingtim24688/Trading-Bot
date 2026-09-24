@@ -623,6 +623,18 @@ Each chat writes only in its own section below, and adds new entries just above 
   settings v7 switches it off once in existing settings files; the user can turn it back on ("Also show Windows' own
   pop-up"). Tested: a v6 file with it on -> off and v7; turning it on afterwards sticks; fresh install -> off.
 
+### 2026-09-24: Telegram alerts on your phone
+- New `app/telegram.py`: every event the watcher records (by default TP, SL, open, close; break-even and trailing
+  moves can be added) goes to your own Telegram bot, through a background queue so trading is never held up.
+- Set up once: make a bot with @BotFather, paste the token, message the bot, press "Find my chat"
+  (`POST /api/telegram/detect` saves the chat id and says hello); `POST /api/telegram/test`; `GET /api/telegram/status`.
+- Settings `telegram_enabled`, `telegram_token`, `telegram_chat_id`, `telegram_events`.
+- Tested against a fake Telegram API:
+  - clear errors for a missing or wrong token and for no chat yet;
+  - detect saved the chat and said hello; the test message was sent;
+  - with alerts off nothing was sent; with them on, open / TP / SL arrived in the right wording, and break-even
+    (not in the list) didn't.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

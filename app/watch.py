@@ -16,7 +16,7 @@ import time
 from collections import deque
 
 from . import mt5_service as ms
-from . import notify
+from . import notify, telegram
 from .settings import DATA, load
 
 RULES_FILE = DATA / "manual_auto.json"
@@ -76,6 +76,7 @@ def add_event(kind: str, **fields) -> dict:
         _events.append(ev)
     if kind in ("tp", "sl"):
         notify.for_event(ev)                           # Windows pop-up, so you see it with the app minimised
+    telegram.for_event(ev)                             # your phone, if Telegram alerts are on
     return ev
 
 

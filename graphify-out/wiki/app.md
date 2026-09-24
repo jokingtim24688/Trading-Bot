@@ -14,6 +14,10 @@
   (base64 JSON upload, ≤ 5 MB -> 413, first bytes must be wav/mp3/ogg/m4a/aac/flac/webm -> 415), `GET /api/sounds/{id}`
   (the file), `POST /api/sounds/{id}/rename`, `DELETE /api/sounds/{id}`. Settings `keybinds` / `sounds` (objects the UI
   owns; `settings.check` accepts dicts, so backups carry them).
+- **telegram.py** (Chat A): alerts to your phone through your own @BotFather bot (Bot API over httpx, no extra
+  package). Settings `telegram_enabled`, `telegram_token`, `telegram_chat_id`, `telegram_events` (default tp/sl/open/close;
+  also be/trail). `watch.add_event` -> `telegram.for_event` -> background queue (3 tries). Routes `GET /api/telegram/status`,
+  `POST /api/telegram/detect` (chat id from the newest message to the bot, saves it, says hello), `POST /api/telegram/test`.
 - **stats.py** (Chat A): `/api/stats/compare?days=&mode=paper|live|all` -> `{you, bot}` (trades, win rate, net, avg
   win/loss, PF, expectancy, best/worst, avg hold, by_hour, by_weekday, curve; server time).
 - **review.py** (Chat A): weekly summary `/api/review/weekly` (GET, POST = rebuild in the background, `working` flag),

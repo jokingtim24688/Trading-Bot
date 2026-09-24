@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from agent import learn, ledger, progression, score as scoring
 from agent.pro import SETUP_NAMES
 
-from . import brain, manual, memory, mt5_service, review, settings, sounds, stats, watch
+from . import brain, manual, memory, mt5_service, review, settings, sounds, stats, telegram, watch
 from .jobs import LOGS, jobs
 from .settings import ROOT
 
@@ -134,6 +134,23 @@ def sounds_rename(sid: str, body: dict = Body(...)):
 def sounds_delete(sid: str):
     _sound(sid)
     return sounds.delete(sid)
+
+
+# ---------- Telegram alerts ----------
+@app.get("/api/telegram/status")
+def telegram_status():
+    return telegram.status()
+
+
+@app.post("/api/telegram/detect")
+def telegram_detect():
+    """After you message your bot: find your chat id, save it, and send a hello."""
+    return telegram.detect()
+
+
+@app.post("/api/telegram/test")
+def telegram_test():
+    return telegram.test()
 
 
 # ---------- first-run checklist ----------

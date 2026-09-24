@@ -63,6 +63,7 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: Windows pop-up notifications for TP/SL hits (`app/notify.py`, setting `desktop_alerts`).
 - 2026-09-24: `keybinds` / `sounds` settings and your own sound files (`app/sounds.py`, `/api/sounds`).
 - 2026-09-24: speed pass: `sync_bot_ledger` throttled to once per 2 s, forced/staled after closes.
+- 2026-09-24: Telegram alerts (`app/telegram.py`, `/api/telegram/*`): TP/SL/open/close to your phone.
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)

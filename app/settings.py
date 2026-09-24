@@ -45,6 +45,11 @@ DEFAULTS = {
     "manual_be_points": 0,                 # once a trade is this many points up, move its stop to entry + 2 points
     "manual_trail_points": 0,              # the stop follows the price at this distance, only ever tightening
     "desktop_alerts": False,               # also show Windows' own pop-up on a TP/SL hit (the app shows its own at the top right)
+    # Telegram alerts on your phone (your own bot from @BotFather; see app/telegram.py)
+    "telegram_enabled": False,
+    "telegram_token": "",
+    "telegram_chat_id": "",                # filled in by "Find my chat" after you message your bot
+    "telegram_events": ["tp", "sl", "open", "close"],   # also possible: "be", "trail"
     # Owned by the UI (Keybinds and Sounds pages); the server only stores them so they survive and ride in backups
     "keybinds": {},                        # {"bindings": {"man.buy": "B", ...}, "groups": {"app": true, ...}}
     "sounds": {},                          # {"master": {...}, "events": {"profit": {...}, ...}}

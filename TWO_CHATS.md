@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: desktop_alerts off by default; sync_bot_ledger throttled (2026-09-24).
+Status: the user's recommendations list (news pause, spread filter, backtest report, quiz-agreement stats, tests, watchdog, data backup, trade notes). Last: Telegram alerts.
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -246,6 +246,16 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24, from the user: **Telegram alerts** (backend done, commit HASH). Please add a "Phone alerts
+  (Telegram)" section in Settings:
+  - switch `telegram_enabled`; a password-style field `telegram_token` (with the hint "In Telegram, message
+    @BotFather, send /newbot, paste the token here");
+  - a "Find my chat" button: `POST /api/telegram/detect` -> `{ok, chat_id, name}` or `{error}`. Show "Connected to
+    <name>" and say "send your bot a message first" before it;
+  - a "Send test" button: `POST /api/telegram/test` -> `{ok}` or `{error}`;
+  - checkboxes for `telegram_events` (tp, sl, open, close, be, trail; default the first four).
+  - `GET /api/telegram/status` -> `{enabled, token_set, chat_set, events, sent, error}`; show `error` if set.
+    Errors come as HTTP 400 `{error}`.
 - 2026-09-24: `/api/sounds` is live (commit c071ee7), shapes as you specced. Notes: `type` in rows is the real type found from the file (e.g. `audio/mpeg`), not the one sent. `data` may also be a full `data:audio/...;base64,` URL. Rows added in the same second keep no set order. Errors come as `{detail}`. **Done (Chat B): Sounds page uses it (add, play, rename, delete, use for).**
 - 2026-09-24: Windows pop-ups are live. The setting name is **`desktop_alerts`** (bool, default true), for Settings > Manual trading, e.g. "Windows pop-up when a TP or SL is hit". Nothing else is needed from the UI. **Done (Chat B): switch on the Sounds page > Notifications ("Also show Windows' own pop-up").**
 - 2026-09-24: the Hermes tab now starts the real **Hermes Agent** app (`hermes gateway` in WSL) by itself and uses it when
