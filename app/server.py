@@ -482,6 +482,19 @@ def quiz_labels():
             "answers": [x["answer"] for x in prac], "difficulty": [x.get("difficulty", "") for x in prac]}
 
 
+@app.post("/api/quiz/wipe")
+def quiz_wipe():
+    """Delete every quiz question and its progress (stops a running quiz first). The trained agent is kept."""
+    from agent import quiz as q, quiz_report as rp
+    jobs.stop("quiz")
+    removed = 0
+    for f in (q.QUIZ, q.QX, q.QBARS, q.QTIMES, q.PROGRESS, q.STATE, q.CONTROL, rp.REPORT_JSON, rp.REPORT_MD):
+        if f.exists():
+            f.unlink()
+            removed += 1
+    return {"wiped": True, "files": removed}
+
+
 @app.get("/api/quiz/report")
 def quiz_report_get():
     """The weak-spot report: what the quiz agent gets stuck on (made by the quiz every 5 minutes and after each run)."""

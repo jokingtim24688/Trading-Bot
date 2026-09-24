@@ -56,7 +56,9 @@ are an **exam** it never trains on.
    - **Start over:** a fresh agent.
    - **Continue:** the saved agent and progress, saved every 20 seconds.
    - **Work on picked:** only the squares you picked on the board. Finished ones can't be picked.
-4. Speed: **Max** is the default. Slower speeds exist only for watching.
+4. **Wipe** (next to Stop, click twice) deletes every question and its progress so you can build a fresh quiz.
+   The trained agent is kept.
+5. Speed: **Max** is the default. Slower speeds exist only for watching.
 
 On the board, each square is one practice question:
 

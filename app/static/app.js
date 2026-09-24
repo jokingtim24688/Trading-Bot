@@ -830,3 +830,26 @@ $("#quiz-report-copy").onclick = async () => {
   catch (e) { ta.value = report.md; ta.hidden = false; ta.focus(); ta.select(); toast("Press Ctrl+C to copy the selected report, then paste it to Claude."); }
 };
 setInterval(() => state.tab === "quiz" && Date.now() - report.loaded > 30000 && loadReport(false), 5000);
+
+/* wipe: two clicks (the first arms it for 4 seconds) so it can't happen by accident */
+let wipeTimer = null;
+$("#quiz-wipe").onclick = async () => {
+  const b = $("#quiz-wipe");
+  if (!b.classList.contains("armed")) {
+    b.classList.add("armed"); b.textContent = "Click again to wipe";
+    wipeTimer = setTimeout(() => { b.classList.remove("armed"); b.textContent = "Wipe"; }, 4000);
+    return;
+  }
+  clearTimeout(wipeTimer); b.classList.remove("armed"); b.textContent = "Wipe";
+  try {
+    await api("/api/quiz/wipe", { method: "POST" });
+    Object.assign(quiz, { labels: null, streaks: "", st: {}, mistakeAt: -1, viewing: null, lastPts: null });
+    quiz.picked.clear(); updatePicked();
+    if (quiz.series) { quiz.series.setData([]); quiz.lines.forEach(l => quiz.series.removePriceLine(l)); quiz.lines = []; }
+    $("#quiz-q-title").textContent = "Latest mistake"; $("#quiz-q-meta").textContent = "none yet";
+    $("#quiz-answer").innerHTML = `<p class="empty">All questions wiped. Build a new quiz to start again.</p>`;
+    report.data = null; report.md = ""; renderReport();
+    toast("All quiz questions and their progress were deleted. The trained agent is kept.");
+    loadQuiz();
+  } catch (e) { toast(e.message, true); }
+};

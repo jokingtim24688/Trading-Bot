@@ -268,3 +268,8 @@
     York open, vs 0%".
   - Copy button copied the 14.9k-char report.
   - Work on these sent the spot's question ids.
+
+## 2026-09-24: Quiz Wipe button
+- Wipe (next to Stop): two clicks (the first arms it for 4 s). Stops a running quiz, deletes every question and its
+  progress (quiz.json, quiz_x/bars/times .npy, progress, live state, control, weak-spot report). The trained quiz
+  agent (models/quiz_policy.json) is kept. POST /api/quiz/wipe. Tested: 100-question quiz wiped, all files gone.
