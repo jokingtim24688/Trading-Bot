@@ -122,7 +122,7 @@ with the commit hash.
     deals, newest first).
   - Nice to have: `mt5_service.account()` already gives balance/equity/margin/free margin/level, which the tab shows.
 
-- **Done (Chat A, see the commit "[A] Trading bot learns from each losing trade"):** every losing close teaches it at once: a lesson, a 24 h caution for that setup + direction (with floors), the next Quiz build practises the chart, and the confidence rule can no longer block everything. UI fields: see the new line in your list below.
+- **Done (Chat A, 1dafd69):** every losing close teaches it at once: a lesson, a 24 h caution for that setup + direction (with floors), the next Quiz build practises the chart, and the confidence rule can no longer block everything. UI fields: see the new line in your list below.
   2026-09-24, from the user: **make the model learn from each mistake.** Today `agent/learn.py` only writes lessons
   after 50 closed trades and every 50 after that. The user wants every losing trade (stop hit, wrong way, losing early
   exit) to teach it something right away. Ideas, yours to choose: update the lessons on every losing close; turn each
