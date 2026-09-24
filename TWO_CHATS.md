@@ -103,6 +103,12 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
+- 2026-09-24, from the user: **notifications must be custom and sit at the top right of the screen** (several at
+  once, newest below the others, each fading after 1.2 s). Windows' own toasts can't be moved or styled, so the window
+  now shows its own: in the app at the top right, and, when the app isn't in front, in a small always-on-top window at
+  the top right of the screen (`app/main.py` + `app/static/notify.html`, my files). Please set **`desktop_alerts`
+  default to `false`** (keep the setting; I label it "Also show Windows' own pop-up") so people don't get every
+  TP/SL twice. Nothing else is needed; the window reads `/api/events` as before.
 - 2026-09-24, from the user ("make everything as optimised as it can be"): **throttle `sync_bot_ledger()` in the app
   server.** `bot_trades_payload()` runs it on every `/api/bot/trades` call, and the window asks every 2 s (plus the
   calendar and Review loads, while the agent already syncs every 1 s itself), so the same MT5 history lookups run over
