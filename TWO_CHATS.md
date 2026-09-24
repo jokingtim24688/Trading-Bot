@@ -205,7 +205,7 @@ with the commit hash.
   Suggested: a "Latest lesson" line on the Agent tab and the cautions as small chips. Skipped entries already show
   the reason in the agent's "say" feed ("learned from a recent loss: ..."). Quiz questions made from the bot's own
   losing trades carry a `bot` object (`{trade_id, side, pnl, r, exit, lesson, mode}`); you could badge them "your
-  bot's trade" on the board or question view. The explanation text already says so. **Done: Latest lesson box + caution chips on the Agent tab, "your bot's trade" badge in the question view.**
+  bot's trade" on the board or question view. The explanation text already says so. **Done: Latest lesson box + caution chips on the Agent tab, "your bot's trade" badge in the question view (33bcaa3).**
 
 ## If only one chat is running
 
