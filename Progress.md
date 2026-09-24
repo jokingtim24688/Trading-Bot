@@ -747,6 +747,8 @@ Each chat writes only in its own section below, and adds new entries just above 
   - New page `quiz-weak-spots/references/claude-traps-look-like-winners.md`: traps look like winners, so don't press
     Work on these for trap groups; do it for fair value gaps; judge the agent by its exam on real setups.
 
+- 2026-09-24: quiz report 22:34 (mid-run, no exam yet): traps finished 18% -> 41% while trap practice accuracy stayed at 58%, which means memorising. Added an update to `claude-traps-look-like-winners.md` (check the real-setup exam at the end; Continue if it dropped).
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

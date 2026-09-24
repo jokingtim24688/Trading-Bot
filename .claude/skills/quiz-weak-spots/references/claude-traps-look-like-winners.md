@@ -46,3 +46,22 @@ Even traps whose look-alikes agree stay near 17%, and the stay-out spots got wor
   - Count trap questions as "either answer OK" when the look-alikes are split.
   - Score traps by expected points instead of right/wrong.
   - Add a "day's range so far vs normal" input.
+
+## Update from the 22:34 report (same quiz, mid-run, exam not taken yet)
+| | 22:24 | 22:34 |
+|---|---|---|
+| Finished | 34,848 | 43,261 |
+| Stuck | 20,382 | 0 |
+| Traps finished | 18% | 41% |
+| Traps answered right in practice | 58% | 58% |
+
+- **"Stuck 0" is a new run's counter.** It isn't a fix: the same hard questions are still there.
+- **Finished traps rose, but practice accuracy on traps didn't** (38–51% in the worst groups). It's finishing traps
+  by memorising individual charts, not by learning a rule.
+- **The traps it misses look most like winners:** bigger candles, higher volatility, price already stretched from the
+  session average. That confirms the point above.
+- **What to check when the run ends:**
+  - Compare the exam on **real setups** with the last report's 83–98% (fair value gaps 66–74%).
+  - If they dropped, the trap memorising is pushing out real knowledge. Press **Continue**: the memory check and
+    refresher repair it.
+  - The trap exam will likely stay under ~30% whatever the board shows.
