@@ -44,7 +44,9 @@ MT5 stays on Windows, and the app runs a small bridge (MCP server) so Hermes can
    API_SERVER_ENABLED=true
    API_SERVER_KEY=pick-a-long-random-string
    ```
-   then start it with `hermes gateway`. It listens on `http://127.0.0.1:8642`.
+   It listens on `http://127.0.0.1:8642`. You don't have to start it: the app runs `hermes gateway` in WSL by itself
+   when it opens, and again when you chat or press Set up (setting `hermes_agent_autostart`; the command is
+   `hermes_agent_cmd`, the distro `hermes_wsl_distro`). Its output goes to `logs/hermes_gateway.log`.
 4. **Give it the MT5 tools**: merge `hermes/config.snippet.yaml` into `~/.hermes/config.yaml`, then restart
    `hermes gateway`. The app starts the bridge on Windows (`http://localhost:8765/mcp`) when it opens.
 5. **Give it the trading knowledge**: copy the skill folder into Hermes' skills directory. Hermes uses the same

@@ -59,6 +59,7 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: Manual tab backend (`app/manual.py`, `/api/manual/*`); the bot learns from each losing trade (lesson, 24 h caution with floors, quiz practice question; min_confidence capped at the median).
 - 2026-09-24: Manual orders: `sl_points`/`tp_points` anchor SL/TP to the real fill (market) or order price (pending).
 - 2026-09-24: backend for the 11 new features: `app/watch.py` (trailing/BE, alerts feed), `app/stats.py` (you vs bot), `app/review.py` (weekly summary), settings backups, first-run checklist, connection status, replay fields.
+- 2026-09-24: the Hermes tab starts the real Hermes Agent app by itself (`hermes gateway` in WSL) and uses it when installed; the small local model is the fallback.
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)

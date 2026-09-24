@@ -48,6 +48,9 @@ DEFAULTS = {
     "assistant_backend": "auto",           # auto | hermes_agent | local
     "hermes_url": "http://127.0.0.1:8642",
     "hermes_key": "",
+    "hermes_agent_autostart": True,        # start the Hermes Agent app (`hermes gateway`, in WSL) when it's installed
+    "hermes_agent_cmd": "hermes gateway",  # the command that runs its API server
+    "hermes_wsl_distro": "",               # WSL distro Hermes Agent is installed in ("" = the default one)
     "ollama_url": "http://127.0.0.1:11434",
     "ollama_model": "llama3.2:3b",         # small model (~2 GB) for the Hermes chat tab
     "ollama_cpu_only": True,               # run it on the CPU so it never uses the RTX 4060's VRAM

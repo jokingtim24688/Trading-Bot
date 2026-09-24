@@ -568,6 +568,21 @@ Each chat writes only in its own section below, and adds new entries just above 
   ledger trades (PF 1.83, hold 10 min, curve); review text; backup / restore / bad names refused; checklist shape.
   Test files removed afterwards.
 
+### 2026-09-24: Hermes tab linked to the Hermes Agent app
+- The user asked whether we use Hermes and, if so, to link it to the Hermes app. Answer: the tab already talked to
+  Hermes Agent's API server (auto mode), but only if you started `hermes gateway` in WSL yourself; otherwise the small
+  local model answered.
+- Now the app starts it itself (`app/brain.py`): at app start, before a chat (auto / hermes_agent) and on Set up it
+  checks for `hermes` in WSL and runs `hermes gateway` hidden, logging to `logs/hermes_gateway.log`.
+  - Status adds `agent` / `agent_step`.
+  - Agent replies may take up to 30 min, so real tasks (web, terminal, files) can finish.
+  - A broken start isn't retried by every chat (10 min pause; Set up retries at once).
+  - Settings: `hermes_agent_autostart`, `hermes_agent_cmd`, `hermes_wsl_distro`.
+- Tested with a fake `hermes` command:
+  - it started and answered with the session header in 1.5 s;
+  - "not installed" falls back to the local model;
+  - a failing command shows the error at once, and the next chat skips waiting.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

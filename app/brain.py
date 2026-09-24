@@ -62,6 +62,98 @@ def ollama_alive(s: dict) -> bool:
         return False
 
 
+# ---------- the Hermes Agent app: start its API server by itself (in WSL on Windows) ----------
+
+_agent = {"installed": None, "checked": 0.0, "starting": False, "error": "", "proc": None, "tried": 0.0}
+AGENT_RETRY_S = 600             # after a failed start, chats don't wait on it again for 10 min (Set up retries now)
+
+
+def _agent_cmd(s: dict, shell_cmd: str) -> list[str] | None:
+    """How to run a shell command where Hermes Agent lives: inside WSL on Windows (optionally a named distro),
+    directly elsewhere. None when there's no WSL on this Windows PC."""
+    if os.name != "nt":
+        return ["bash", "-lc", shell_cmd]
+    wsl = shutil.which("wsl.exe") or shutil.which("wsl")
+    if not wsl:
+        return None
+    distro = (s.get("hermes_wsl_distro") or "").strip()
+    return [wsl, *(["-d", distro] if distro else []), "-e", "bash", "-lc", shell_cmd]
+
+
+def hermes_agent_installed(s: dict) -> bool:
+    """Is the `hermes` command there (in WSL on Windows)? Checked at most every 10 minutes (WSL is slow to ask)."""
+    if _agent["installed"] is not None and time.time() - _agent["checked"] < 600:
+        return _agent["installed"]
+    cmd = _agent_cmd(s, "command -v hermes")
+    ok = False
+    if cmd:
+        try:
+            r = subprocess.run(cmd, capture_output=True, timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            ok = r.returncode == 0 and bool(r.stdout.strip())
+        except (OSError, subprocess.TimeoutExpired):
+            ok = False
+    _agent.update(installed=ok, checked=time.time())
+    return ok
+
+
+def start_hermes_agent(s: dict | None = None, wait: float = 45, force: bool = False) -> bool:
+    """Start Hermes Agent's gateway (its API server, the MCP tools and its own memory) in the background if it isn't
+    answering. True once it answers on hermes_url."""
+    s = s or load()
+    if hermes_agent_alive(s):
+        return True
+    if force:
+        _agent.update(installed=None, error="")
+    elif _agent["error"] and time.time() - _agent["tried"] < AGENT_RETRY_S:
+        return False
+    if not hermes_agent_installed(s):
+        return False
+    _agent["tried"] = time.time()
+    with _lock:
+        running = _agent["proc"] is not None and _agent["proc"].poll() is None
+        if not running:
+            log = Path(__file__).resolve().parent.parent / "logs" / "hermes_gateway.log"
+            log.parent.mkdir(exist_ok=True)
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            _agent.update(starting=True, error="")
+            _agent["proc"] = subprocess.Popen(_agent_cmd(s, s.get("hermes_agent_cmd") or "hermes gateway"),
+                                              stdout=open(log, "ab"), stderr=subprocess.STDOUT,
+                                              stdin=subprocess.DEVNULL, creationflags=flags,
+                                              start_new_session=os.name != "nt")
+    t0 = time.time()
+    try:
+        while time.time() - t0 < wait:
+            if hermes_agent_alive(s):
+                return True
+            p = _agent["proc"]
+            if p is not None and p.poll() is not None:
+                _agent["error"] = (f"`{s.get('hermes_agent_cmd') or 'hermes gateway'}` stopped (code {p.returncode}); "
+                                   "see logs/hermes_gateway.log. Is API_SERVER_ENABLED=true in ~/.hermes/.env?")
+                return False
+            time.sleep(1)
+        _agent["error"] = ("Hermes Agent started but its API server doesn't answer on "
+                           f"{s['hermes_url']}. Check API_SERVER_ENABLED=true in ~/.hermes/.env (hermes/SETUP.md).")
+        return False
+    finally:
+        _agent["starting"] = False
+
+
+def agent_state(s: dict) -> dict:
+    """The Hermes Agent app in one word: ready / starting / stopped / not_installed / error / off."""
+    if hermes_agent_alive(s):
+        return {"agent": "ready", "agent_step": ""}
+    if s["assistant_backend"] == "local":
+        return {"agent": "off", "agent_step": ""}
+    if _agent["starting"]:
+        return {"agent": "starting", "agent_step": "Starting Hermes Agent…"}
+    if _agent["error"]:
+        return {"agent": "error", "agent_step": _agent["error"]}
+    if _agent["installed"] is False:
+        return {"agent": "not_installed", "agent_step": "Hermes Agent isn't installed (in WSL). The small local model "
+                                                        "answers instead. To use the full Hermes, see hermes/SETUP.md."}
+    return {"agent": "stopped", "agent_step": "Hermes Agent isn't running. Press Set up to start it."}
+
+
 # ---------- getting the local model ready by itself: start Ollama, download the model ----------
 
 _setup = {"stage": "", "pct": 0.0, "error": "", "busy": False}
@@ -215,10 +307,13 @@ def install_ollama() -> str:
 
 
 def setup(install: bool = True) -> dict:
-    """The Set up button: install Ollama if needed (and allowed), start it, download the model."""
+    """The Set up button: start the Hermes Agent app if it's installed; install Ollama if needed (and allowed), start
+    it, download the model (the fallback when Hermes Agent isn't there)."""
     s = load()
     _setup["error"] = ""
     note = ""
+    if s["assistant_backend"] != "local" and s.get("hermes_agent_autostart", True):
+        threading.Thread(target=lambda: start_hermes_agent(s, force=True), daemon=True).start()
     if not ollama_exe() and install:
         note = install_ollama()
     else:
@@ -243,7 +338,7 @@ def status() -> dict:
     agent = hermes_agent_alive(s)
     return {"backend_setting": s["assistant_backend"], "hermes_agent": agent, "ollama": ollama_alive(s),
             "model": s["ollama_model"], "device": "CPU" if s.get("ollama_cpu_only", True) else "GPU", "facts": len(memory.all_facts()),
-            "installing": _setup["busy"] and _setup["stage"] == "installing Ollama", **local_state(s)}
+            "installing": _setup["busy"] and _setup["stage"] == "installing Ollama", **local_state(s), **agent_state(s)}
 
 
 def _ask_hermes_agent(s: dict, text: str) -> str:
@@ -251,7 +346,8 @@ def _ask_hermes_agent(s: dict, text: str) -> str:
     if s.get("hermes_key"):
         headers["Authorization"] = f"Bearer {s['hermes_key']}"
     body = {"model": "hermes-agent", "messages": [{"role": "user", "content": text}]}
-    r = httpx.post(f"{s['hermes_url']}/v1/chat/completions", json=body, headers=headers, timeout=300)
+    r = httpx.post(f"{s['hermes_url']}/v1/chat/completions", json=body, headers=headers,
+                   timeout=httpx.Timeout(30, read=1800))   # a real task (web, terminal, files) can take a while
     if r.status_code != 200:
         raise BackendError(f"Hermes Agent returned {r.status_code}: {r.text[:300]}")
     return r.json()["choices"][0]["message"]["content"]
@@ -335,6 +431,8 @@ def _local_not_ready(s: dict) -> str | None:
 def chat(text: str) -> dict:
     s = load()
     choice = s["assistant_backend"]
+    if choice in ("auto", "hermes_agent") and s.get("hermes_agent_autostart", True) and not hermes_agent_alive(s):
+        start_hermes_agent(s)                    # the full Hermes app first, when it's installed
     if choice == "auto":
         choice = "hermes_agent" if hermes_agent_alive(s) else "local"
     trace: list = []

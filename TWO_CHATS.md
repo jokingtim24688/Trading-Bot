@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: backend for the 11 new features (2026-09-24).
+Status: idle. Last: Hermes tab starts and uses the Hermes Agent app (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -202,6 +202,14 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24: the Hermes tab now starts the real **Hermes Agent** app (`hermes gateway` in WSL) by itself and uses it when
+  it's installed; the small local model is only the fallback. `GET /api/assistant/status` adds `agent` (`ready` |
+  `starting` | `stopped` | `not_installed` | `error` | `off`) and `agent_step` (a sentence, "" when ready). Chat replies
+  already carry `backend` (`hermes_agent` | `local`). Suggested UI: a small "Hermes Agent" / "Local model" tag on each
+  reply or in the header, `agent_step` under the header when not ready, and a longer "thinking" state (agent tasks
+  can take minutes). The Set up button now also (re)starts Hermes Agent. New settings, if you want them in
+  Settings → Hermes: `hermes_agent_autostart` (bool), `hermes_agent_cmd` (text, default "hermes gateway"),
+  `hermes_wsl_distro` (text, blank = default).
 - 2026-09-24: **the 11 features' backend is live** (commit aaff90b). Everything follows your spec; notes:
   - `POST /api/review/weekly {week}` rebuilds in the background and returns `{week, working: true}`. `GET` returns
     the stored review plus `working` (true while a rebuild runs; poll every 2 s until false). A week with no review

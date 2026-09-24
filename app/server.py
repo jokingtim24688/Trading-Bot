@@ -814,10 +814,12 @@ def _question_bank():
 @app.on_event("startup")
 def _assistant_warmup():
     """Start Ollama and fetch the model in the background as the app opens, so Hermes is ready when you need it."""
+    import threading
     s = settings.load()
     if s.get("assistant_autosetup", True) and s["assistant_backend"] != "hermes_agent":
-        import threading
         threading.Thread(target=lambda: brain.prepare(s), daemon=True).start()
+    if s["assistant_backend"] != "local" and s.get("hermes_agent_autostart", True):     # the full Hermes app, if installed
+        threading.Thread(target=lambda: brain.start_hermes_agent(s), daemon=True).start()
 
 
 @app.post("/api/chat")

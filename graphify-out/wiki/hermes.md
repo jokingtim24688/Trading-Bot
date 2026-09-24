@@ -1,6 +1,12 @@
 # Hermes assistant + memory
 - **brain.py**: backends `hermes_agent` (Nous Research Hermes Agent API server, `POST /v1/chat/completions`, headers `X-Hermes-Session-Id`/`X-Hermes-Session-Key`, bearer key), `local` (Ollama `/api/chat`, model `llama3.2:3b` on CPU only (`ollama_cpu_only` -> `num_gpu` 0), `keep_alive` (default 0) to unload VRAM, tool loop ≤ 6 rounds), `auto`.
 - **Self-setup (brain.py)**: `ollama_exe` (PATH or %LOCALAPPDATA%/Programs/Ollama) -> `start_ollama` (hidden `ollama serve`) -> `prepare` (background `/api/pull` with progress) -> `local_state` (ready/starting/downloading/not_installed/stopped/no_model/error + next_step); `setup()` = winget install + prepare (`POST /api/assistant/setup`); app startup warm-up in server.py; chat runs setup first (`assistant_autosetup`). Auto mode falls back to local if Hermes Agent errors.
+- **Hermes Agent auto-start (brain.py, 2026-09-24)**: `hermes_agent_installed` (`command -v hermes` via `wsl -e bash -lc`,
+  cached 10 min), `start_hermes_agent` (hidden `hermes gateway`, waits up to 45 s for `/v1/models`, log
+  `logs/hermes_gateway.log`, a failed start isn't retried by chats for 10 min; Set up forces it), `agent_state` ->
+  status `agent` (ready/starting/stopped/not_installed/error/off) + `agent_step`. Runs at app start, before each chat in
+  auto/hermes_agent, and on Set up. Settings `hermes_agent_autostart`, `hermes_agent_cmd`, `hermes_wsl_distro`. Agent
+  replies may take up to 30 min (real tasks).
 - **memory.py**: one plain JSON file `data/hermes_memory.json` (`facts`, `messages` up to 5,000, atomic writes; old `memory.db` imported once); `relevant_facts` keyword ranking; `search_messages`.
 - **No lingering model**: `ollama_keep_alive` 0 (unload after each reply); `brain.sleep()` / `POST /api/assistant/sleep` unloads on leaving the Hermes tab; the model sees the last 20 messages.
 - **tools.py** (local backend): get_account, get_positions, get_bot_trades, get_m1_market, position_size, agent_status, start_agent (paper/demo), stop_agent, remember, recall, web_fetch (only `web_sites` trading/market sites; redirects checked hop by hop), setup_guide (reads quiz-setups pages), save_note/list_notes/read_note (`data/notes/`), calculate (AST-safe), current_time. No order placement.
