@@ -5,7 +5,7 @@
 > Start here for any question about this repo, and open the linked page for detail.
 
 **Two chats work on this repo at once.** Read [TWO_CHATS.md](../../TWO_CHATS.md) before changing anything: lanes
-(A = backend & skills, B = UI & polish), the shared branch `claude/keen-planck-wi3cn5`, and the git routine.
+(A = backend & skills, B = UI & polish), the shared branch `claude/laughing-bell-3vt2c7`, and the git routine.
 
 ## Communities (subsystems)
 | Community | Page | Core nodes | Lane |

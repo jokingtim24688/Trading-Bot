@@ -3,8 +3,9 @@
 Two Claude chats work on this project at the same time. This file says what each chat owns and how the two share
 one branch without breaking each other's work. Read it at the start of every task.
 
-- **Shared branch:** `claude/keen-planck-wi3cn5`. Both chats commit and push here. The user's PC pulls this branch,
-  and all recent work is on it. The GitHub default branch (`claude/laughing-bell-3vt2c7`) is old: never build on it.
+- **Shared branch:** `claude/laughing-bell-3vt2c7`, the repo's default branch. Both chats commit and push here, and
+  the user's PC pulls it. Your session may have been given its own `claude/...` branch: the user has approved pushing
+  to the shared branch instead.
 - **Map of the code:** `graphify-out/wiki/index.md`. Read it before you start; update it when you finish.
 - **Who changes this file's rules:** only the user. When they change the split, update this file in one commit.
 
@@ -50,7 +51,7 @@ font are deliberate choices: keep them unless the user asks for a change.
 
 ## Every task, in this order
 
-1. Sync: `git pull --no-rebase origin claude/keen-planck-wi3cn5`
+1. Sync: `git pull --no-rebase origin claude/laughing-bell-3vt2c7`
 2. Read this file: your status line, and the handoffs for you.
 3. Set your status line to what you're doing now.
 4. Work in your lane.
@@ -59,7 +60,7 @@ font are deliberate choices: keep them unless the user asks for a change.
    the bottom of `graphify-out/wiki/index.md`.
 7. Commit with your tag first: `[A] Quiz: ...` or `[B] UI: ...`
 8. Sync again (step 1). Fix any conflict, and re-test if code changed.
-9. Push: `git push origin HEAD:claude/keen-planck-wi3cn5`. If it's rejected because the other chat pushed first,
+9. Push: `git push origin HEAD:claude/laughing-bell-3vt2c7`. If it's rejected because the other chat pushed first,
    repeat step 8, then push again.
 
 Commit and push small pieces often. The other chat sees your work sooner, and conflicts stay small.
