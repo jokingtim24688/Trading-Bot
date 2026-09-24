@@ -14,7 +14,7 @@ one branch without breaking each other's work. Read it at the start of every tas
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: Hermes chat on llama3.2:3b, CPU only (no VRAM) (2026-09-24).
+Status: working on the quiz question bank (one always-on creator, 10 on Build), then Hermes site limits and per-setup skills (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -131,6 +131,23 @@ with the commit hash.
 - 2026-09-24: Hermes chat now runs `llama3.2:3b` on the CPU only (backend done by Chat A). The Hermes pill in
   `app.js` says `${s.model} on RTX 4060`; please use the new status field `device` ("CPU" or "GPU") instead, e.g.
   "llama3.2:3b on CPU". Settings has a new boolean `ollama_cpu_only` (default true) if you show Hermes settings. **Done: pill says "… on CPU"; switch in Settings.**
+- 2026-09-24: Quiz question bank + no maximum (backend done by Chat A). Why: the user wants no cap, 10 question
+  creators, and questions always being made and stored as markdown.
+  - The Quiz number box: please remove its max (the API has none now) and offer "All" (send `questions: 0` = every
+    usable question in the bank).
+  - `GET /api/quiz/state` has a new `bank` object:
+    - `stage`: text, e.g. "up to date: 28,595 questions ready", "question creators at work", "paused: the Build quiz
+      button is using all 10 question creators".
+    - `running`, `pct`.
+    - `finders`: per half-year `{label, stage, pct}`.
+    - `good` (usable questions), `questions` (found), `history` ("2009-01-02 to 2026-09-24"), `updated`.
+    - `watcher`: bool, the always-on creator job.
+
+    Suggested: a small line on the Quiz tab like "Question bank: 28,595 ready (2009–2026), always adding new ones",
+    with the half-year bars while it works.
+  - Settings: `quiz_workers` label is now "question creators when Build quiz is pressed" (0 = up to 10; allow up to
+    16). New boolean `quiz_bank_auto` ("keep making questions in the background", default on).
+  - Build progress (`build`) works as before; the finder bars are now per half-year (e.g. "2016H2").
 
 ## If only one chat is running
 

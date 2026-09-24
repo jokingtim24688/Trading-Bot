@@ -409,7 +409,8 @@ QUIZ_DIR = ROOT / "data"
 @app.post("/api/quiz/build")
 def quiz_build(body: dict = Body(default={})):
     s = settings.load()
-    n = max(34, min(100_000, int(body.get("questions", 40))))
+    n = int(body.get("questions", 40) or 0)            # no maximum; 0 = every usable question in the bank
+    n = 0 if n <= 0 else max(34, n)
     try:
         (QUIZ_DIR / "quiz_build.json").unlink(missing_ok=True)
         jobs.start("quiz", ["-m", "agent.quiz", "build", "--symbol", s["symbol"], "--questions", str(n), "--point", str(s["point"]),
@@ -467,6 +468,8 @@ def quiz_state():
     pol = q.load_policy()
     return {"state": st, "control": q.read_control(), "job_running": jobs.jobs["quiz"].running,
             "build": q._load_json(q.BUILD_STATE, None),
+            "bank": {**q._load_json(q.BANK_META, {}), **q._load_json(q.BANK_STATUS, {}), "mean": None, "std": None,
+                     "columns": None, "slices": None, "watcher": jobs.jobs["bank"].running},
             "quiz": None if not qz else {"built": qz["built"], "count": len(qz["questions"]), "points": qz["points"],
                                          "practice": sum(x["set"] == "practice" for x in qz["questions"])},
             "policy": pol.meta if pol else None}
@@ -639,6 +642,17 @@ def assistant_sleep():
 def assistant_setup(body: dict = Body(default={})):
     """Set up the local model: install Ollama (winget) if missing, start it, download the model."""
     return brain.setup(install=bool(body.get("install", True)))
+
+
+@app.on_event("startup")
+def _question_bank():
+    """One question creator keeps the quiz question bank up to date at all times (below normal priority)."""
+    s = settings.load()
+    if s.get("quiz_bank_auto", True) and not jobs.jobs["bank"].running:
+        try:
+            jobs.start("bank", ["-m", "agent.quiz", "bank", "--watch", "--symbol", s["symbol"], "--point", str(s["point"])])
+        except RuntimeError:
+            pass
 
 
 @app.on_event("startup")

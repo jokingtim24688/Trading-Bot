@@ -1,7 +1,15 @@
 """Quiz school: the bot answers "what do you do here?" on real gold situations and learns from points (reinforcement learning).
 
-    python -m agent.quiz build --questions 1000   # find the questions in your downloaded M1 history (40 to 10,000)
+    python -m agent.quiz bank --watch             # one question creator keeps the question bank up to date (always on)
+    python -m agent.quiz build --questions 1000   # pick a quiz from the bank (0 = every usable question; no maximum)
     python -m agent.quiz train                    # quiz the agent until it gets every question right 5 times in a row
+
+The question bank (data/quiz_bank/)
+    Questions are made from history in fixed half-years. One question creator works at all times in the background,
+    below normal priority, and only redoes a half-year when its candles change (so new candles only touch the latest
+    one). Build quiz wakes up all 10 creators (the other 9 are idle until then) to finish anything left, then picks
+    the quiz from the bank. The whole bank is also written as markdown: data/quiz_bank/README.md and one table per
+    year in data/quiz_bank/questions/.
 
 Where the questions come from
     There is no public record of individual professional gold trades, so the quiz is built from real XAUUSD candles:
@@ -26,6 +34,9 @@ How it learns (reinforcement learning)
     After each answer the policy is nudged toward actions that earned more points than it usually earns on that
     question (REINFORCE with a per-question baseline), so a right answer on a question it keeps missing is a big reward. 5% of the time it tries a random answer, so an answer it has written off still gets tried and
     can still earn points; without that, a question it is sure it knows (wrongly) can stay stuck forever.
+    After a wrong answer it is also shown the right answer and learns it straight away, and that question's retries
+    are swapped for random section-mates (its 5 closest look-alikes with the same setup and answer), so it learns the
+    pattern rather than one chart; the 5th right answer in a row is always on the question itself.
     A question counts as mastered once it has been answered right 5 times in a row; mastered questions keep coming up
     so it doesn't forget them, and unfinished questions are asked 2 extra times per round. It never gives up on its
     own: when no new question is finished for 100 rounds it asks the stuck ones 7 extra times with 3x bigger learning
@@ -34,11 +45,14 @@ How it learns (reinforcement learning)
     the quiz-lessons skill. "Continue" picks up the saved agent and progress; "focus" works only on the questions you
     pick (finished ones are left out).
 
-Files: data/quiz.json (questions), data/quiz_x.npy (inputs), data/quiz_bars.npy + data/quiz_times.npy (charts),
+Files: data/quiz_bank/ (the bank + markdown), data/quiz_cache/slices/ (saved creator results per half-year),
+data/quiz.json (questions), data/quiz_x.npy (inputs), data/quiz_bars.npy + data/quiz_times.npy (charts),
 models/quiz_policy.json (the trained agent), data/quiz_state.json (live progress for the app).
 """
 import argparse
+import hashlib
 import json
+import os
 import time
 from collections import deque
 from datetime import datetime, timezone
@@ -73,7 +87,6 @@ EXPLORE = 0.05                    # share of answers picked at random...
 EXPLORE_MAX = 0.5                 # ...rising to half the time on a question it keeps missing
 EXTRA = 2                         # unfinished questions are asked this many extra times per round (7 more once stuck)
 HIDDEN = 64
-MAX_QUESTIONS = 100_000
 SESSION = (10, 20)                # server hours pros are active in (London open to late New York)
 
 PRO_SETUPS = {
@@ -119,7 +132,6 @@ TRAP_SHARE, WAIT_SHARE = 0.15, 0.20       # the rest are clean pro trades
 TRAP_MINUTES = 60                          # a trap: the setup's stop was hit within the hour
 SPACINGS = (60, 30, 15, 10)                # minutes between questions; tightens only when more are needed
 MAX_SHARE = {"trade": 1.0, "trap": 2 * TRAP_SHARE, "wait": 2 * WAIT_SHARE}   # most a group may reach when others run out
-TOPUP_ROUNDS = 25                          # most top-up rounds when contradictions/near-copies get dropped
 
 
 def setup_name(key: str, trap: bool = False) -> str:
@@ -268,53 +280,73 @@ def _year_balanced(idx: np.ndarray, quality: np.ndarray, years: np.ndarray) -> n
 
 
 CACHE_DIR = DATA / "quiz_cache"
+SLICE_DIR = CACHE_DIR / "slices"
 BUILD_STATE = DATA / "quiz_build.json"
-CACHE_VERSION = 1
-WARMUP = 30_000                   # candles of warm-up before each finder's slice, so its indicators match the full run
-SLICE = 300_000                   # candles per slice: a finder working on one needs about 0.9 GB of RAM
-TRADE_FIELDS = ("idx", "won", "mins", "mae", "stop", "target", "entry")
+CACHE_VERSION = 2
+WARMUP = 30_000                   # candles of warm-up before each slice, so its indicators match the full run
+MAX_CREATORS = 10                 # question creators (finder processes) working at once by default
+CREATOR_GB = 0.6                  # RAM one creator needs for a half-year slice
+SAMPLE_ROWS = 3000                # rows per slice used to scale the inputs (mean/std)
+TRADE_FIELDS = ("t", "won", "mins", "mae", "stop", "target", "entry")
 
 
 def default_workers() -> int:
-    """Question finders to run at once: one per physical core but one, fewer if RAM is short (~1 GB each)."""
+    """Question creators at once: up to 10, never more than the CPU threads minus two, fewer if RAM is short."""
+    threads = os.cpu_count() or 4
     try:
         import psutil
-        cores = psutil.cpu_count(logical=False) or 2
         free_gb = psutil.virtual_memory().available / 1e9
     except Exception:                                    # noqa: BLE001
-        import os
-        cores, free_gb = max(1, (os.cpu_count() or 2) // 2), 8.0
-    return max(1, min(cores - 1, int(free_gb * 0.6 // 1.0), 8))
+        free_gb = 8.0
+    return max(1, min(MAX_CREATORS, threads - 2, int(free_gb * 0.7 / CREATOR_GB)))
+
+
+def _lower_priority():
+    """Question creators run below normal priority, so trading and the app stay smooth while they work."""
+    try:
+        import psutil
+        p = psutil.Process()
+        p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS if os.name == "nt" else 10)
+    except Exception:                                    # noqa: BLE001
+        pass
 
 
 class _Progress:
-    """Build progress for the app (data/quiz_build.json); finders write their own files next to it."""
+    """Build progress for the app (data/quiz_build.json, or the bank's status file); creators write their own files
+    next to it."""
 
-    def __init__(self, workers):
-        self.t0, self.workers = time.time(), workers
+    def __init__(self, workers, path: Path = BUILD_STATE, prefix: str = "quiz_build_w"):
+        self.t0, self.workers, self.path, self.prefix = time.time(), workers, path, prefix
         self.stage, self.pct, self.cached, self.labels, self.short = "starting", 0.0, False, [], ""
-        for p in DATA.glob("quiz_build_w*.json"):
-            p.unlink()
+        self.extra: dict = {}
+        for p in DATA.glob(f"{prefix}*.json"):
+            p.unlink(missing_ok=True)
+
+    def worker_file(self, k: int) -> Path:
+        return DATA / f"{self.prefix}{k}.json"
 
     def set(self, stage=None, pct=None, done=False):
         self.stage = stage or self.stage
         self.pct = self.pct if pct is None else pct
         finders = []
         for k, label in enumerate(self.labels):
-            w = _load_json(DATA / f"quiz_build_w{k}.json", {})
+            w = _load_json(self.worker_file(k), {})
             finders.append({"label": label, "stage": w.get("stage", "waiting"), "pct": w.get("pct", 0)})
-        _write(BUILD_STATE, {"running": not done, "done": done, "stage": self.stage, "pct": round(self.pct, 3),
-                             "elapsed": round(time.time() - self.t0, 1), "cached": self.cached, "workers": self.workers, "short": self.short,
-                             "finders": finders})
+        _write(self.path, {"running": not done, "done": done, "stage": self.stage, "pct": round(self.pct, 3),
+                           "elapsed": round(time.time() - self.t0, 1), "cached": self.cached, "workers": self.workers,
+                           "short": self.short, "finders": finders, **self.extra})
 
 
 def _find(job):
-    """One question finder: every pro setup and stay-out spot in its slice of history, and what happened after each.
-    Runs in its own process; several run at once on different years and the build merges what they find."""
-    k, lo, own_lo, own_hi, total, times_ns, ohlc, spread_pts, point, n_workers = job
+    """One question creator: every pro setup and stay-out spot in its half-year of history, and what happened after
+    each. Runs in its own process; up to 10 run at once on different half-years and the bank merges what they find.
+    Candidates are identified by their candle time, so saved results stay valid when earlier history is added."""
+    k, wfile, lo, own_lo, own_hi, total, times_ns, ohlc, spread_pts, point, label, low = job
+    if low:
+        _lower_priority()
 
     def report(stage, pct):
-        _write(DATA / f"quiz_build_w{k}.json", {"stage": stage, "pct": round(pct, 3)})
+        _write(Path(wfile), {"stage": stage, "pct": round(pct, 3)})
 
     report("reading indicators", 0.02)
     df = pd.DataFrame(ohlc, columns=["open", "high", "low", "close"], index=pd.DatetimeIndex(times_ns, tz="UTC"))
@@ -326,7 +358,7 @@ def _find(job):
     spread = spread_pts.astype(float) * point
     report("finding setups", 0.5)
     cands = _candidates(f)
-    s0, s1 = own_lo - lo, own_hi - lo                    # this finder's own candles (the rest is warm-up/look-ahead)
+    s0, s1 = own_lo - lo, own_hi - lo                    # this creator's own candles (the rest is warm-up/look-ahead)
 
     def usable(v):
         g = v + lo
@@ -340,7 +372,7 @@ def _find(job):
         if len(idx):
             sd = _stop_dist(kind, idx, df_np, a, spread)
             won, mins, mae, stop, target, entry = _outcomes(df_np, idx, side, sd, spread)
-            out[kind] = {"idx": idx + lo, "won": won, "mins": mins.astype(np.int16), "mae": mae.astype(np.float32),
+            out[kind] = {"t": times_ns[idx], "won": won, "mins": mins.astype(np.int16), "mae": mae.astype(np.float32),
                          "stop": stop, "target": target, "entry": entry}
         report("checking what happened", 0.5 + 0.45 * (j + 1) / (len(kinds) + 1))
     idx = usable(cands["wait"])
@@ -348,101 +380,152 @@ def _find(job):
         sd = 1.5 * a[idx]
         wb, mb, eb, *_ = _outcomes(df_np, idx, "buy", sd, spread)
         ws, ms, es, *_ = _outcomes(df_np, idx, "sell", sd, spread)
-        out["wait"] = {"idx": idx + lo, "clean_b": wb & (mb <= CLEAN_MINUTES) & (eb <= CLEAN_MAE),
+        out["wait"] = {"t": times_ns[idx], "clean_b": wb & (mb <= CLEAN_MINUTES) & (eb <= CLEAN_MAE),
                        "clean_s": ws & (ms <= CLEAN_MINUTES) & (es <= CLEAN_MAE)}
-    pos = np.unique(np.concatenate([v["idx"] for v in out.values()])) if out else np.zeros(0, np.int64)
-    X = f.to_numpy(np.float32)[pos - lo] if len(pos) else np.zeros((0, f.shape[1]), np.float32)
+    local = np.unique(np.concatenate([np.searchsorted(times_ns, v["t"]) for v in out.values()])) if out else \
+        np.zeros(0, np.int64)
+    X = f.to_numpy(np.float32)[local] if len(local) else np.zeros((0, f.shape[1]), np.float32)
     own = f.iloc[s0:s1].dropna()
-    sample = own.sample(min(len(own), 50_000 // n_workers + 1), random_state=k).to_numpy(np.float32)
+    seed = int(hashlib.md5(label.encode()).hexdigest()[:8], 16)
+    sample = own.sample(min(len(own), SAMPLE_ROWS), random_state=seed).to_numpy(np.float32) if len(own) else \
+        np.zeros((0, f.shape[1]), np.float32)
     report("done", 1.0)
-    return {"out": out, "pos": pos, "X": X, "sample": sample, "columns": list(f.columns)}
+    return {"label": label, "out": out, "t": times_ns[local], "X": X, "sample": sample, "columns": list(f.columns)}
 
 
-def _history_key(symbol, point):
+def _history_sig(symbol: str) -> list:
+    """Cheap fingerprint of the history files (size + time changed): the bank watcher checks it every minute."""
     files = []
     for name in (f"{symbol}_M1.parquet", f"{symbol}_M1_history.parquet"):
         p = DATA / name
         if p.exists():
             st = p.stat()
             files.append([name, st.st_size, int(st.st_mtime)])
-    return {"version": CACHE_VERSION, "symbol": symbol, "point": point, "files": files, "horizon": HORIZON,
-            "clean": [CLEAN_MINUTES, CLEAN_MAE], "session": list(SESSION)}
+    return files
 
 
-def _load_cache(key):
-    meta = _load_json(CACHE_DIR / "key.json", None)
-    if not meta or meta.get("key") != key or not (CACHE_DIR / "raw.npz").exists():
-        return None
-    z = np.load(CACHE_DIR / "raw.npz")
-    raw = {"pos": z["pos"], "X": z["X"], "mean": z["mean"], "std": z["std"], "columns": meta["columns"], "out": {}}
+def _slice_plan(df) -> list[tuple[str, int, int]]:
+    """Fixed calendar half-years (2016H1, 2016H2, ...). A slice's candles, and so its saved results, only change
+    when its own data changes: new candles only ever touch the latest slice."""
+    t = df.index.asi8
+    first, last = df.index[0], df.index[-1]
+    edges = [pd.Timestamp(year=y, month=m, day=1, tz="UTC") for y in range(first.year, last.year + 2) for m in (1, 7)]
+    pos = np.searchsorted(t, [e.as_unit("ns").value for e in edges])
+    return [(f"{edges[k].year}H{1 if edges[k].month == 1 else 2}", int(pos[k]), int(pos[k + 1]))
+            for k in range(len(edges) - 1) if pos[k + 1] > pos[k]]
+
+
+def _slice_hash(label, lo, hi, times_ns, ohlc, spread_pts, point) -> str:
+    h = hashlib.blake2b(digest_size=16)
+    h.update(json.dumps([CACHE_VERSION, label, point, HORIZON, CLEAN_MINUTES, CLEAN_MAE, list(SESSION), WARMUP,
+                         hi - lo]).encode())
+    for arr in (times_ns[lo:hi], ohlc[lo:hi], spread_pts[lo:hi]):
+        h.update(np.ascontiguousarray(arr).tobytes())
+    return h.hexdigest()
+
+
+def _save_slice(label: str, r: dict):
+    SLICE_DIR.mkdir(parents=True, exist_ok=True)
+    arrays = {"t": r["t"], "X": r["X"], "sample": r["sample"]}
+    for kind, d in r["out"].items():
+        for field, v in d.items():
+            arrays[f"{kind}__{field}"] = v
+    tmp = SLICE_DIR / f"{label}.tmp.npz"
+    np.savez(tmp, **arrays)
+    tmp.replace(SLICE_DIR / f"{label}.npz")
+
+
+def _load_slice(label: str, columns: list) -> dict:
+    z = np.load(SLICE_DIR / f"{label}.npz")
+    r = {"label": label, "t": z["t"], "X": z["X"], "sample": z["sample"], "columns": columns, "out": {}}
     for name in z.files:
         if "__" in name:
             kind, field = name.split("__", 1)
-            raw["out"].setdefault(kind, {})[field] = z[name]
-    return raw
+            r["out"].setdefault(kind, {})[field] = z[name]
+    return r
 
 
-def _save_cache(key, raw):
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    arrays = {"pos": raw["pos"], "X": raw["X"], "mean": raw["mean"], "std": raw["std"]}
-    for kind, d in raw["out"].items():
-        for field, v in d.items():
-            arrays[f"{kind}__{field}"] = v
-    np.savez(CACHE_DIR / "raw.npz", **arrays)
-    _write(CACHE_DIR / "key.json", {"key": key, "columns": raw["columns"]})
-
-
-def _find_all(df, point, workers, prog):
-    """Cut the history into slices (~300k candles each) and let several question finders work through them at the
-    same time, each taking the next slice when it finishes one; then merge what they found."""
+def _slice_jobs(df, point):
+    """Every half-year slice with its fingerprint, and whether its saved results still match it."""
     n = len(df)
-    n_slices = max(1, round(n / SLICE))
-    workers = max(1, min(workers, n_slices))
-    bounds = np.linspace(0, n, n_slices + 1).astype(int)
     times_ns = df.index.asi8
     ohlc = df[["open", "high", "low", "close"]].to_numpy(np.float64)
     spread_pts = df["spread"].to_numpy(np.float64)
-    jobs = []
-    prog.labels = []
-    for k in range(n_slices):
-        own_lo, own_hi = int(bounds[k]), int(bounds[k + 1])
+    index = _load_json(SLICE_DIR / "index.json", {})
+    plan = []
+    for label, own_lo, own_hi in _slice_plan(df):
         lo, hi = max(0, own_lo - WARMUP), min(n, own_hi + HORIZON + 1)
-        jobs.append((k, lo, own_lo, own_hi, n, times_ns[lo:hi], ohlc[lo:hi], spread_pts[lo:hi], point, workers))
-        prog.labels.append(f"{df.index[own_lo]:%Y-%m} to {df.index[own_hi - 1]:%Y-%m}")
+        hsh = _slice_hash(label, lo, hi, times_ns, ohlc, spread_pts, point)
+        saved = index.get(label, {})
+        fresh = saved.get("hash") == hsh and (SLICE_DIR / f"{label}.npz").exists()
+        plan.append({"label": label, "lo": lo, "own_lo": own_lo, "own_hi": own_hi, "hi": hi, "hash": hsh,
+                     "fresh": fresh, "columns": saved.get("columns")})
+    return plan, (times_ns, ohlc, spread_pts)
+
+
+def _find_all(df, point, workers, prog, plan=None, arrays=None, low=False, should_yield=None):
+    """Up to 10 question creators work through the half-years at once, each taking the next one when it finishes.
+    Half-years whose candles haven't changed are loaded from their saved results instead of being redone."""
+    if plan is None:
+        plan, arrays = _slice_jobs(df, point)
+    times_ns, ohlc, spread_pts = arrays
+    n = len(df)
+    todo = [p for p in plan if not p["fresh"]]
+    workers = max(1, min(workers, len(todo) or 1))
+    prog.labels = [p["label"] for p in plan]
     prog.workers = workers
-    print(f"  {workers} question finder(s) working at once through {n_slices} slice(s) of history "
-          f"({prog.labels[0][:7]} to {prog.labels[-1][-7:]})", flush=True)
-    prog.set("finders at work", 0.05)
-    if workers == 1:
-        results = []
+    prog.cached = not todo
+    for k, p in enumerate(plan):
+        if p["fresh"]:
+            _write(prog.worker_file(k), {"stage": "saved earlier", "pct": 1.0})
+    print(f"  {len(plan)} half-years of history ({plan[0]['label']} to {plan[-1]['label']}): "
+          f"{len(plan) - len(todo)} saved earlier, {len(todo)} to do with {workers} question creator(s) at once",
+          flush=True)
+    prog.set("question creators at work" if todo else "using saved results", 0.05)
+    index = _load_json(SLICE_DIR / "index.json", {})
+    results = {}
+    jobs = [(k, str(prog.worker_file(k)), p["lo"], p["own_lo"], p["own_hi"], n, times_ns[p["lo"]:p["hi"]],
+             ohlc[p["lo"]:p["hi"]], spread_pts[p["lo"]:p["hi"]], point, p["label"], low)
+            for k, p in enumerate(plan) if not p["fresh"]]
+
+    def keep(r):
+        _save_slice(r["label"], r)
+        index[r["label"]] = {"hash": next(p["hash"] for p in plan if p["label"] == r["label"]), "columns": r["columns"]}
+        _write(SLICE_DIR / "index.json", index)
+        results[r["label"]] = r
+
+    if jobs and workers == 1:
         for j in jobs:
-            results.append(_find(j))
-            prog.set("finders at work", 0.05 + 0.6 * len(results) / len(jobs))
-    else:
-        from concurrent.futures import ProcessPoolExecutor, wait
+            if should_yield and should_yield():          # a build wants all 10 creators: step aside, keep what's saved
+                return None
+            keep(_find(j))
+            prog.set("question creators at work", 0.05 + 0.6 * len(results) / len(jobs))
+    elif jobs:
+        from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
         with ProcessPoolExecutor(max_workers=workers) as ex:
-            futs = [ex.submit(_find, j) for j in jobs]
-            while True:
-                done, pending = wait(futs, timeout=0.5)
-                prog.set("finders at work", 0.05 + 0.6 * len(done) / len(futs))
-                if not pending:
-                    break
-            results = [f.result() for f in futs]
-    out = {}
-    for r in results:
+            pending = {ex.submit(_find, j) for j in jobs}
+            while pending:
+                done, pending = wait(pending, timeout=0.5, return_when=FIRST_COMPLETED)
+                for fut in done:
+                    keep(fut.result())
+                prog.set("question creators at work", 0.05 + 0.6 * len(results) / len(jobs))
+    columns = next((r["columns"] for r in results.values()), None) or next(p["columns"] for p in plan if p["columns"])
+    parts = [results.get(p["label"]) or _load_slice(p["label"], columns) for p in plan]
+    out: dict = {}
+    for r in parts:
         for kind, d in r["out"].items():
-            if kind not in out:
-                out[kind] = {k2: [v] for k2, v in d.items()}
-            else:
-                for k2, v in d.items():
-                    out[kind][k2].append(v)
+            for k2, v in d.items():
+                out.setdefault(kind, {}).setdefault(k2, []).append(v)
     out = {kind: {k2: np.concatenate(v) for k2, v in d.items()} for kind, d in out.items()}
-    sample = np.vstack([r["sample"] for r in results])
+    for d in out.values():                               # candle positions in today's history
+        d["idx"] = np.searchsorted(times_ns, d["t"])
+    sample = np.vstack([r["sample"] for r in parts])
     mean = np.nanmean(sample, 0)
     std = np.nanstd(sample, 0, ddof=1)
     std[~(std > 0)] = 1.0
-    return {"out": out, "pos": np.concatenate([r["pos"] for r in results]), "X": np.vstack([r["X"] for r in results]),
-            "mean": mean, "std": std, "columns": results[0]["columns"]}
+    t_all = np.concatenate([r["t"] for r in parts])
+    return {"out": out, "pos": np.searchsorted(times_ns, t_all), "X": np.vstack([r["X"] for r in parts]),
+            "mean": mean, "std": std, "columns": columns}
 
 
 class _Neighbours:
@@ -527,6 +610,13 @@ class _Neighbours:
         if n0:
             self._map(old_rows, range(0, n0, step))
 
+    def restore(self, Z, ans, saved: dict):
+        """Pick up from a saved bank, so only new questions need comparing."""
+        self.Z, self.ans = Z.astype(np.float32), np.asarray(ans)
+        self.nd, self.na = saved["nd"].astype(np.float32), saved["na"].astype(self.ans.dtype)
+        self.same, self.other = saved["same"].astype(np.int32), saved["other"].astype(np.int32)
+        self.older_other, self.dupe = saved["older"].astype(bool), saved["dupe"].astype(bool)
+
     def result(self):
         own = self.same + 1                                # a question votes for its own answer
         contra = (self.other > own) | ((self.other == own) & self.older_other)
@@ -535,208 +625,470 @@ class _Neighbours:
         return (self.na == self.ans[:, None]).mean(1), contra, self.dupe
 
 
-def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.25, point: float = 0.01, seed: int = 7,
-          workers: int = 0):
-    from .history import load_bars
-    n_questions = int(min(MAX_QUESTIONS, max(34, n_questions)))
-    workers = workers or default_workers()
-    prog = _Progress(workers)
-    t0 = time.time()
-    prog.set("loading history", 0.01)
-    df = load_bars(symbol)
-    print(f"looking for pro setups in {len(df):,} candles ({df.index[0]:%Y-%m-%d} -> {df.index[-1]:%Y-%m-%d})...", flush=True)
-    key = _history_key(symbol, point)
-    raw = _load_cache(key)
-    if raw is not None:
-        prog.cached = True
-        print("  using the saved finder results for this history (cache): skipping straight to picking", flush=True)
-    else:
-        raw = _find_all(df, point, workers, prog)
-        _save_cache(key, raw)
-    t_find = time.time()
-    prog.set("picking the best questions", 0.7)
-    df_np = tuple(df[c].to_numpy() for c in ("open", "high", "low", "close"))
-    years = df.index.year.to_numpy()
-    rng = np.random.default_rng(seed)
-    pos, Xall, mean, std = raw["pos"], raw["X"], raw["mean"], raw["std"]
+# ---------------------------------------------------------------- the question bank
+# One question creator keeps turning history into questions at all times (in the background, below normal priority);
+# the Build quiz button wakes up all 10 creators to finish whatever is left, then picks the quiz from the bank.
+BANK_DIR = DATA / "quiz_bank"
+BANK = BANK_DIR / "bank.npz"
+BANK_META = BANK_DIR / "meta.json"
+BANK_STATUS = BANK_DIR / "status.json"
+BANK_LOCK = BANK_DIR / "lock"
+BUILD_REQUEST = BANK_DIR / "build_request"
+BANK_MD = BANK_DIR / "questions"
+BANK_VERSION = 1
+KINDS = list(PRO_SETUPS) + ["wait"]
+BANK_FIELDS = ("t", "kind", "ans", "trap", "quality", "mins", "stop", "target", "entry", "X",
+               "nd", "na", "same", "other", "older", "dupe")
+SHARE = {"trade": 1 - TRAP_SHARE - WAIT_SHARE, "trap": TRAP_SHARE, "wait": WAIT_SHARE}
 
-    # clean pro winners, traps (quick failures) and clean stay-out spots, best examples first across years
-    pools, trades = {}, {}
+
+class _BankLock:
+    """Only one process updates the bank at a time. A build asks the background creator to step aside
+    (BUILD_REQUEST); it does so after the half-year it is working on."""
+
+    def __init__(self, prog=None, wait_stage="waiting for the background question creator to save its work"):
+        self.prog, self.wait_stage = prog, wait_stage
+
+    def __enter__(self):
+        BANK_DIR.mkdir(parents=True, exist_ok=True)
+        while True:
+            try:
+                fd = os.open(BANK_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, str(os.getpid()).encode())
+                os.close(fd)
+                return self
+            except FileExistsError:
+                if self._stale():
+                    BANK_LOCK.unlink(missing_ok=True)
+                    continue
+                if self.prog:
+                    self.prog.set(self.wait_stage)
+                time.sleep(0.5)
+
+    def __exit__(self, *exc):
+        BANK_LOCK.unlink(missing_ok=True)
+
+    @staticmethod
+    def _stale() -> bool:
+        try:
+            text, age = BANK_LOCK.read_text().strip(), time.time() - BANK_LOCK.stat().st_mtime
+        except OSError:
+            return False
+        if not text:
+            return age > 10
+        try:
+            import psutil
+            return not psutil.pid_exists(int(text))
+        except (ImportError, ValueError):
+            return age > 3 * 3600
+
+
+def _stable_random(t: np.ndarray) -> np.ndarray:
+    """A fixed 'random' order for stay-out spots, the same on every update."""
+    return ((t.astype(np.uint64) // np.uint64(60_000_000_000) * np.uint64(2654435761)) % np.uint64(1 << 32)
+            ).astype(np.float64) / (1 << 32)
+
+
+def _bank_pools(raw, years, t_min=None):
+    """Clean pro winners, traps (quick failures) and clean stay-out spots, best examples first across years (only
+    those after t_min when topping up the bank). Also returns each pool's trade details."""
+    pools, details = {}, {}
     for kind, (side, _) in PRO_SETUPS.items():
         d = raw["out"].get(kind)
         if d is None or not len(d["idx"]):
             continue
         idx, won, mins, mae = d["idx"], d["won"], d["mins"].astype(float), d["mae"].astype(float)
-        clean = won & (mins <= CLEAN_MINUTES) & (mae <= CLEAN_MAE)
-        trap = ~won & (mins <= TRAP_MINUTES)
-        for mask, is_trap, quality in ((clean, False, (1 - mae) + (1 - mins / CLEAN_MINUTES)), (trap, True, 1 - mins / TRAP_MINUTES)):
+        new = d["t"] > t_min if t_min is not None else np.ones(len(idx), bool)
+        clean = won & (mins <= CLEAN_MINUTES) & (mae <= CLEAN_MAE) & new
+        trap = ~won & (mins <= TRAP_MINUTES) & new
+        for mask, is_trap, quality in ((clean, False, (1 - mae) + (1 - mins / CLEAN_MINUTES)),
+                                       (trap, True, 1 - mins / TRAP_MINUTES)):
             sel = np.flatnonzero(mask)
-            pools[(kind, "wait" if is_trap else side, is_trap)] = _year_balanced(idx[sel], quality[sel], years[idx[sel]])
-            for j in sel:
-                trades[int(idx[j])] = {"minutes": int(d["mins"][j]), "stop": round(float(d["stop"][j]), 2),
-                                       "target": round(float(d["target"][j]), 2), "entry": round(float(d["entry"][j]), 2)}
-        print(f"  {setup_name(kind)}: {len(idx):,} seen, {int(clean.sum()):,} clean winners, {int(trap.sum()):,} traps",
-              flush=True)
+            key = (kind, "wait" if is_trap else side, is_trap)
+            order = _year_balanced(np.arange(len(sel)), quality[sel], years[idx[sel]])
+            pools[key] = idx[sel][order]
+            details[key] = {"pos": idx[sel][order], "t": d["t"][sel][order], "quality": quality[sel][order],
+                            "mins": d["mins"][sel][order], "stop": d["stop"][sel][order],
+                            "target": d["target"][sel][order], "entry": d["entry"][sel][order]}
     d = raw["out"].get("wait")
     if d is not None and len(d["idx"]):
-        sel = np.flatnonzero(~d["clean_b"] & ~d["clean_s"])
-        pools[("wait", "wait", False)] = _year_balanced(d["idx"][sel], rng.random(len(sel)), years[d["idx"][sel]])
-        print(f"  {WAIT_NAME}: {len(d['idx']):,} seen, {len(sel):,} clean stay-out spots", flush=True)
-    if not any(len(v) for k, v in pools.items() if k[0] != "wait"):
-        raise SystemExit("No pro setups found. Download more history (Train tab) and try again.")
+        new = d["t"] > t_min if t_min is not None else np.ones(len(d["idx"]), bool)
+        sel = np.flatnonzero(~d["clean_b"] & ~d["clean_s"] & new)
+        q = _stable_random(d["t"][sel])
+        order = _year_balanced(np.arange(len(sel)), q, years[d["idx"][sel]])
+        key = ("wait", "wait", False)
+        pools[key] = d["idx"][sel][order]
+        z = np.zeros(len(sel))
+        details[key] = {"pos": d["idx"][sel][order], "t": d["t"][sel][order], "quality": q[order],
+                        "mins": z.astype(np.int16), "stop": z, "target": z, "entry": z}
+    return pools, details
 
-    # plan: 65% clean trades (round-robin over setups), 15% traps, 20% stay-out; spread through the plan
-    trade_keys = [k for k in pools if not k[2] and k[0] != "wait" and len(pools[k])]
-    trap_keys = [k for k in pools if k[2] and len(pools[k])]
-    at = {k: 0 for k in pools}
-    occupied = np.zeros(len(df), bool)
-    spacing_at = [0]                                      # which of SPACINGS is in use
-    backfilled = [0]                                      # plan items filled from another answer group
-    counts = {"trade": 0, "trap": 0, "wait": 0}          # questions picked so far, by group
 
-    def make_plan(count):
-        n_trap, n_wait = round(count * TRAP_SHARE), round(count * WAIT_SHARE)
-        plan = ([trade_keys[j % len(trade_keys)] for j in range(count - n_trap - n_wait)]
-                + ([trap_keys[j % len(trap_keys)] for j in range(n_trap)] if trap_keys else [])
-                + [("wait", "wait", False)] * n_wait)
-        return [plan[k] for k in rng.permutation(len(plan))]
-
-    def full(g):
-        return counts[g] >= MAX_SHARE[g] * (sum(counts.values()) + 1)
-
-    def select(plan):
-        """Best-first picks for the plan; spacing tightens only when the history runs out of room."""
-        taken = []
+def _select_all(pools, occupied, counts):
+    """Take every candidate the spacing rules allow (60 -> 30 -> 15 -> 10 minutes apart, tightening only for what is
+    left), keeping the 65/15/20 mix while it lasts and never letting traps or stay-outs swamp the bank."""
+    by_group = {g: [k for k in pools if _group(k) == g and len(pools[k])] for g in SHARE}
+    taken = []
+    for spacing in SPACINGS:
+        at = {k: 0 for k in pools}
+        live = {g: list(v) for g, v in by_group.items()}
+        rr = {g: 0 for g in SHARE}
         while True:
-            spacing, missing = SPACINGS[spacing_at[0]], []
-            for key in plan:
-                got = None
-                if full(_group(key)):                       # trades ran out: don't let traps/stay-outs swamp the quiz
-                    missing.append(key)
-                    continue
-                for k in [key] + [x for x in pools if x[1] == key[1] and x[2] == key[2] and x != key]:   # same answer
-                    arr = pools.get(k, [])
-                    while at[k] < len(arr):
-                        i = int(arr[at[k]])
-                        at[k] += 1
-                        if not occupied[max(0, i - spacing + 1):i + spacing].any():
-                            got = (i, k)
-                            break
-                    if got:
-                        break
-                if got is None and spacing_at[0] == len(SPACINGS) - 1:   # this answer group ran out: back-fill
-                    for k in sorted(pools, key=lambda x: at[x] - len(pools[x])):   # from the fullest other group
-                        if full(_group(k)):
-                            continue
-                        arr = pools[k]
-                        while at[k] < len(arr):
-                            i = int(arr[at[k]])
-                            at[k] += 1
-                            if not occupied[max(0, i - spacing + 1):i + spacing].any():
-                                got = (i, k)
-                                break
-                        if got:
-                            backfilled[0] += 1
-                            break
-                if got is None:
-                    missing.append(key)
-                    continue
-                i, (kind, answer, is_trap) = got
-                counts[_group(got[1])] += 1
-                occupied[i] = True
-                taken.append((i, kind, answer, is_trap))
-            if not missing or spacing_at[0] == len(SPACINGS) - 1:
-                return taken
-            spacing_at[0] += 1
-            print(f"  {len(missing):,} more needed: allowing questions {SPACINGS[spacing_at[0]]} minutes apart", flush=True)
-            plan = missing
-            for k in at:                                    # re-scan with the tighter spacing
-                at[k] = 0
-
-    def rows_for(ps):
-        return Xall[np.searchsorted(pos, [p[0] for p in ps])]
-
-    picks = select(make_plan(int(n_questions * 1.35) + 20))
-    if len(picks) < 10:
-        raise SystemExit(f"Only found {len(picks)} usable questions. Download more history and try again.")
-
-    # remove contradictions and near-copies (topping up with fresh candidates when many get dropped), and grade the
-    # rest by how much their look-alikes agree; only new questions are compared on each top-up
-    nb = _Neighbours()
-    new, slow, prev_good = picks, 0, 0
-    for attempt in range(TOPUP_ROUNDS):
-        prog.set(f"comparing {len(picks):,} questions with each other", min(0.9, 0.75 + 0.01 * attempt))
-        print(f"  comparing {len(new):,} new questions with {len(picks):,} in total...", flush=True)
-        Xn = rows_for(new)
-        nb.add(np.clip(np.nan_to_num((Xn - mean) / std), -5, 5), np.array([p[2] for p in new]))
-        same_share, contra, dupe = nb.result()
-        bad = contra | dupe | (same_share <= 0.2)
-        good = int((~bad).sum())
-        if good >= n_questions:
-            break
-        need = n_questions - good
-        if attempt and good - prev_good < 0.005 * need:     # top-ups barely help any more: the history is used up
-            slow += 1
-            if slow >= 2:
+            total = sum(counts.values()) + 1
+            open_ = [g for g in SHARE if live[g] and counts[g] < MAX_SHARE[g] * total]
+            if not open_:
                 break
-        else:
-            slow = 0
-        prev_good = good
-        rate = good / len(picks)
-        new = select(make_plan(int(need / max(rate, 0.3) * 1.2) + 20))
-        if not new:
-            break
-        print(f"  {len(picks) - good:,} dropped so far, {good:,} good: adding {len(new):,} fresh candidates", flush=True)
-        picks = picks + new
-    print(f"  checked {len(picks):,} candidates: dropped {int(contra.sum()):,} outvoted by look-alikes with the other "
-          f"answer, {int(((same_share <= 0.2) & ~contra).sum()):,} whose closest look-alikes mostly disagree and "
-          f"{int((dupe & ~contra & (same_share > 0.2)).sum()):,} near-copies"
-          + (f"; {backfilled[0]:,} places filled from another answer group" if backfilled[0] else ""), flush=True)
-    keep = [k for k in rng.permutation(len(picks)) if not bad[k]][:n_questions]
-    difficulty = np.where(same_share >= 0.8, "easy", np.where(same_share >= 0.5, "medium", "hard"))
+            g = max(open_, key=lambda x: SHARE[x] * total - counts[x])   # the group furthest behind its share
+            ks = live[g]
+            k = ks[rr[g] % len(ks)]                                          # round-robin over its setups
+            rr[g] += 1
+            arr, got = pools[k], None
+            while at[k] < len(arr):
+                i = int(arr[at[k]])
+                at[k] += 1
+                if not occupied[max(0, i - spacing + 1):i + spacing].any():
+                    got = i
+                    break
+            if at[k] >= len(arr):
+                ks.remove(k)
+            if got is None:
+                continue
+            occupied[got] = True
+            counts[g] += 1
+            taken.append((got, k, at[k] - 1))
+    return taken
 
-    prog.set("saving the questions and their charts", 0.92)
+
+def _load_bank() -> dict:
+    z = np.load(BANK)
+    return {k: z[k] for k in z.files}
+
+
+def _bank_z(X, mean, std):
+    return np.clip(np.nan_to_num((X - mean) / std), -5, 5).astype(np.float32)
+
+
+def _bank_step(df, raw, meta_old, plan, symbol, point, prog):
+    """Turn the creators' candidates into the bank: pick them under the spacing and mix rules, check each against its
+    look-alikes, save, and write the markdown copy. Only new history is added when the old history is unchanged."""
+    times_ns = df.index.asi8
+    years = df.index.year.to_numpy()
+    slices_now = {p["label"]: p["hash"] for p in plan}
+    prev = None
+    if (meta_old and meta_old.get("version") == BANK_VERSION and BANK.exists() and meta_old.get("symbol") == symbol
+            and meta_old.get("point") == point and meta_old.get("columns") == raw["columns"]):
+        old = list(meta_old.get("slices", {}))
+        now = list(slices_now)
+        if (old and now[:len(old) - 1] == old[:-1] and old[-1] in slices_now
+                and all(slices_now[lb] == meta_old["slices"][lb] for lb in old[:-1])):
+            prev = _load_bank()
+    if prev is not None:
+        mean, std, t_min = np.array(meta_old["mean"]), np.array(meta_old["std"]), meta_old["scan_end"]
+        mode = "adding the new history"
+    else:
+        mean, std, t_min = raw["mean"], raw["std"], None
+        mode = "sorting all the history"
+    prog.set(f"picking questions ({mode})", 0.7)
+    pools, details = _bank_pools(raw, years, t_min)
+    if prev is None and not any(len(v) for k, v in pools.items() if k[0] != "wait"):
+        raise SystemExit("No pro setups found. Download more history (Train tab) and try again.")
+    occupied = np.zeros(len(df), bool)
+    counts = {"trade": 0, "trap": 0, "wait": 0}
+    if prev is not None and len(prev["t"]):
+        occupied[np.searchsorted(times_ns, prev["t"])] = True
+        for g, n_ in zip(("trade", "trap", "wait"), (int(((prev["kind"] < len(PRO_SETUPS)) & ~prev["trap"]).sum()),
+                                                     int(prev["trap"].sum()), int((prev["kind"] == len(PRO_SETUPS)).sum()))):
+            counts[g] = n_
+    picks = _select_all(pools, occupied, counts)
+    m = len(picks)
+    new = {"t": np.zeros(m, np.int64), "kind": np.zeros(m, np.int16), "ans": np.zeros(m, np.int8),
+           "trap": np.zeros(m, bool), "quality": np.zeros(m, np.float32), "mins": np.zeros(m, np.int16),
+           "stop": np.zeros(m), "target": np.zeros(m), "entry": np.zeros(m)}
+    for j, (pos_, key, at_) in enumerate(picks):
+        d = details[key]
+        new["t"][j] = d["t"][at_]
+        new["kind"][j] = KINDS.index(key[0])
+        new["ans"][j] = ACTIONS.index(key[1])
+        new["trap"][j] = key[2]
+        for f_ in ("quality", "mins", "stop", "target", "entry"):
+            new[f_][j] = d[f_][at_]
+    new["X"] = raw["X"][np.searchsorted(raw["pos"], np.searchsorted(times_ns, new["t"]))] if m else \
+        np.zeros((0, len(raw["columns"])), np.float32)
+    total = m + (len(prev["t"]) if prev is not None else 0)
+    prog.set(f"checking {total:,} questions against their look-alikes", 0.8)
+    print(f"  bank: {m:,} new questions ({mode}), {total:,} in total; checking look-alikes...", flush=True)
+    nb = _Neighbours()
+    if prev is not None and len(prev["t"]):
+        nb.restore(_bank_z(prev["X"], mean, std), prev["ans"], prev)
+    if m:
+        nb.add(_bank_z(new["X"], mean, std), new["ans"])
+    bank = {}
+    for f_ in ("t", "kind", "ans", "trap", "quality", "mins", "stop", "target", "entry", "X"):
+        bank[f_] = np.concatenate([prev[f_], new[f_]]) if prev is not None else new[f_]
+    if nb.Z is not None:
+        bank.update(nd=nb.nd, na=nb.na, same=nb.same, other=nb.other, older=nb.older_other, dupe=nb.dupe)
+        share, contra, dupe = nb.result()
+    else:
+        share, contra, dupe = np.ones(0), np.zeros(0, bool), np.zeros(0, bool)
+    bank.update(share=share.astype(np.float32), contra=contra, bad=contra | dupe | (share <= 0.2))
+    BANK_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = BANK_DIR / "bank.tmp.npz"
+    np.savez(tmp, **bank)
+    tmp.replace(BANK)
+    good = int((~bank["bad"]).sum())
+    meta = {"version": BANK_VERSION, "symbol": symbol, "point": point, "columns": raw["columns"],
+            "mean": np.round(mean, 6).tolist(), "std": np.round(std, 6).tolist(), "slices": slices_now,
+            "scan_end": int(times_ns[max(0, len(df) - HORIZON - 2)]),
+            "history": f"{df.index[0]:%Y-%m-%d} to {df.index[-1]:%Y-%m-%d}",
+            "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "questions": int(len(bank["t"])),
+            "good": good}
+    _write(BANK_META, meta)
+    prog.set("writing the markdown copy", 0.9)
+    _write_bank_md(bank, meta)
+    print(f"  bank: {good:,} usable questions of {len(bank['t']):,} ({meta['history']})", flush=True)
+    return bank, meta
+
+
+def _write_bank_md(bank, meta):
+    """The bank as plain markdown: data/quiz_bank/README.md plus one table per year in data/quiz_bank/questions/."""
+    BANK_MD.mkdir(parents=True, exist_ok=True)
+    t = pd.to_datetime(bank["t"], utc=True)
+    order = np.argsort(bank["t"], kind="stable")
+    status = np.where(bank["contra"], "dropped: look-alikes have the other answer",
+                      np.where(bank["dupe"], "dropped: near-copy",
+                               np.where(bank["share"] <= 0.2, "dropped: closest look-alikes disagree", "kept")))
+    diff = np.where(bank["share"] >= 0.8, "easy", np.where(bank["share"] >= 0.5, "medium", "hard"))
+    rows_by_year: dict = {}
+    for i in order:
+        k = int(bank["kind"][i])
+        kind = KINDS[k]
+        trap = bool(bank["trap"][i])
+        name = setup_name(kind, trap)
+        if kind == "wait":
+            result = "no clean trade either way"
+        elif trap:
+            result = f"stop hit in {int(bank['mins'][i])} min"
+        else:
+            result = f"target hit in {int(bank['mins'][i])} min"
+        lv = "" if status[i] != "kept" else diff[i]
+        prices = ("" if kind == "wait" else
+                  f"{bank['entry'][i]:.2f} | {bank['stop'][i]:.2f} | {bank['target'][i]:.2f}")
+        if kind == "wait":
+            prices = " |  | "
+        rows_by_year.setdefault(t[i].year, []).append(
+            f"| {t[i]:%Y-%m-%d %H:%M} | {name} | {ACTIONS[int(bank['ans'][i])].upper()} | {prices} | {result} | "
+            f"{status[i]} | {lv} |")
+    head = ("| Time (UTC) | Setup | Right answer | Entry | Stop | Target | What happened | Status | Difficulty |\n"
+            "|---|---|---|---|---|---|---|---|---|\n")
+    for f_ in BANK_MD.glob("*.md"):
+        if int(f_.stem) not in rows_by_year:
+            f_.unlink()
+    for year, rows in rows_by_year.items():
+        (BANK_MD / f"{year}.md").write_text(f"# Quiz questions from {year}\n\n{len(rows):,} questions.\n\n" + head
+                                            + "\n".join(rows) + "\n", encoding="utf-8")
+    kept = ~bank["bad"]
+    lines = []
+    for k, kind in enumerate(KINDS):
+        for trap in (False, True):
+            sel = (bank["kind"] == k) & (bank["trap"] == trap)
+            if sel.any():
+                lines.append(f"| {setup_name(kind, trap)} | {int(sel.sum()):,} | {int((sel & kept).sum()):,} |")
+    years_ = ", ".join(f"[{y}](questions/{y}.md)" for y in sorted(rows_by_year))
+    (BANK_DIR / "README.md").write_text(
+        f"# Quiz question bank\n\nUpdated {meta['updated']} from {meta['history']} of {meta['symbol']} M1 history.\n\n"
+        f"**{meta['good']:,} usable questions** of {meta['questions']:,} found. One question creator keeps adding new "
+        "ones in the background as new candles arrive; Build quiz picks from here.\n\n"
+        "| Setup | Found | Usable |\n|---|---|---|\n" + "\n".join(lines) + f"\n\nBy year: {years_}\n", encoding="utf-8")
+
+
+def _bank_update(symbol, point, workers, prog, should_yield=None, low=False):
+    """Bring the bank up to date with the history. Returns (bank, meta, df), or None if it stepped aside for a build."""
+    from .history import load_bars
+    for f_ in (CACHE_DIR / "raw.npz", CACHE_DIR / "key.json"):           # the old single-file cache
+        f_.unlink(missing_ok=True)
+    prog.set("loading history", 0.01)
+    df = load_bars(symbol)
+    plan, arrays = _slice_jobs(df, point)
+    meta = _load_json(BANK_META, None)
+    if (meta and meta.get("version") == BANK_VERSION and BANK.exists() and meta.get("symbol") == symbol
+            and meta.get("point") == point and meta.get("slices") == {p["label"]: p["hash"] for p in plan}):
+        prog.cached = True
+        return _load_bank(), meta, df
+    raw = _find_all(df, point, workers, prog, plan, arrays, low=low, should_yield=should_yield)
+    if raw is None or (should_yield and should_yield()):
+        return None
+    bank, meta = _bank_step(df, raw, meta, plan, symbol, point, prog)
+    return bank, meta, df
+
+
+def _bank_cycle(symbol, point, parent):
+    """One background update, run in its own process so its memory is handed back when it ends. Exit code 0 = up to
+    date, 3 = stepped aside for a build (or the app closed)."""
+    _lower_priority()
+
+    why = []
+
+    def should_yield():
+        if BUILD_REQUEST.exists():
+            why[:] = ["paused: the Build quiz button is using all 10 question creators"]
+            return True
+        try:
+            import psutil
+            gone = not psutil.pid_exists(parent)
+        except ImportError:
+            gone = False
+        if gone:
+            why[:] = ["stopped: the app closed (it carries on next time)"]
+        return gone
+
+    prog = _Progress(1, path=BANK_STATUS, prefix="quiz_bank_w")
+    try:
+        with _BankLock():
+            r = _bank_update(symbol, point, 1, prog, should_yield=should_yield, low=True)
+    except SystemExit as e:                              # no history yet
+        prog.set(f"waiting for history: {e}", 0.0, done=True)
+        raise SystemExit(0)
+    if r is None:
+        prog.set(why[0] if why else "paused", prog.pct, done=True)
+        raise SystemExit(3)
+    _, meta, _ = r
+    prog.extra = {"questions": meta["good"], "found": meta["questions"], "history": meta["history"],
+                  "updated": meta["updated"]}
+    prog.set(f"up to date: {meta['good']:,} questions ready", 1.0, done=True)
+
+
+def bank_watch(symbol: str = "XAUUSD", point: float = 0.01, every: float = 60):
+    """Keeps one question creator turning history into questions at all times: whenever the history changes (a data
+    fetch or a history download) it updates the bank. Idle and nearly free in between."""
+    import multiprocessing as mp
+    _lower_priority()
+    last, parent = None, os.getpid()
+    print("question bank: one question creator keeps the bank up to date in the background", flush=True)
+    while True:
+        sig = _history_sig(symbol)
+        if sig and sig != last and not BUILD_REQUEST.exists():
+            p = mp.Process(target=_bank_cycle, args=(symbol, point, parent))
+            p.start()
+            p.join()
+            if p.exitcode == 0:
+                last = sig
+                print(f"{datetime.now():%H:%M} bank up to date: {_load_json(BANK_STATUS, {}).get('stage', '')}", flush=True)
+            elif p.exitcode == 3:
+                print(f"{datetime.now():%H:%M} paused for a build; resuming after it", flush=True)
+            else:
+                print(f"{datetime.now():%H:%M} bank update failed (exit {p.exitcode}); retrying in {every:.0f}s",
+                      flush=True)
+        time.sleep(5 if BUILD_REQUEST.exists() or last != sig else every)
+
+
+def _pick_from_bank(bank, n: int):
+    """The quiz: n usable questions from the bank (all of them when n is 0), best examples first across years, in the
+    65/15/20 mix while it lasts."""
+    good = np.flatnonzero(~bank["bad"])
+    if n <= 0 or n >= len(good):
+        return good
+    years = pd.to_datetime(bank["t"][good], utc=True).year.to_numpy()
+    pools = {}
+    for kind_code in np.unique(bank["kind"][good]):
+        for trap in (False, True):
+            sel = good[(bank["kind"][good] == kind_code) & (bank["trap"][good] == trap)]
+            if len(sel):
+                ysel = years[np.searchsorted(good, sel)]
+                key = (KINDS[int(kind_code)], ACTIONS[int(bank["ans"][sel[0]])], trap)
+                pools[key] = list(sel[_year_balanced(np.arange(len(sel)), bank["quality"][sel], ysel)])
+    counts = {"trade": 0, "trap": 0, "wait": 0}
+    live = {g: [k for k in pools if _group(k) == g] for g in SHARE}
+    rr = {g: 0 for g in SHARE}
+    at = {k: 0 for k in pools}
+    out = []
+    while len(out) < n:
+        total = len(out) + 1
+        open_ = [g for g in SHARE if live[g] and counts[g] < MAX_SHARE[g] * max(total, n)]
+        if not open_:
+            break
+        g = max(open_, key=lambda x: SHARE[x] * total - counts[x])
+        k = live[g][rr[g] % len(live[g])]
+        rr[g] += 1
+        out.append(pools[k][at[k]])
+        at[k] += 1
+        counts[g] += 1
+        if at[k] >= len(pools[k]):
+            live[g].remove(k)
+    return np.array(out, dtype=np.int64)
+
+
+def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.25, point: float = 0.01, seed: int = 7,
+          workers: int = 0):
+    """Build the quiz from the question bank (n_questions = 0 takes every usable question). All 10 question creators
+    first finish whatever history the background creator hasn't reached yet."""
+    n_questions = max(0, int(n_questions))
+    if 0 < n_questions < 34:
+        n_questions = 34
+    workers = workers or default_workers()
+    prog = _Progress(workers)
+    t0 = time.time()
+    BANK_DIR.mkdir(parents=True, exist_ok=True)
+    BUILD_REQUEST.write_text(str(os.getpid()))           # the background creator steps aside
+    try:
+        with _BankLock(prog):
+            bank, meta, df = _bank_update(symbol, point, workers, prog)
+    finally:
+        BUILD_REQUEST.unlink(missing_ok=True)
+    t_find = time.time()
+    rng = np.random.default_rng(seed)
+    prog.set(f"picking {n_questions or 'all'} questions from the bank ({meta['good']:,} ready)", 0.92)
+    chosen = _pick_from_bank(bank, n_questions)
+    if len(chosen) < 10:
+        raise SystemExit(f"Only found {len(chosen)} usable questions. Download more history and try again.")
+    keep = chosen[rng.permutation(len(chosen))]
+    times_ns = df.index.asi8
+    pos = np.searchsorted(times_ns, bank["t"][keep])
+    prog.set("saving the questions and their charts", 0.95)
     n = len(keep)
     n_exam = max(3, round(n * exam_share))
     if n - n_exam < 30 and n >= 33:
         n_exam = n - 30
+    df_np = tuple(df[c].to_numpy() for c in ("open", "high", "low", "close"))
+    ohlc = np.stack(df_np, axis=1).astype(np.float32)
+    epoch = times_ns // 1_000_000_000
     bars = np.full((n, BEFORE + AFTER, 4), np.nan, dtype=np.float32)
     times = np.zeros((n, BEFORE + AFTER), dtype=np.int64)
-    epoch = ((df.index - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(seconds=1)).to_numpy()
-    ohlc = np.stack(df_np, axis=1).astype(np.float32)
+    difficulty = np.where(bank["share"] >= 0.8, "easy", np.where(bank["share"] >= 0.5, "medium", "hard"))
     questions = []
-    for qid, k in enumerate(keep):
-        i, kind, answer, is_trap = picks[k]
-        lo, hi = i - BEFORE + 1, min(len(df), i + AFTER + 1)
+    for qid, (b, i) in enumerate(zip(keep, pos)):
+        lo, hi = int(i) - BEFORE + 1, min(len(df), int(i) + AFTER + 1)
         bars[qid, : hi - lo] = ohlc[lo:hi]
         times[qid, : hi - lo] = epoch[lo:hi]
-        questions.append({"id": qid + 1, "time": str(df.index[i])[:16], "setup": kind, "answer": answer, "trap": bool(is_trap),
-                          "trade": trades.get(i) if kind != "wait" else None, "difficulty": str(difficulty[k]),
-                          "set": "exam" if qid >= n - n_exam else "practice"})
+        kind, trap = KINDS[int(bank["kind"][b])], bool(bank["trap"][b])
+        trade = None if kind == "wait" else {"minutes": int(bank["mins"][b]), "stop": round(float(bank["stop"][b]), 2),
+                                             "target": round(float(bank["target"][b]), 2),
+                                             "entry": round(float(bank["entry"][b]), 2)}
+        questions.append({"id": qid + 1, "time": str(df.index[i])[:16], "setup": kind,
+                          "answer": ACTIONS[int(bank["ans"][b])], "trap": trap, "trade": trade,
+                          "difficulty": str(difficulty[b]), "set": "exam" if qid >= n - n_exam else "practice"})
     DATA.mkdir(exist_ok=True)
-    np.save(QX, rows_for([picks[k] for k in keep]))
+    np.save(QX, bank["X"][keep])
     np.save(QBARS, bars)
     np.save(QTIMES, times)
     np.save(QC, chart_features_batch(bars[:, :BEFORE]))    # the chart inputs, ready for training
-    quiz = {"symbol": symbol, "built": datetime.now(timezone.utc).isoformat(timespec="seconds"), "features": raw["columns"],
-            "norm": {"mean": np.round(mean, 6).tolist(), "std": np.round(std, 6).tolist()}, "points": POINTS,
+    quiz = {"symbol": symbol, "built": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "features": meta["columns"], "norm": {"mean": meta["mean"], "std": meta["std"]}, "points": POINTS,
             "mastery": MASTERY, "practice": n - n_exam, "exam": n_exam, "questions": questions}
     _write(QUIZ, quiz)
     by = pd.Series([q["answer"] for q in questions]).value_counts().to_dict()
     lv = pd.Series([q["difficulty"] for q in questions]).value_counts().to_dict()
     traps = sum(q["trap"] for q in questions)
-    if n < n_questions:
-        years_span = f"{df.index[0]:%Y}-{df.index[-1]:%Y}"
+    if n_questions and n < n_questions:
         mix = ", ".join(f"{v / n:.0%} {k}" for k, v in by.items())
-        prog.short = (f"Stopped at {n:,} of {n_questions:,}: the {years_span} history ran out of clean, non-contradicting "
-                      f"setups ({len(picks):,} candidates checked; answers {mix}; {traps / n:.0%} traps). "
-                      f"Download more years (Train tab) for more.")
+        prog.short = (f"Stopped at {n:,} of {n_questions:,}: that's every usable question in the {meta['history']} "
+                      f"history (answers {mix}; {traps / n:.0%} traps). Download more years (Train tab) for more; the "
+                      "background question creator adds new ones as new candles arrive.")
         print("  " + prog.short, flush=True)
     took = time.time() - t0
     print(f"saved {n:,} questions ({n - n_exam:,} practice, {n_exam:,} exam; answers {by}; {traps:,} traps; "
           f"difficulty {lv}; {len({q['setup'] for q in questions} - {'wait'})} pro setup types) in {took:.0f}s "
-          f"(finding {t_find - t0:.0f}s{' from cache' if prog.cached else ''}, picking and checking {took - (t_find - t0):.0f}s)",
-          flush=True)
+          f"(bank {t_find - t0:.0f}s{' already up to date' if prog.cached else ''}, picking and saving "
+          f"{took - (t_find - t0):.0f}s)", flush=True)
     prog.set(f"done: {n:,} questions in {took:.0f}s", 1.0, done=True)
     return quiz
 
@@ -951,6 +1303,36 @@ PTS = np.array([[POINTS["right"] if a == b else (POINTS["traded_should_wait"] if
 CURRICULUM_SHARE = 0.9            # hard questions join once this share of the easy and medium ones is finished...
 CURRICULUM_ROUNDS = 60            # ...or after this many rounds, whichever comes first
 STUCK_AFTER = 30                  # rounds since its last right answer before a question counts as stuck
+SECTION = 5                       # a question's section: its 5 closest look-alikes (same setup group, same answer)
+SWAP_RETRIES = True               # after a miss, retries are swapped for random section-mates (the last one is itself)
+CORRECT = 0.25                    # after a miss it is shown the right answer and learns it at once (this strength)
+
+
+def sections(qs, prac, X, ans, k: int = SECTION) -> np.ndarray:
+    """Each practice question's section: its k closest practice look-alikes from the same setup group (same setup,
+    same trap flag) with the same right answer. -1 fills the gaps in tiny groups. Exam questions are never used."""
+    sib = np.full((len(qs), k), -1, dtype=np.int64)
+    groups: dict = {}
+    for i in prac:
+        groups.setdefault((qs[i]["setup"], bool(qs[i].get("trap")), int(ans[i])), []).append(int(i))
+    for g in groups.values():
+        if len(g) < 2:
+            continue
+        g = np.array(g)
+        Z = X[g].astype(np.float32)
+        sq = (Z * Z).sum(1)
+        kk = min(k, len(g) - 1)
+        for s0 in range(0, len(g), 1024):
+            rows = np.arange(s0, min(len(g), s0 + 1024))
+            d2 = Z[rows] @ Z.T
+            d2 *= -2
+            d2 += sq[None, :]
+            d2 += sq[rows, None]
+            d2[np.arange(len(rows)), rows] = np.inf
+            nn = np.argpartition(d2, kk - 1, axis=1)[:, :kk]
+            order = np.take_along_axis(d2, nn, 1).argsort(1)
+            sib[g[rows], :kk] = g[np.take_along_axis(nn, order, 1)]
+    return sib
 
 
 def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = False, focus: list[int] | None = None,
@@ -974,6 +1356,9 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
               flush=True)
     print("loading every question's chart as inputs...", flush=True)
     X = quiz_inputs(quiz, pol)
+    sib = sections(qs, prac, X, ans) if SWAP_RETRIES else np.full((len(qs), SECTION), -1)
+    n_sib = (sib >= 0).sum(1)
+    swap = np.zeros(len(qs), bool)                       # missed: its retries are swapped for section-mates
     rng = np.random.default_rng(seed)
     n = len(qs)
     streak, right, asked = np.zeros(n, int), np.zeros(n, int), np.zeros(n, int)
@@ -1103,37 +1488,54 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
                 bi = bi[np.sort(first)]
             if not len(bi):
                 continue
-            Xb = X[bi]
+            # a missed question's retries are answered on a random section-mate (a real look-alike with the same
+            # answer), so it learns the pattern rather than one chart; its last retry is always itself
+            src = bi.copy()
+            sw = swap[bi] & (streak[bi] < MASTERY - 1) & (n_sib[bi] > 0)
+            if sw.any():
+                rows = np.flatnonzero(sw)
+                src[rows] = sib[bi[rows], (rng.random(len(rows)) * n_sib[bi[rows]]).astype(int)]
+            Xb = X[src]
             P, _ = pol.probs_batch(Xb)
             a = np.minimum((rng.random(len(bi))[:, None] > P.cumsum(1)).sum(1), 2)
             explore = rng.random(len(bi)) < np.minimum(EXPLORE_MAX, EXPLORE + 0.01 * misses[bi])  # stuck: try more
             a[explore] = rng.integers(3, size=int(explore.sum()))
             pts = PTS[a, ans[bi]]
+            ok = a == ans[bi]
             boost = np.where((level >= 1) & (rnd - last_right[bi] >= STUCK_AFTER), 3.0, 1.0)
             adv = (pts - expect[bi]) / 10.0 * boost      # the reward: more points than usual -> more of that
+            Xl, al, advl = [Xb], [a], [adv]
+            if CORRECT and (~ok).any():                  # a miss: it is shown the right answer and learns it at once
+                Xl.append(Xb[~ok])
+                al.append(ans[bi][~ok])
+                advl.append(CORRECT * boost[~ok])
             if refresh and len(fin):                     # silent refresher: keep finished answers from being overwritten
                 r = fin[rng.integers(len(fin), size=max(1, int(len(bi) * REFRESH_SHARE)))]
-                pol.learn_batch(np.vstack([Xb, X[r]]), np.concatenate([a, ans[r]]),
-                                np.concatenate([adv, np.full(len(r), 1.0)]), lr)
-            else:
-                pol.learn_batch(Xb, a, adv, lr)
+                Xl.append(X[r])
+                al.append(ans[r])
+                advl.append(np.full(len(r), 1.0))
+            pol.learn_batch(np.vstack(Xl), np.concatenate(al), np.concatenate(advl), lr)
             expect[bi] += 0.3 * (pts - expect[bi])
             points += int(pts.sum())
             round_points += int(pts.sum())
             n_asked += len(bi)
             asked[bi] += 1
-            ok = a == ans[bi]
+            swap[bi[~ok]] = True
             recent.extend(ok.tolist())
             misses[bi] = np.where(ok, 0, misses[bi] + 1)
             streak[bi] = np.where(ok, streak[bi] + 1, 0)
             right[bi] += ok
             last_right[bi[ok]] = rnd
-            # finished = right 5 times in a row AND its best answer is right (not 5 lucky guesses)
-            done_q[bi[ok & (streak[bi] >= MASTERY) & (P.argmax(1) == ans[bi])]] = True
+            # finished = right 5 times in a row AND its best answer is right (not 5 lucky guesses); the 5th answer is
+            # always on the question itself (src == bi), never on a section-mate
+            fin_now = ok & (streak[bi] >= MASTERY) & (P.argmax(1) == ans[bi]) & (src == bi)
+            done_q[bi[fin_now]] = True
+            swap[bi[fin_now]] = False
             if (~ok).any():
                 wrong[bi[~ok], a[~ok]] += 1
                 j = int(np.flatnonzero(~ok)[-1])
-                mistake = {"id": int(bi[j]) + 1, "action": ACTIONS[a[j]], "points": int(pts[j]),
+                mistake = {"id": int(src[j]) + 1, "action": ACTIONS[a[j]], "points": int(pts[j]),
+                           "for": int(bi[j]) + 1 if src[j] != bi[j] else None,
                            "verdict": points_for(ACTIONS[a[j]], qs[bi[j]]["answer"])[1],
                            "probs": {k: round(float(v), 3) for k, v in zip(ACTIONS, P[j])}, "at": n_asked}
             now = time.time()
@@ -1304,10 +1706,15 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("build")
     b.add_argument("--symbol", default="XAUUSD")
-    b.add_argument("--questions", type=int, default=40)
+    b.add_argument("--questions", type=int, default=40, help="0 = every usable question in the bank (no maximum)")
     b.add_argument("--point", type=float, default=0.01)
     b.add_argument("--seed", type=int, default=7)
-    b.add_argument("--workers", type=int, default=0, help="question finders at once (0 = one per core but one)")
+    b.add_argument("--workers", type=int, default=0, help="question creators at once (0 = up to 10)")
+    k = sub.add_parser("bank", help="keep the question bank up to date with one background question creator")
+    k.add_argument("--symbol", default="XAUUSD")
+    k.add_argument("--point", type=float, default=0.01)
+    k.add_argument("--watch", action="store_true", help="keep running and update whenever the history changes")
+    k.add_argument("--workers", type=int, default=1, help="question creators for a one-off update (default 1)")
     t = sub.add_parser("train")
     t.add_argument("--max-rounds", type=int, default=0, help="0 = loop until everything is finished or Stop")
     t.add_argument("--lr", type=float, default=0.01)
@@ -1317,6 +1724,12 @@ def main():
     a = ap.parse_args()
     if a.cmd == "build":
         build(a.symbol, a.questions, point=a.point, seed=a.seed, workers=a.workers)
+    elif a.cmd == "bank":
+        if a.watch:
+            bank_watch(a.symbol, a.point)
+        else:
+            with _BankLock():
+                _bank_update(a.symbol, a.point, a.workers, _Progress(a.workers, path=BANK_STATUS, prefix="quiz_bank_w"))
     else:
         focus = [int(v) for v in a.focus.replace(" ", "").split(",") if v] or None
         train(a.max_rounds, a.lr, resume=a.resume, focus=focus, refresh=not a.no_refresh)

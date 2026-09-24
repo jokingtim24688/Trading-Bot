@@ -15,12 +15,18 @@ Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. R
 - **progression.py**: stage ladder (paper → demo → real_1 (2 open) → real_2 (5) → real_3), gates, evaluate/promote/demote, data/progression.json.
 - **learn.py**: analyze ledger → learned_rules.json + `.claude/skills/m1-bot-lessons/`; `block_reason()` used by run.py.
 - **practice.py**: `Practice.decide()` top-10% of the last 1440 confidence readings (Paper/Replay).
-- **quiz.py**: quiz school. `build` (40-100,000; parallel `_find` finders over ~300k-candle slices via
-  ProcessPoolExecutor, cached in data/quiz_cache, incremental threaded `_Neighbours` with majority-vote contradictions, top-ups until target (25 rounds max), back-fill capped at traps 30% / stay-out 40%, shortfall note in quiz_build.json `short`, progress data/quiz_build.json) -> data/quiz.json + quiz_x/quiz_bars/quiz_times .npy: 18 setups
+- **quiz.py**: quiz school. Question bank: `bank --watch` (app job, one creator always on, below-normal priority,
+  child process per update, steps aside for builds via `build_request`) keeps `data/quiz_bank/` (bank.npz, meta.json,
+  status.json, markdown README + questions/<year>.md) current from fixed half-year slices (`_slice_plan`,
+  `_slice_jobs` hash each half-year; `_find` results saved in data/quiz_cache/slices, keyed by candle time);
+  `_bank_step` picks (`_bank_pools`, `_select_all`: spacing 60/30/15/10, 65/15/20 mix, traps <= 30%, stay-out <= 40%)
+  and appends new history with restored `_Neighbours` (majority-vote contradictions); `build` (no maximum, 0 = all)
+  wakes up to 10 creators (`default_workers`), then `_pick_from_bank` -> data/quiz.json + quiz_x/quiz_bars/quiz_times .npy: 18 setups
   (`_candidates`), vectorised outcomes (`_outcomes`), clean winners / traps / stay-out spots, best-first across years
   (`_year_balanced`), adaptive spacing 60/30/15, contradictions + near-copies removed with top-up, easy/medium/hard
   (`_neighbours`); `train [--resume] [--focus ids]` -> (49 indicators + 178 chart inputs)-64..512-3 network,
-  REINFORCE with per-question baseline, batched (64/step), never revisits finished (finish = 5 in a row + best answer
+  REINFORCE with per-question baseline + learn the right answer after each miss (`CORRECT` 0.25), a missed question's
+  retries swapped for its `sections()` mates (5 closest, same setup + answer; 5th answer on itself), batched (64/step), never revisits finished (finish = 5 in a row + best answer
   right), silent refresher + memory check every 10 rounds, adaptive exploration, loops until done (stall tactics:
   extra reps + bigger steps -> grow network -> reset stuck); writes .claude/skills/quiz-lessons; progress data/quiz_progress.npz,
   agent models/quiz_policy.json, live data/quiz_state.json. `--quiz-filter` in run/replay.

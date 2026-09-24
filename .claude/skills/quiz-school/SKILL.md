@@ -74,37 +74,58 @@ On the board, each square is one practice question:
 
 The chart panel holds the latest mistake with the pro answer.
 
-## How questions are built fast
-- **Several question finders work at once.**
-  - The history is cut into slices of about 300,000 candles (roughly 10 months each, with 30,000 candles of
-    warm-up so indicators match a full run).
-  - Finders, by default one per CPU core but one and capped by free RAM at about 1 GB each (Settings -> "question
-    finders"), work through the slices in parallel, each taking the next slice when done.
-  - Each finder computes the indicators, finds the 18 setups and stay-out spots, and checks what happened after
-    each. The results are merged and the picking happens in one place.
-  - Tested: identical candidates and outcomes to a single finder; indicator values match to 0.000004.
-- **Cache:** the finders' results are saved in `data/quiz_cache/`, keyed to the history files. Rebuilding with any
-  size skips straight to picking. Downloading new history refreshes it automatically; Wipe keeps it.
-- **Look-alike comparison runs on several threads and is incremental:** a top-up compares only the new questions.
-- Chart inputs are saved at build time (`data/quiz_c.npy`), so training starts at once.
-- The Quiz tab shows build progress with a bar per slice.
-- Measured on 4 years of candles, 20,000 questions (4-core machine): 58 s before, 18 s cold, 11 s from cache.
+## The question bank: always making questions
+- **One question creator works at all times** (the `bank` job starts with the app, below normal priority).
+  - It turns history into questions one half-year at a time (2016H1, 2016H2, ...).
+  - It keeps them in the bank, `data/quiz_bank/`.
+  - It checks every minute for new history (a data fetch or a history download). Then it only redoes the half-year
+    whose candles changed, usually just the latest, and adds the new questions.
+  - Between updates it sleeps and uses almost nothing.
+  - Settings: `quiz_bank_auto`.
+- **Build quiz wakes up all 10 creators.**
+  - The other 9 are idle until you press it. Settings: "question creators", 0 = up to 10, capped by CPU threads
+    minus 2 and by free RAM at about 0.6 GB each.
+  - The background creator steps aside after the half-year it's on. The 10 finish whatever is left, then the quiz is
+    picked from the bank.
+  - When the bank is already up to date, a build takes a couple of seconds whatever the size.
+- **No maximum.** Ask for any number, or 0 for every usable question. If you ask for more than the history holds,
+  you get all of them and the Quiz tab says why it stopped.
+- **The markdown copy:**
+  - `data/quiz_bank/README.md` has counts per setup.
+  - `data/quiz_bank/questions/<year>.md` has one row per question: time, setup, right answer, entry/stop/target,
+    what happened, and whether it's kept or dropped (and why).
+- **Saved creator results:** `data/quiz_cache/slices/<half-year>.npz`, keyed to each half-year's own candles. Wipe
+  keeps both the bank and these.
+- **Measured** on 4 years of candles (4-core machine):
+  - cold bank plus a 20,000-question quiz: 17 s;
+  - a build from an up-to-date bank: 2 s;
+  - all 28,595 questions: 4 s;
+  - two weeks of new candles added by the single background creator: 4.5 s.
 
 ## How many questions a history can hold
 - **Look-alikes vote.** A question is dropped as a contradiction only when look-alikes with the other answer
   outnumber it and its same-answer look-alikes. On a tie, the older question stays.
-  - Before 2026-09-24 both questions of any disagreeing pair were dropped. Every top-up then knocked out good
-    questions, so builds levelled off near 18,000 whatever size was asked for.
-- **Top-ups:** the build keeps topping up (up to 25 rounds) until the target is reached or two rounds in a row barely
-  help.
-- **Spacing:** questions are spaced 60 -> 30 -> 15 -> 10 minutes apart, tightening only as needed.
-- **Mix:** when one answer group runs out, others fill in. Traps are held to at most 30% and stay-outs to at most
-  40%, so "always stay out" can never score well.
-- **The limit:** how many clean winning trades the history holds. When a build stops short, the Quiz tab says why,
-  with the answer mix.
-  - Download more years (Train tab) to raise the limit.
-  - Stand-in 4-year history: 20,000 now builds in full (was 19,296); the most is about 28,000 (was ~24,700). The
-    2009–2026 history holds several times more.
+  - Before 2026-09-24 both questions of any disagreeing pair were dropped, so builds levelled off near 18,000.
+- **Spacing:** questions are spaced 60 -> 30 -> 15 -> 10 minutes apart, tightening only for what's left.
+- **Mix:** 65% clean trades, 15% traps, 20% stay-out while they last. When one group runs out, others fill in, but
+  traps are held to at most 30% and stay-outs to at most 40%, so "always stay out" can never score well.
+- **The limit:** how many clean winning trades the history holds. Download more years (Train tab) to raise it.
+
+## Learning from each miss
+- **After a wrong answer** it is shown the right answer and learns it at once, on top of the points reward (strength
+  0.25).
+- **Section swaps:** that question's retries are answered on a random section-mate: one of its 5 closest
+  look-alikes from the same setup group with the same right answer. So it learns the pattern, not one chart.
+  - The 5th right answer in a row is always on the question itself, so "finished" stays honest.
+  - Exam questions are never used as section-mates.
+- **Tested** on a 10,000-question stand-in quiz, 800 rounds, two seeds:
+
+  | | Finished | Exam |
+  |---|---|---|
+  | Before | 79–82% | 78–79% |
+  | With both changes | 82.4% | 80–81% |
+
+  Learning from each miss at strength 0.5 without the swaps memorised: the exam fell to 73%.
 
 ## It loops until done, never re-asks finished questions, and doesn't forget
 - A question is **finished** when it is right 5 times in a row **and** its best answer is right, so lucky streaks
@@ -146,7 +167,9 @@ Work through these in order:
 
 ## Command line
 ```
-python -m agent.quiz build --questions 25000
+python -m agent.quiz build --questions 25000  # from the bank; 0 = every usable question
+python -m agent.quiz bank --watch            # the always-on question creator (the app starts it)
+python -m agent.quiz bank --workers 10       # one-off bank update with 10 creators
 python -m agent.quiz train                   # fresh; loops until everything is finished (Stop from the app)
 python -m agent.quiz train --resume          # continue the saved agent
 python -m agent.quiz train --focus 46,120,733
@@ -156,6 +179,8 @@ python -m agent.quiz train --max-rounds 500  # cap, for tests
 ## Files
 | File | What it holds |
 |---|---|
+| `data/quiz_bank/` | The question bank (`bank.npz`, `meta.json`, `status.json`) and its markdown copy |
+| `data/quiz_cache/slices/` | Saved creator results, one file per half-year |
 | `data/quiz.json` | The questions |
 | `data/quiz_x.npy` | Indicator inputs |
 | `data/quiz_bars.npy`, `data/quiz_times.npy` | The charts |

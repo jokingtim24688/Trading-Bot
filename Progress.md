@@ -418,6 +418,45 @@ Each chat writes only in its own section below, and adds new entries just above 
   carried `keep_alive: 0` and `num_gpu: 0`.
 - Handoff to Chat B: the Hermes pill should show `device` instead of "RTX 4060".
 
+### 2026-09-24: Quiz learns from each miss; question bank with an always-on creator; no maximum
+- Requests:
+  - It should learn each time it gets a question wrong.
+  - Swap a missed question's retries for one of the other 5 in its section.
+  - No maximum; 10 question creators; always be making questions and store them as markdown.
+  - One creator generating at all times; the other 9 idle until Build quiz.
+- Learning (`agent/quiz.py` train):
+  - After a miss it is shown the right answer and learns it straight away (`CORRECT` 0.25).
+  - A missed question's retries are answered on a random section-mate: one of its 5 closest look-alikes, same setup
+    group, same answer, from `sections()`. The 5th right answer in a row must be on the question itself.
+  - Tested on a 10k stand-in quiz, 800 rounds, 2 seeds: finished 79-82% -> 82.4%, exam 78-79% -> 80-81%. At 0.5
+    without swaps the exam fell to 73% (memorising), hence 0.25 + swaps.
+- Question bank (`agent/quiz.py`):
+  - Fixed calendar half-year slices, each creator result saved in `data/quiz_cache/slices/<label>.npz` and keyed by
+    a hash of that half-year's candles. Candidates are stored by candle time, so adding earlier history doesn't
+    invalidate them.
+  - The bank is `data/quiz_bank/bank.npz` + `meta.json`. Picks under the spacing and mix rules; look-alike checks
+    are saved and restored, so new history is appended and only the new questions are compared (verified identical
+    to a one-shot check).
+  - Markdown: `data/quiz_bank/README.md` plus `questions/<year>.md`.
+  - `bank --watch` (started by the app, below normal priority) checks the history every minute. It runs each update
+    in a child process (memory handed back after) with one creator and steps aside, after the current half-year,
+    when a build asks (`build_request`) or the app closes.
+  - Build runs up to 10 creators on what's left (`default_workers`: min(10, threads - 2, free RAM / 0.6 GB)), then
+    picks from the bank (`_pick_from_bank`, 0 = all).
+  - No `MAX_QUESTIONS`; the API cap is gone too.
+- Measured (4-year stand-in, 4-core sandbox):
+  - cold bank + 20k quiz: 17 s;
+  - build from an up-to-date bank: 2 s;
+  - all 28,595: 4 s;
+  - 20k new candles with the single creator: 4.5 s.
+- Tested:
+  - The watcher paused for a build mid-work: it finished its half-year, the build did the other 3, then it resumed
+    and found the bank current.
+  - Killing only the watcher: the child stopped at the next half-year, released the lock and said why.
+  - Training 60 rounds on a bank-built quiz ran fine.
+- `app/`: `bank` job; started at app startup (`quiz_bank_auto`); `/api/quiz/build` has no cap (0 = all);
+  `/api/quiz/state` includes `bank`. Handoff to Chat B for the number box, a bank line and settings.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
