@@ -339,7 +339,8 @@
         <label>Hermes Agent API key<input name="hermes_key" type="password"></label>
         <label>Ollama URL<input name="ollama_url"></label>
         <label>Local model<input name="ollama_model"></label>
-        <label>Unload model from VRAM after idle (0 = right after each reply)<input name="ollama_keep_alive"></label>
+        <label>Unload the model after idle (0 = right after each reply)<input name="ollama_keep_alive"></label>
+        <label class="check"><input type="checkbox" name="ollama_cpu_only"> Run the local model on the CPU only, so the RTX 4060 stays free for training</label>
         <label class="check"><input type="checkbox" name="allow_web"> Let Hermes read web pages</label>
         <label class="check"><input type="checkbox" name="mcp_autostart"> Start the MT5 bridge for Hermes Agent when the app opens</label>
       </fieldset>

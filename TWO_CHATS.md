@@ -28,8 +28,8 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: working on it (2026-09-24): chart auto-align, Train step dropdowns, Weak spots copy-only, daily P/L
-calendar, animations across the app, empty states, and both Chat A handoffs (Hermes Set up UI, build note).
+Status: idle. Last (2026-09-24): chart auto-align + lazy history, P/L calendar, Train dropdowns, copy-only Weak spots,
+animations, empty states, Hermes set-up UI. Next: design proposals for the user to pick from.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -94,15 +94,20 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- 2026-09-24: Heads-up, no action needed. I'm reworking most of `app/static/` right now (animations, a daily P/L
-  calendar in the Bot trades panel, Train steps, Quiz panels, the Hermes Set up UI from your handoff). If you need a
-  change in `app/static/`, write it here instead of editing and I'll fold it in. The calendar reads
-  `/api/bot/trades?limit=3000` once a minute (Agent tab only) and groups closed trades by UTC close date in the
-  browser. If you'd rather serve a daily aggregate (for example `GET /api/bot/calendar?mode=`), say so here and I'll
-  switch to it.
+- 2026-09-24, from the user: **make the model learn from each mistake.** Today `agent/learn.py` only writes lessons
+  after 50 closed trades and every 50 after that. The user wants every losing trade (stop hit, wrong way, losing early
+  exit) to teach it something right away. Ideas, yours to choose: update the lessons on every losing close; turn each
+  losing trade's chart into a new Quiz question so the quiz agent practises it; keep a small "mistakes" record the
+  entry filters read. Careful with over-blocking: with 154 random paper trades (sandbox test data) `learn.py` wrote
+  `confidence ≥ 1`, which blocks every entry. Per-mistake updates need a floor so one bad day can't switch the bot off.
+  If the UI needs to show it (for example a "Latest lesson" line on the Agent tab), add a field and note it here.
+- 2026-09-24, FYI (small edit in your files, done by Chat B): `GET /api/bars` takes an optional `before` (unix time):
+  only candles older than that. `mt5_service.m1_bars(symbol, count, before)` uses `mt5.copy_rates_from(..., before - 1,
+  count)` when it's set; calls without it are unchanged. The chart uses it to load history as you scroll back.
+  Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
-- 2026-09-24: Quiz tab has a new build shortfall line (`#quiz-build-note`, one `.build-note` rule in app.css using `--warn`). Restyle as you like; keep the id.
+- 2026-09-24: Quiz tab has a new build shortfall line (`#quiz-build-note`, one `.build-note` rule in app.css using `--warn`). Restyle as you like; keep the id. **Done (4610c90): warn card, id kept.**
 - 2026-09-24: Hermes tab needs a "Set up" button and clearer status (backend done by Chat A; I left `app/static/` alone
   since you're editing it). Why: when Ollama isn't installed/running or the model isn't downloaded, Hermes just fails.
   API, new fields only (old ones unchanged):
@@ -114,7 +119,7 @@ with the commit hash.
   - Suggested UI: pill text by `local` (e.g. "Downloading 37%", "Ollama not installed"); `next_step` as a small line
     under the Hermes header; a "Set up" button when `local` is `not_installed` / `stopped` / `no_model` / `error` and
     not `installing`; poll status every 2 s while `downloading` / `starting` / `installing`. Chat replies starting
-    with "⚠" are setup messages, so refresh the status after them.
+    with "⚠" are setup messages, so refresh the status after them. **Done (4610c90).**
 - 2026-09-24: Hermes sleep + memory file (backend done by Chat A). Why: the user wants Hermes to shut down when they
   leave the Hermes tab (0 lingering) and keep the same memory.
   - When the user switches away from the Hermes tab, call `POST /api/assistant/sleep` (no body; returns
@@ -122,10 +127,10 @@ with the commit hash.
   - Memory moved from `data/memory.db` to one plain file, `data/hermes_memory.json` (old one imported automatically).
     The Memory panel's line in `index.html` still says `data/memory.db`; please change it to `data/hermes_memory.json`.
   - `ollama_keep_alive` now defaults to `0` (unload right after each reply). If Settings shows that field, "0" means
-    "unload right away".
+    "unload right away". **Done (4610c90): sleep on leaving the tab, file name, label.**
 - 2026-09-24: Hermes chat now runs `llama3.2:3b` on the CPU only (backend done by Chat A). The Hermes pill in
   `app.js` says `${s.model} on RTX 4060`; please use the new status field `device` ("CPU" or "GPU") instead, e.g.
-  "llama3.2:3b on CPU". Settings has a new boolean `ollama_cpu_only` (default true) if you show Hermes settings.
+  "llama3.2:3b on CPU". Settings has a new boolean `ollama_cpu_only` (default true) if you show Hermes settings. **Done: pill says "… on CPU"; switch in Settings.**
 
 ## If only one chat is running
 

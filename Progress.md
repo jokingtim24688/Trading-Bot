@@ -447,4 +447,28 @@ Each chat writes only in its own section below, and adds new entries just above 
   section nav and a sticky Save; Agent tab re-layout.
 - Next: the user picks what to change first.
 
+### 2026-09-24: Chart auto-align, lazy history, P/L calendar, Train dropdowns, animations, empty states
+- Requests: chart auto-align when it gets messed up; Train step text into dropdowns; Weak spots shows only the copy
+  button; the daily P/L calendar; animations for everything, optimized; "do whatever needs optimizing" for empty panels;
+  load chart history only when scrolling far enough and unload what was loaded before; images of the result.
+- Chart: Auto button (on by default, saved per PC). After a zoom/drag the chart straightens itself 10 s later (a thin
+  bar on the button drains meanwhile): price axis autoscaled, default candle width, newest candle at the right.
+  Double-click realigns now; Auto off keeps the view. Realigns on symbol change, tab return and window resize.
+- Lazy history: 300 candles at start; reaching the left edge loads 500 older (`GET /api/bars?before=`, a 3-line backend
+  addition flagged to Chat A); the window is capped at 1,800 and the far side is unloaded (newest when going back,
+  oldest when coming forward); auto-align brings the live 300 back. Live polls fetch 3 candles instead of 300.
+- Agent: daily P/L calendar in the Bot trades panel (UTC close days, green/red heat by size, month nav, summary,
+  tooltip, click a day to filter the table), stats in 4 columns (no orphan tile).
+- Train: explanations behind small dropdowns (animated), step 2 no longer crushed, Output card until something runs.
+- Quiz: Weak spots is only the copy button (fetches the newest report, builds one if needed); the main button follows
+  the state; empty cards for the board, latest mistake and points chart; build note restyled (handoff).
+- Hermes (Chat A handoffs): pill from `local`/`device`, next-step line, Set up button, download bar, 2 s polling while
+  busy, sleep on leaving the tab, memory file name, CPU-only switch in Settings.
+- Motion: tab panels stagger in, sliding rail highlight, numbers glide and flash, new rows/positions/messages slide in,
+  switches for checkboxes, one gold glow when the bot enters. Only transform/opacity for anything continuous; markup
+  writes skipped when unchanged; off with the OS setting or Settings > Display.
+- Tested in the sandbox with a fake MT5 (populated and fresh install): every interaction driven in headless Chromium,
+  0 console errors, 0 long tasks over 50 ms in 8 s of running. 12 images sent to the user.
+- Handed to Chat A (user request): make the model learn from each mistake.
+
 <!-- Chat B: add new entries above this line -->

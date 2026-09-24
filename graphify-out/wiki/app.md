@@ -30,3 +30,16 @@
   column collapses; Market bot card title wraps and its trades run together; Agent stat grid leaves an orphan tile;
   Settings has native blue checkboxes, ~60% width, Save only at the bottom; Quiz primary button ignores the no-quiz
   state; "Replay history" sits among the symbol chips; gold is overloaded (brand, primary, selected, bot, buy).
+
+## UI (2026-09-24, Chat B)
+- Chart: `wireChartAuto`/`realignChart` (Auto button `#chart-auto`, 10 s realign after `chartTouched`, dblclick, resize);
+  lazy history `state.win` + `loadLatestWindow`/`loadOlder`/`loadNewer`/`trimOldest` (HIST: FIRST 300, CHUNK 500, MAX
+  1800), fed by `subscribeVisibleLogicalRangeChange`; live poll `/api/bars?count=3` + `series.update`.
+- Agent: calendar `renderCalendar`/`loadCalendar` (`/api/bars`-style fetch of `/api/bot/trades?limit=3000` once a minute
+  on the Agent tab; `state.cal`), day filter `#bt-day`.
+- Motion helpers at the top of app.js: `motionOK`, `setHTML` (skip unchanged markup), `flash`, `tweenNum`, `setNum`;
+  `moveRailInd`; `tradeMoment`. CSS tokens `--ease-out`, `--ease-spring`; reduced motion via the OS or
+  `html.reduce-motion` (Settings > Display, localStorage `reduceMotion`).
+- Empty states: `.empty-state` cards (consoles `#agent-empty`/`#train-empty`, board, mistake panel, points chart, bot
+  card, positions). Hermes: `brainStatus` reads `local`/`next_step`/`download_pct`/`installing`/`device`; `#brain-setup`
+  posts `/api/assistant/setup`; leaving the tab posts `/api/assistant/sleep`.

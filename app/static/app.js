@@ -832,7 +832,7 @@ async function brainStatus() {
   let text, live = false;
   if (useAgent && s.hermes_agent) { text = "Hermes Agent · connected"; live = true; }
   else if (useAgent) text = "Hermes Agent not running";
-  else if (localReady) { text = `${s.model} on RTX 4060`; live = true; }
+  else if (localReady) { text = `${s.model} on ${s.device || "GPU"}`; live = true; }
   else if (s.installing) text = "Installing Ollama…";
   else if (s.local === "downloading") text = `Downloading ${Math.round((s.download_pct || 0) * 100)}%`;
   else text = LOCAL_TEXT[s.local] || "Ollama not running";
