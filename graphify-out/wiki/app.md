@@ -18,3 +18,15 @@
   /api/quiz/labels, /api/quiz/question/{id}, /api/quiz/ask; canvas mastery board with picking; job "quiz";
   settings `quiz_filter`, `quiz_speed` (0 = max).
 - Quiz tab Weak spots panel: GET/POST /api/quiz/report; Copy report for Claude; Work on these (focus ids).
+
+## Design review (2026-09-24, Chat B)
+- Screenshots without Windows/MT5: run `uvicorn app.server:app` from a copy of the repo with a fake `MetaTrader5`
+  module on `PYTHONPATH` (namedtuples with `_asdict()`; `copy_rates_from_pos` returns a numpy structured array), seed
+  trades with `agent.ledger.open_trade/close_trade` and chat with `app.memory`, then drive headless Chromium at
+  1440x900 and click `.rail-btn[data-tab=dash|agent|train|quiz|chat|settings]`. Inner panels scroll (not the page), so
+  grow the viewport by the scroller's hidden height for full-length shots. Route `fonts.googleapis.com` /
+  `fonts.gstatic.com` through a client that trusts the proxy CA, or IBM Plex falls back to system fonts.
+- Findings: 2 of 9 anti-vibe tells (identical rounded panels; middle-dot meta strings). Layout bugs: Train step 2 text
+  column collapses; Market bot card title wraps and its trades run together; Agent stat grid leaves an orphan tile;
+  Settings has native blue checkboxes, ~60% width, Save only at the bottom; Quiz primary button ignores the no-quiz
+  state; "Replay history" sits among the symbol chips; gold is overloaded (brand, primary, selected, bot, buy).

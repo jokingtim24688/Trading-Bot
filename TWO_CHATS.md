@@ -28,7 +28,7 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: design review: screenshots of every page and recommendations for the user.
+Status: design review done (see Progress.md); waiting for the user to pick the first changes.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab

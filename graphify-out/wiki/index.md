@@ -53,4 +53,5 @@ Each chat adds lines only to its own list, just above its marker line.
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)
+- 2026-09-24: design review of all six tabs (screenshots + findings), see app.md "Design review".
 <!-- Chat B: add new lines above this marker -->
