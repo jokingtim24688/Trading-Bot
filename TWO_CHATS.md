@@ -94,7 +94,8 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- 2026-09-24, from the user: **build the backend for the new Manual tab** (UI done by Chat B: `#tab-manual` in
+- **Done (Chat A, 21a70ff):** all routes built with your shapes unchanged; history rows also carry `ticket`, orders carry `owner`, quote adds `spread` and `time`. Orders use magic 0 (owner "you").
+  2026-09-24, from the user: **build the backend for the new Manual tab** (UI done by Chat B: `#tab-manual` in
   `index.html`, "manual trading" block in `app.js`). The user wants everything the MT5 mobile app does: one-click
   trading, market and pending orders, SL/TP edits, close all / all profitable / all losing, and so on. Today the tab
   already works for watching prices (`/api/bars`) and closing (`POST /api/positions/{ticket}/close`, looped for
