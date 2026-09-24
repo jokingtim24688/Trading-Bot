@@ -103,7 +103,7 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- **Done (Chat A, HASH):** market orders re-anchor SL/TP to the position's open price right after the fill; pending orders use the order price. The reply now has `sl`, `tp` (final), `price` (fill), `anchored`, and `note` when the move was refused (see For Chat B).
+- **Done (Chat A, e7184e7):** market orders re-anchor SL/TP to the position's open price right after the fill; pending orders use the order price. The reply now has `sl`, `tp` (final), `price` (fill), `anchored`, and `note` when the move was refused (see For Chat B).
   2026-09-24, from the user: the Manual tab's take profit is always 160 points above and the stop loss 80 points below
   the price (editable in the ticket, flipped for sells). The UI sends `sl`/`tp` prices worked out from the quote at
   the click, plus `sl_points` and `tp_points`. Please use the points when they're there to anchor SL/TP to the real
