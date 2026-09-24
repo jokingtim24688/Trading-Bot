@@ -96,3 +96,32 @@ def compare(days: float = 30, mode: str | None = None, start: datetime | None = 
     bot = bot_trades(int(start.timestamp()), int(end.timestamp()), mode)
     return {"from": int(start.timestamp()), "to": int(end.timestamp()), "bot_modes": list(bot_modes(mode)),
             "you": summarize(you), "bot": summarize(bot)}
+
+
+def quiz_agreement(days: float = 0, mode: str | None = "all") -> dict:
+    """Does the quiz agent's second opinion help? The bot's closed trades split by what the quiz agent said at entry:
+    agreed (same side), disagreed (other side or stay out), no opinion (no quiz agent yet). mode "all" includes
+    Replay runs, which give the most trades; "replay" is history runs only."""
+    end = datetime.now(timezone.utc)
+    start_ts = 0 if not days else int(end.timestamp() - days * 86400)
+    groups: dict[str, list] = {"agree": [], "disagree": [], "none": []}
+    for m in (("paper", "demo", "real", "replay") if mode == "all" else bot_modes(mode)):
+        for r in ledger.recent(1_000_000, m):
+            close = r["close_bar"] or _ts(r["close_utc"])
+            if r["status"] != "closed" or close is None or close < start_ts:
+                continue
+            q = r.get("quiz")
+            key = "none" if not q else "agree" if q == r["side"] else "disagree"
+            groups[key].append({"time": close, "open_time": r["open_bar"] or _ts(r["open_utc"]), "profit": r["pnl"] or 0.0})
+    out = {k: {**lite(s := summarize(v)), "expectancy": s["expectancy"]} for k, v in groups.items()}
+    a, d = out["agree"], out["disagree"]
+    if a["trades"] < 30 or d["trades"] < 30:
+        verdict = (f"Not enough trades yet to tell ({a['trades']} agreed, {d['trades']} disagreed; about 30 of each "
+                   "needed). A long Replay fills this in fastest.")
+    elif (a["expectancy"] or 0) > (d["expectancy"] or 0) and (a["win_rate"] or 0) >= (d["win_rate"] or 0):
+        verdict = (f"The quiz agent helps: trades it agreed with made {a['expectancy']:+.2f} each vs "
+                   f"{d['expectancy']:+.2f} when it disagreed. Turning on the quiz filter should pay off.")
+    else:
+        verdict = (f"The quiz agent doesn't help yet: agreed {a['expectancy']:+.2f} per trade vs disagreed "
+                   f"{d['expectancy']:+.2f}. Keep the quiz filter off.")
+    return {**out, "verdict": verdict, "modes": mode}

@@ -18,6 +18,7 @@
   package). Settings `telegram_enabled`, `telegram_token`, `telegram_chat_id`, `telegram_events` (default tp/sl/open/close;
   also be/trail). `watch.add_event` -> `telegram.for_event` -> background queue (3 tries). Routes `GET /api/telegram/status`,
   `POST /api/telegram/detect` (chat id from the newest message to the bot, saves it, says hello), `POST /api/telegram/test`.
+- **Manual spread limit** (Chat A): setting `manual_max_spread` (points, default 80, 0 = off) refuses market orders when the spread is wider unless `ignore_spread: true`; quote adds `max_spread`, `spread_ok`.
 - **stats.py** (Chat A): `/api/stats/compare?days=&mode=paper|live|all` -> `{you, bot}` (trades, win rate, net, avg
   win/loss, PF, expectancy, best/worst, avg hold, by_hour, by_weekday, curve; server time).
 - **review.py** (Chat A): weekly summary `/api/review/weekly` (GET, POST = rebuild in the background, `working` flag),

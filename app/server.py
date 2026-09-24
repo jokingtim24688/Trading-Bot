@@ -239,7 +239,7 @@ def manual_quotes(symbols: str):
 @app.post("/api/manual/order")
 def manual_order(body: dict = Body(...)):
     keys = ("symbol", "side", "type", "volume", "price", "sl", "tp", "deviation", "expiration", "confirm_real",
-            "sl_points", "tp_points", "be_points", "trail_points")
+            "sl_points", "tp_points", "be_points", "trail_points", "ignore_spread")
     return manual.order(**{k: body[k] for k in keys if k in body and body[k] is not None})
 
 
@@ -294,6 +294,21 @@ def stats_compare(days: float = 30, mode: str | None = None):
     if mode not in (None, "", "paper", "live", "all", "demo", "real", "replay"):
         raise HTTPException(400, "mode must be paper, live or all")
     return stats.compare(max(days, 0), mode or None)
+
+
+@app.get("/api/stats/quiz")
+def stats_quiz(days: float = 0, mode: str = "all"):
+    """Does the quiz agent's second opinion help? Bot trades split by agree / disagree / no opinion, and a verdict."""
+    if mode not in ("paper", "live", "all", "demo", "real", "replay"):
+        raise HTTPException(400, "mode must be paper, live, replay or all")
+    return stats.quiz_agreement(max(days, 0), mode)
+
+
+@app.get("/api/news")
+def news_calendar():
+    """Upcoming high-impact news, and whether the bot is paused for news right now."""
+    from agent import news
+    return news.summary(settings.load())
 
 
 @app.get("/api/review/weekly")
@@ -382,6 +397,10 @@ def agent_args(s: dict, mode: str, max_open: int | None = None) -> list[str]:
         args.append("--no-learned")
     if s.get("quiz_filter"):
         args.append("--quiz-filter")
+    if s.get("news_pause", True):
+        args += ["--news-before", str(s.get("news_before_min", 15)), "--news-after", str(s.get("news_after_min", 15)),
+                 "--news-currencies", ",".join(s.get("news_currencies") or ["USD"]),
+                 "--news-impact", ",".join(s.get("news_impact") or ["High"])]
     if s.get("practice", True) and mode == "paper":
         args.append("--practice")
     if s.get("terminal_path"):

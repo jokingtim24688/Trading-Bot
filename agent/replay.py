@@ -166,10 +166,8 @@ def main():
             "open": broker.open_count(), "max_open": m.max_open_trades, "balance": round(broker.account_balance(), 2),
             "rate": round(pace["rate"]), "skips": [[k, n] for k, n in skips.most_common(4)], "opened": stats["opened"], "stats": ledger.stats("replay"), "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}))
 
-    quiz_pol = None
-    if args.quiz_filter:
-        from .quiz import load_policy
-        quiz_pol = load_policy()
+    from .quiz import load_policy
+    quiz_pol = load_policy()               # recorded on every trade (the app compares agree vs disagree); filters only if asked
     OHLC = np.column_stack([O, H, L, C]) if quiz_pol is not None else None   # the quiz agent looks at the chart
     rules = learn.load_rules()                         # fixed for the run: reading files per candle limits max speed
     ctl, ctl_read = read_control(), time.time()
@@ -223,9 +221,13 @@ def main():
                     price = C[i] + SP[i] if side == "buy" else C[i]
                     plan = stake_plan(broker.account_balance(), price * (spec.tick_value / spec.tick_size) * args.margin_rate,
                                       spec, m, price)
-                    qa = (quiz_pol.answer_row(feats.iloc[i].to_dict(), OHLC[max(0, i - 89):i + 1])
-                          if quiz_pol is not None else None)
-                    if qa and qa["action"] != side:
+                    qa = None
+                    if quiz_pol is not None and (args.quiz_filter or not (why or not okg)):
+                        try:
+                            qa = quiz_pol.answer_row(feats.iloc[i].to_dict(), OHLC[max(0, i - 89):i + 1])
+                        except Exception:          # noqa: BLE001 - quiz agent made for other inputs: no opinion
+                            qa = None
+                    if args.quiz_filter and qa and qa["action"] != side:
                         decision, reason = f"skipped {side}", f"quiz agent says {qa['action']}"
                         skips["quiz agent disagreed"] += 1
                     elif why:
@@ -242,7 +244,7 @@ def main():
                         tp = price + plan["tp_dist"] if side == "buy" else price - plan["tp_dist"]
                         broker.open(side, plan["lots"], price, sl, tp, prob=round(prob, 3), risk_money=plan["sl_money"],
                                     open_bar=int(T[i]) + 60, stake=plan["stake"],
-                                    setup=setup)
+                                    setup=setup, quiz=qa["action"] if qa else None)
                         gate.record_trade()
                         stats["opened"] += 1
                         decision = f"OPENED {side.upper()}"

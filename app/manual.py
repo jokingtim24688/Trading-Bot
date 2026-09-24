@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 from . import mt5_service as ms
 from . import watch
+from .settings import load as load_settings
 
 MANUAL_MAGIC = 0
 COMMENT = "manual (app)"
@@ -109,7 +110,8 @@ def quote(symbol: str) -> dict:
                 "contract_size": i.trade_contract_size, "stops_level": i.trade_stops_level,
                 "trade_allowed": bool(term.trade_allowed) and i.trade_mode != m.SYMBOL_TRADE_MODE_DISABLED,
                 "day_high": getattr(i, "bidhigh", None) or None, "day_low": getattr(i, "bidlow", None) or None,
-                "spread": i.spread, "time": int(t.time), "connected": bool(term.connected),
+                "spread": i.spread, "max_spread": (cap := float(load_settings().get("manual_max_spread", 0) or 0)),
+                "spread_ok": not cap or i.spread <= cap, "time": int(t.time), "connected": bool(term.connected),
                 "tick_age": (age := tick_age(symbol, t)), "market_open": _market_open(i, t, age)}
 
 
@@ -131,7 +133,7 @@ def quotes(symbols: list[str]) -> list[dict]:
 def order(symbol: str, side: str, type: str = "market", volume: float = 0.0, price: float | None = None,
           sl: float | None = None, tp: float | None = None, deviation: int = 20, expiration: str = "gtc",
           confirm_real: bool = False, sl_points: float | None = None, tp_points: float | None = None,
-          be_points: float | None = None, trail_points: float | None = None) -> dict:
+          be_points: float | None = None, trail_points: float | None = None, ignore_spread: bool = False) -> dict:
     """Place a market or pending order. With sl_points / tp_points (the tab's 80 / 160), SL and TP are that many
     points from the real fill price of a market order (set right after the fill) or from a pending order's price, so
     slippage can't shift them; the sl / tp prices are then only a first guess. Without points, sl / tp are used as
@@ -163,6 +165,10 @@ def order(symbol: str, side: str, type: str = "market", volume: float = 0.0, pri
             return (round(ref - sgn * slp * i.point, i.digits) if slp else sl,
                     round(ref + sgn * tpp * i.point, i.digits) if tpp else tp)
 
+        cap = float(load_settings().get("manual_max_spread", 0) or 0)
+        if type == "market" and cap and i.spread > cap and not ignore_spread:
+            raise ValueError(f"The spread is {i.spread} points right now (your limit is {cap:g}). Wait for it to "
+                             "narrow, or send the order anyway.")
         if type == "market":
             px = t.ask if buy else t.bid
             sl, tp = anchor(px)                                       # first guess; re-anchored to the fill below

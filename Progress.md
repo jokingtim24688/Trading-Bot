@@ -635,6 +635,23 @@ Each chat writes only in its own section below, and adds new entries just above 
   - with alerts off nothing was sent; with them on, open / TP / SL arrived in the right wording, and break-even
     (not in the list) didn't.
 
+### 2026-09-24: recommendations, part 1: news pause, spread limit, is the quiz agent worth it?
+- **News pause** (`agent/news.py`): the week's calendar from the public ForexFactory feed, cached and refreshed every
+  6 h. The bot opens no new trades 15 min before to 15 min after high-impact USD news (settings `news_pause`,
+  `news_before_min`, `news_after_min`, `news_currencies`, `news_impact`). `GET /api/news` gives the next events and
+  whether it's paused now. Offline, it keeps the last calendar.
+- **Spread limit on the Manual tab:** `manual_max_spread` (80 points, 0 = off) refuses a market order when the spread
+  is wider, unless sent again with `ignore_spread`. The quote adds `max_spread` / `spread_ok`. The bot already had its
+  spread filters.
+- **Quiz second opinion measured:** every bot trade (live, paper and replay) records what the quiz agent said at entry
+  (new ledger column `quiz`), even with its filter off. `GET /api/stats/quiz` compares agreed / disagreed / no opinion
+  and gives a verdict once there are ~30 of each (a long Replay is the fastest way).
+- Tested:
+  - news: in window / after it / other currency / off / medium impact, the API, and the agent's flags;
+  - spread: refused at 25 > 20, sent with `ignore_spread`, pending orders unaffected;
+  - quiz stats on 120 trades (verdict right; "not enough" for an empty mode);
+  - `agent.run` / `agent.replay` start fine with the new flags.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

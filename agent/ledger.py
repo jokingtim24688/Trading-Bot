@@ -27,7 +27,7 @@ def _conn():
         exit REAL, exit_reason TEXT, pnl REAL, r_multiple REAL, close_utc TEXT, close_bar INTEGER, updated REAL)""")
     c.execute("CREATE INDEX IF NOT EXISTS ix_trades_mode_status ON trades(mode, status)")
     have = {r[1] for r in c.execute("PRAGMA table_info(trades)")}
-    for col, typ in (("stake", "REAL"), ("score", "REAL"), ("close_hint", "TEXT"), ("setup", "TEXT")):
+    for col, typ in (("stake", "REAL"), ("score", "REAL"), ("close_hint", "TEXT"), ("setup", "TEXT"), ("quiz", "TEXT")):
         if col not in have:                         # upgrade ledgers created before scoring existed
             c.execute(f"ALTER TABLE trades ADD COLUMN {col} {typ}")
     return c
@@ -38,12 +38,13 @@ def _now() -> str:
 
 
 def open_trade(mode, symbol, side, lots, entry, sl, tp, prob=None, risk_money=None, ticket=None, open_bar=None,
-               stake=None, open_utc=None, setup=None) -> int:
+               stake=None, open_utc=None, setup=None, quiz=None) -> int:
+    """quiz: what the quiz agent said at entry (buy / sell / wait), to measure whether its second opinion helps."""
     with _conn() as c:
         cur = c.execute("""INSERT INTO trades (mode, symbol, side, lots, entry, sl, sl0, tp, prob, risk_money, ticket, status,
-                           open_utc, open_bar, updated, stake, setup) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'open', ?,?,?,?,?)""",
+                           open_utc, open_bar, updated, stake, setup, quiz) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'open', ?,?,?,?,?,?)""",
                         (mode, symbol, side, lots, entry, sl, sl, tp, prob, risk_money, ticket, open_utc or _now(), open_bar, time.time(),
-                         stake, setup))
+                         stake, setup, quiz))
         return cur.lastrowid
 
 

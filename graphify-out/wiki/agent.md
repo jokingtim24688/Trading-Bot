@@ -42,3 +42,10 @@ Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. R
   Features have no volume (history has none) and are float32. RAM ~0.5 GB per year of candles when training.
 - **replay.py**: history replay at slider speed (0 = Max; --days 0 = all; --from test|end|all|date); spread/ATR filter off unless --strict-filters;
   skip-reason Counter in replay_state.json ("skips"); PaperBroker.clock stamps trades with the replayed candle's UTC time so daily limits/learned hours are historical; (data/replay_control.json -> data/replay_state.json), mode "replay" in the ledger.
+- **news.py** (2026-09-24): pause around big news. ForexFactory weekly JSON feed -> `data/news_calendar.json` (refresh every 6 h in the
+  background, 15 min retry, keeps the last copy offline); `pause_reason(now, before, after, currencies, impacts)`;
+  `summary(settings)` for `/api/news`. run.py `--news-before/--news-after/--news-currencies/--news-impact` (app passes
+  them from settings `news_pause`, `news_before_min`, `news_after_min`, `news_currencies`, `news_impact`); not in replay.
+- **Quiz second opinion recorded** (2026-09-24): run.py and replay.py always load the quiz policy and store its answer at
+  entry in the ledger's new `quiz` column (filter still only with `--quiz-filter`); app `stats.quiz_agreement` ->
+  `GET /api/stats/quiz` (agree / disagree / none + verdict, needs ~30 each).

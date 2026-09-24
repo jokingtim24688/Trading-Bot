@@ -25,6 +25,7 @@ from .model import SignalModel  # noqa: E402
 from .practice import Practice  # noqa: E402
 from .pro import SETUP_NAMES, active_setups, primary_setup  # noqa: E402
 from .risk import RiskGate, stake_plan  # noqa: E402
+from . import news  # noqa: E402
 
 
 def main():
@@ -41,6 +42,10 @@ def main():
     ap.add_argument("--ref-leverage", type=float, default=None, help="size stop/target as if leverage were 1:N (0 = real)")
     ap.add_argument("--no-early-exit", action="store_true", help="always hold trades until SL or TP")
     ap.add_argument("--no-learned", action="store_true", help="ignore the bot's learned rules (data/learned_rules.json)")
+    ap.add_argument("--news-before", type=float, default=0, help="no new trades this many minutes before big news (0 = off)")
+    ap.add_argument("--news-after", type=float, default=0, help="...and this many minutes after it")
+    ap.add_argument("--news-currencies", default="USD", help="comma list of currencies whose news pauses the bot")
+    ap.add_argument("--news-impact", default="High", help="comma list of impact levels that pause it (High,Medium,Low)")
     ap.add_argument("--quiz-filter", action="store_true", help="only enter when the quiz agent picks the same side")
     ap.add_argument("--practice", action="store_true", help="paper only: trade the model's top 10%% setups instead of the threshold")
     ap.add_argument("--sl-score-mult", type=float, default=None, help="score penalty multiplier when a stop loss hits (default 1.5)")
@@ -86,10 +91,9 @@ def main():
 
     status_path = Path(cfg.log_dir).parent / "data" / "agent_status.json"
     probs = {"buy": None, "sell": None, "need": None, "setups": []}
-    quiz_pol = None
+    from .quiz import load_policy
+    quiz_pol = load_policy()               # its answer is recorded on every trade, so the app can measure if it helps
     if args.quiz_filter:
-        from .quiz import load_policy
-        quiz_pol = load_policy()
         print("quiz agent second opinion: " + ("on" if quiz_pol else "off (no trained quiz agent yet)"))
     practice = Practice() if args.practice and mode == "paper" else None
     if practice:
@@ -187,15 +191,27 @@ def main():
                 say(bar_time, "waiting for a strong setup", "no side reached the needed confidence on this candle")
                 continue
 
+            qa = None
             if quiz_pol is not None:
-                qa = quiz_pol.answer_row(row.iloc[0].to_dict(), bars[["open", "high", "low", "close"]].to_numpy()[-90:])
-                if qa["action"] != side:
-                    say(bar_time, f"skipped {side}", f"quiz agent says {qa['action']}")
-                    continue
+                try:
+                    qa = quiz_pol.answer_row(row.iloc[0].to_dict(), bars[["open", "high", "low", "close"]].to_numpy()[-90:])
+                except Exception:                  # noqa: BLE001 - a quiz agent made for other inputs: no opinion
+                    qa = None
+            if args.quiz_filter and qa is not None and qa["action"] != side:
+                say(bar_time, f"skipped {side}", f"quiz agent says {qa['action']}")
+                continue
 
             if not args.no_learned:
                 why = learn.block_reason(learn.load_rules(), "buy" if side == "buy" else "sell", float(prob),
                                          datetime.now(timezone.utc).hour, setup=primary_setup(probs["setups"], side))
+                if why:
+                    journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side, prob=round(prob, 3), note=why)
+                    say(bar_time, f"skipped {side}", why)
+                    continue
+
+            if args.news_before > 0 or args.news_after > 0:
+                why = news.pause_reason(None, args.news_before, args.news_after, tuple(args.news_currencies.split(",")),
+                                        tuple(args.news_impact.split(",")))
                 if why:
                     journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side, prob=round(prob, 3), note=why)
                     say(bar_time, f"skipped {side}", why)
@@ -233,7 +249,7 @@ def main():
             tp = price + plan["tp_dist"] if side == "buy" else price - plan["tp_dist"]
             filled, note = broker.open(side, lots, price, sl, tp, prob=round(float(prob), 3),
                                        risk_money=plan["sl_money"], open_bar=bar_epoch + 60, stake=plan["stake"],
-                                       setup=primary_setup(probs["setups"], side))
+                                       setup=primary_setup(probs["setups"], side), quiz=qa["action"] if qa else None)
             note += (f" | stake {plan['stake']} ({'min lot' if plan['forced_min'] else str(m.stake_pct_of_balance) + '% of balance'})"
                      f" SL -{plan['sl_money']} TP +{plan['tp_money']} ({plan['tp_pct']}%) open {broker.open_count()}/{max_open}")
             journal.log(event="order" if filled else "reject", bar_time=bar_time, symbol=cfg.symbol, side=side,

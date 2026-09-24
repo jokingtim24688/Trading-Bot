@@ -45,6 +45,14 @@ DEFAULTS = {
     "manual_be_points": 0,                 # once a trade is this many points up, move its stop to entry + 2 points
     "manual_trail_points": 0,              # the stop follows the price at this distance, only ever tightening
     "desktop_alerts": False,               # also show Windows' own pop-up on a TP/SL hit (the app shows its own at the top right)
+    # Pause around big news (economic calendar): the bot opens no new trades this long before/after a release
+    "news_pause": True,
+    "news_before_min": 15,
+    "news_after_min": 15,
+    "news_currencies": ["USD"],            # gold moves on US news
+    "news_impact": ["High"],               # High / Medium / Low
+    # Manual tab: refuse market orders when the spread is wider than this many points (0 = no limit)
+    "manual_max_spread": 80,
     # Telegram alerts on your phone (your own bot from @BotFather; see app/telegram.py)
     "telegram_enabled": False,
     "telegram_token": "",

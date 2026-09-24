@@ -246,6 +246,17 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24, from the user (recommendations): three new backend pieces for the UI:
+  - **News:** `GET /api/news` -> `{enabled, before_min, after_min, currencies, impact, paused (sentence or null),
+    events: [{time, utc, title, currency, impact, forecast, previous}], fetched, stale, error}`. Suggested: a small
+    "News in 12 min: CPI" chip in the top bar or Manual tab, a "Bot paused for news" line on the Agent tab when
+    `paused`, and settings for `news_pause` (switch), `news_before_min`, `news_after_min`, `news_impact` (High /
+    Medium / Low checkboxes).
+  - **Manual spread limit:** the quote adds `max_spread` and `spread_ok`. A market order with a wider spread gets 400
+    `{error: "The spread is 25 points right now (your limit is 20)..."}`; offer "Send anyway", which resends with
+    `ignore_spread: true`. Setting `manual_max_spread` (points, 0 = no limit).
+  - **Is the quiz agent worth it?** `GET /api/stats/quiz?days=0&mode=all` -> `{agree, disagree, none: {trades,
+    win_rate, net, profit_factor, expectancy}, verdict}`. Good next to the quiz filter switch, or on the Review tab.
 - 2026-09-24, from the user: **Telegram alerts** (backend done, commit d68e93f). Please add a "Phone alerts
   (Telegram)" section in Settings:
   - switch `telegram_enabled`; a password-style field `telegram_token` (with the hint "In Telegram, message
