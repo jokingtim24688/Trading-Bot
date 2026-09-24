@@ -11,3 +11,4 @@ dist/
 build/
 *.skill
 .pytest_cache/
+demo-new-features.mp4
