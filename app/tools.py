@@ -6,11 +6,12 @@ import json
 import operator
 import re
 from pathlib import Path
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
 from . import memory, mt5_service
-from .settings import DATA, load
+from .settings import DATA, ROOT, load
 
 NOTES = DATA / "notes"
 NOTES.mkdir(exist_ok=True)
@@ -44,13 +45,62 @@ def _bars_summary(symbol: str, count: int) -> dict:
             "last_10": [{k: b[k] for k in ("time", "open", "high", "low", "close")} for b in bars[-10:]]}
 
 
+def site_allowed(url: str, sites: list[str]) -> bool:
+    """True when the URL is on one of the allowed trading/market sites (subdomains included; an entry with a path,
+    like reuters.com/markets, allows only that section)."""
+    try:
+        u = urlsplit(url)
+    except ValueError:
+        return False
+    if u.scheme not in ("http", "https") or not u.hostname or u.username or u.password:
+        return False
+    host, path = u.hostname.lower().rstrip("."), (u.path or "/").lower()
+    for entry in sites:
+        site, _, section = entry.strip().lower().partition("/")
+        if site and (host == site or host.endswith("." + site)):
+            if not section or path == "/" + section or path.startswith("/" + section.rstrip("/") + "/"):
+                return True
+    return False
+
+
 def _web_fetch(url: str) -> str:
-    if not load().get("allow_web", True):
+    s = load()
+    if not s.get("allow_web", True):
         return "web access is turned off in Settings"
-    r = httpx.get(url, timeout=15, follow_redirects=True, headers={"User-Agent": "TradingBot/1.0"})
+    sites = s.get("web_sites") or []
+    for _ in range(6):                           # follow redirects by hand so every hop is checked
+        if not site_allowed(url, sites):
+            return (f"refused: {urlsplit(url).hostname or url} isn't one of the trading/market sites Hermes may open "
+                    f"(Settings -> web_sites): {', '.join(sites)}")
+        r = httpx.get(url, timeout=15, follow_redirects=False, headers={"User-Agent": "TradingBot/1.0"})
+        if r.is_redirect and r.headers.get("location"):
+            url = urljoin(url, r.headers["location"])
+            continue
+        break
+    else:
+        return "refused: too many redirects"
     text = re.sub(r"(?is)<(script|style).*?</\1>", " ", r.text)
     text = re.sub(r"<[^>]+>", " ", text)
     return re.sub(r"\s+", " ", text)[:6000]
+
+
+SETUPS = ROOT / ".claude" / "skills" / "quiz-setups"
+
+
+def _setup_guide(setup: str = "") -> str:
+    """One quiz question type's page from the quiz-setups skill (the index when the setup is empty or unknown)."""
+    refs = SETUPS / "references"
+    if not refs.exists():
+        return "the quiz-setups skill isn't installed"
+    q = re.sub(r"[^a-z0-9 ]", " ", setup.lower()).split()
+    best, score = None, 0
+    for p in refs.glob("*.md"):
+        title = p.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").lower()
+        words = set(re.sub(r"[^a-z0-9 ]", " ", title + " " + p.stem.replace("_", " ")).split())
+        sc = len(set(q) & words) + (5 if "_".join(q) == p.stem else 0)
+        if sc > score:
+            best, score = p, sc
+    return (best or SETUPS / "SKILL.md").read_text(encoding="utf-8")[:6000]
 
 
 def _safe_note_name(title: str) -> Path:
@@ -123,7 +173,13 @@ TOOLS = {
                  {"text": {"type": "string"}}),
     "recall": (lambda query: {"facts": memory.relevant_facts(query, 8), "past_messages": memory.search_messages(query, 5)},
                "Search long-term memory and past conversations.", {"query": {"type": "string"}}),
-    "web_fetch": (_web_fetch, "Fetch a web page and return its text (news, docs, calendars).", {"url": {"type": "string"}}),
+    "web_fetch": (_web_fetch, "Fetch a page from an allowed trading/market site (central banks, economic calendars, gold "
+                               "and forex news, MT5 docs) and return its text. Other sites are refused.",
+                  {"url": {"type": "string"}}),
+    "setup_guide": (_setup_guide, "Explain one of the quiz's question types / pro gold setups (e.g. 'liquidity sweep "
+                                   "below lows', 'opening-range breakout down', 'traps', 'stay out'): what the chart shows, "
+                                   "why pros take it, the trade, and when it turns into a trap. Empty = the list of all.",
+                    {"setup": {"type": "string"}}),
     "save_note": (lambda title, text: (_safe_note_name(title).write_text(text, encoding="utf-8"), f"saved note '{title}'")[1],
                   "Save a markdown note to disk (trade plans, checklists, research).",
                   {"title": {"type": "string"}, "text": {"type": "string"}}),

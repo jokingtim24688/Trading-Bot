@@ -6,4 +6,5 @@ Subagent `.claude/agents/mt5-m1-trader.md`: tools include `mcp__mt5__*`; rules c
 
 - `references/pro_playbook.md`: professional intraday routine and setups, mapped to agent/pro.py inputs.
 - `.claude/skills/quiz-school/`: how to run, read and un-stick Quiz school.
+- `.claude/skills/quiz-setups/`: one page per question type (18 setups, stay-out, traps): what it shows, why pros take it, the trade checked, trap signs, agent inputs, what to do when stuck. Hermes reads it via `setup_guide`.
 - `.claude/skills/quiz-lessons/`: written by agent/quiz.py after every run (per-setup mastery and exam accuracy).

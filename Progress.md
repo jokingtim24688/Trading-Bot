@@ -457,6 +457,34 @@ Each chat writes only in its own section below, and adds new entries just above 
 - `app/`: `bank` job; started at app startup (`quiz_bank_auto`); `/api/quiz/build` has no cap (0 = all);
   `/api/quiz/state` includes `bank`. Handoff to Chat B for the number box, a bank line and settings.
 
+### 2026-09-24: Hermes web limited to trading sites; quiz-setups skill; vision models
+- Request:
+  - Can Hermes's web access be limited to stock/trading sites?
+  - Is there a model of similar size that sees charts and learns more easily?
+  - Otherwise, keep the program and make skills for each question type.
+- `app/tools.py`:
+  - `site_allowed()` + `_web_fetch` only open sites in the new `web_sites` setting. Subdomains are covered; an
+    entry with a path allows only that section.
+  - Only http(s), no logins in the URL; redirects are followed by hand and every hop is checked.
+  - Tested: 15 allow/refuse cases (look-alike domains, other sections, localhost) and redirects off the list.
+- `app/settings.py`: `web_sites` default list:
+  - official data: Fed, BLS, BEA, Treasury, ECB;
+  - gold: gold.org, LBMA, Kitco, CME;
+  - FX and markets news: FXStreet, Forex Factory, Investing.com, Trading Economics, MarketWatch, Yahoo Finance,
+    Investopedia, BabyPips, reuters.com/markets;
+  - MT5 docs: mql5.com, metatrader5.com.
+- `app/brain.py`: the system prompt says web_fetch is for market research only.
+- `.claude/skills/quiz-setups/`:
+  - SKILL.md index plus 20 pages: the 18 setups, stay-out and traps.
+  - Each covers what the question shows (matches `_candidates`), why pros take it, the trade checked (stop, 2R, the
+    clean-win rule), trap signs, the agent inputs (names verified against the 49 features) and what to do when
+    stuck.
+  - Generated from the creators' rules; the quiz agent can't read them, Claude and Hermes can.
+- Hermes tool `setup_guide(setup)`: fuzzy lookup of a page (e.g. "fvg bull" -> Bullish fair value gap).
+- Vision models: the small chart-reading models that run in Ollama are about 2-3 GB. They can describe a chart
+  image, but can't learn from the quiz without GPU fine-tuning and read exact levels poorly. So: keep the program
+  plus llama for chat.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
