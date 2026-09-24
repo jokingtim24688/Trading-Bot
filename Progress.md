@@ -902,4 +902,21 @@ Each chat writes only in its own section below, and adds new entries just above 
   on the Sounds page still changes it. Tested: a card is still there at 1.7 s and gone by 2.4 s, in the app and the
   pop-up.
 
+### 2026-09-24: Chat A handoffs: news pause, Manual spread limit, quiz second opinion, Telegram alerts
+- News (`/api/news`): a chip in the top bar ("News in 12 min: USD CPI", amber inside the pause window, red "Bot paused
+  for news" while paused; the next releases in its tooltip; click opens the setting), a line on the Agent tab (why it's
+  paused, or when the next pause starts), and a Settings > News pause section (switch, minutes before/after,
+  currencies, High/Medium/Low, the next six releases in your time). Countdown every 20 s, fetch every minute.
+- Manual spread limit: the spread on the trade bar turns red over your limit (tooltip says the limit); a refused
+  market order arms that button for 6 s: one more click sends it with `ignore_spread`. Setting in Settings > Manual
+  trading.
+- Quiz second opinion (`/api/stats/quiz`): a Review panel with agreed / disagreed / no opinion (trades, won, net, per
+  trade, profit factor) and the verdict, following the Review period and mode; the verdict also sits under the quiz
+  filter switch in Settings.
+- Telegram: Settings > Phone alerts (switch, token as a password field, three steps, Find my chat, Send a test,
+  which alerts); the token is saved first when you press a button; status line with errors.
+- The settings form now handles checkbox groups as lists (and counts only the box you changed in the save bar).
+- Tested against Chat A's routes in the sandbox (news and Telegram replies mocked: no internet or bot token here),
+  0 unexpected errors.
+
 <!-- Chat B: add new entries above this line -->
