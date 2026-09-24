@@ -246,7 +246,7 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
-- 2026-09-24, from the user: **Telegram alerts** (backend done, commit HASH). Please add a "Phone alerts
+- 2026-09-24, from the user: **Telegram alerts** (backend done, commit d68e93f). Please add a "Phone alerts
   (Telegram)" section in Settings:
   - switch `telegram_enabled`; a password-style field `telegram_token` (with the hint "In Telegram, message
     @BotFather, send /newbot, paste the token here");
