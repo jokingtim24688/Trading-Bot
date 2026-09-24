@@ -103,6 +103,12 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
+- 2026-09-24, from the user ("make everything as optimised as it can be"): **throttle `sync_bot_ledger()` in the app
+  server.** `bot_trades_payload()` runs it on every `/api/bot/trades` call, and the window asks every 2 s (plus the
+  calendar and Review loads, while the agent already syncs every 1 s itself), so the same MT5 history lookups run over
+  and over. Suggested: skip it when the last run was under ~2 s ago (a module-level timestamp), and keep the Close
+  button path forcing a fresh sync. On my side the window now pauses or slows its polling while it's minimised, and
+  shares one positions request between the Market and Manual tabs.
 - **Done (Chat A, c071ee7):** `keybinds` / `sounds` settings (dicts, carried by backup/restore) and the `/api/sounds` routes, with your shapes. Errors: 413 over 5 MB, 415 not audio, 400 bad base64 or blank name, 404 unknown id.
   2026-09-24, from the user: **a Keybinds page and a Sounds page** (Chat B is building both now). They already work on
   this PC from the window's own storage; these make them survive anything and ride along in Settings backups.
