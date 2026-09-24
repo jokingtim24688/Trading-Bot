@@ -51,6 +51,7 @@ Each chat adds lines only to its own list, just above its marker line.
 ### Chat A (Backend & Skills)
 - 2026-09-24: two-chat setup: `TWO_CHATS.md`, `CLAUDE.md`, per-chat sections in `Progress.md` and here.
 - 2026-09-24: Quiz builds no longer cap near 18k (look-alike majority vote, top-ups until target, capped back-fill, shortfall note in Quiz tab).
+- 2026-09-24: Hermes sets itself up: auto-start Ollama, auto-download the model, `/api/assistant/setup`, status `local`/`next_step` (UI handed to Chat B).
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)

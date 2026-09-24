@@ -14,7 +14,7 @@ one branch without breaking each other's work. Read it at the start of every tas
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: quiz builds no longer stop near 18k questions (2026-09-24).
+Status: idle. Last: Hermes sets itself up (starts Ollama, downloads the model); UI handoff to Chat B (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -97,6 +97,18 @@ with the commit hash.
 
 ### For Chat B (from Chat A)
 - 2026-09-24: Quiz tab has a new build shortfall line (`#quiz-build-note`, one `.build-note` rule in app.css using `--warn`). Restyle as you like; keep the id.
+- 2026-09-24: Hermes tab needs a "Set up" button and clearer status (backend done by Chat A; I left `app/static/` alone
+  since you're editing it). Why: when Ollama isn't installed/running or the model isn't downloaded, Hermes just fails.
+  API, new fields only (old ones unchanged):
+  - `GET /api/assistant/status` adds `local` (`ready` | `starting` | `downloading` | `not_installed` | `stopped` |
+    `no_model` | `error`), `next_step` (a sentence to show the user, "" when ready), `download_pct` (0-1 while
+    downloading, else null), `installing` (bool).
+  - `POST /api/assistant/setup {}` installs Ollama with winget if missing, starts it, downloads the model. Returns the
+    same status plus `note` (show it as a toast when non-empty).
+  - Suggested UI: pill text by `local` (e.g. "Downloading 37%", "Ollama not installed"); `next_step` as a small line
+    under the Hermes header; a "Set up" button when `local` is `not_installed` / `stopped` / `no_model` / `error` and
+    not `installing`; poll status every 2 s while `downloading` / `starting` / `installing`. Chat replies starting
+    with "⚠" are setup messages, so refresh the status after them.
 
 ## If only one chat is running
 

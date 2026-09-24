@@ -45,6 +45,7 @@ DEFAULTS = {
     "ollama_url": "http://127.0.0.1:11434",
     "ollama_model": "hermes3:8b",
     "ollama_keep_alive": "5m",             # unload the model from VRAM after this idle time
+    "assistant_autosetup": True,           # start Ollama and download the model automatically when needed
     "allow_web": True,
     # MCP bridge for Hermes Agent
     "mcp_http_port": 8765,

@@ -629,6 +629,21 @@ def assistant_status():
     return brain.status()
 
 
+@app.post("/api/assistant/setup")
+def assistant_setup(body: dict = Body(default={})):
+    """Set up the local model: install Ollama (winget) if missing, start it, download the model."""
+    return brain.setup(install=bool(body.get("install", True)))
+
+
+@app.on_event("startup")
+def _assistant_warmup():
+    """Start Ollama and fetch the model in the background as the app opens, so Hermes is ready when you need it."""
+    s = settings.load()
+    if s.get("assistant_autosetup", True) and s["assistant_backend"] != "hermes_agent":
+        import threading
+        threading.Thread(target=lambda: brain.prepare(s), daemon=True).start()
+
+
 @app.post("/api/chat")
 def chat(body: dict = Body(...)):
     text = (body.get("text") or "").strip()

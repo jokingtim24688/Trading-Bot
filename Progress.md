@@ -353,6 +353,31 @@ Each chat writes only in its own section below, and adds new entries just above 
   - 100k: 24,666 (70% "stay out") -> 27,999 (balanced: 35/33/32, 25% traps).
   - Training 50 rounds on 20k: exam 71.5%.
 
+### 2026-09-24: Hermes actually works (sets itself up)
+- Problem: the local backend needed Ollama running and `hermes3:8b` pulled by hand. Otherwise every message failed
+  with a ⚠ error.
+- `app/brain.py`:
+  - Finds Ollama (PATH or the Windows install folders) and starts `ollama serve` hidden.
+  - Downloads the model through `/api/pull` in the background with progress.
+  - `local_state()` puts the local backend in one word with a next step for the user.
+  - `setup()` installs Ollama with winget (Set up button only).
+  - Chat runs setup before answering. In auto mode, if Hermes Agent errors it falls back to the local model.
+  - Tool loop hardened:
+    - models without tool support fall back to plain chat;
+    - empty answers after tools are re-asked;
+    - malformed tool calls are tolerated;
+    - setup errors are kept out of the model's history.
+- `app/server.py`:
+  - `POST /api/assistant/setup`.
+  - The status endpoint has new fields: `local`, `next_step`, `download_pct`, `installing`.
+  - A startup warm-up starts Ollama and fetches the model as the app opens.
+- `app/settings.py`: `assistant_autosetup` (default on).
+- Tested with a fake `ollama` program and server:
+  - cold start: starts, downloads 0-100%, chat with a tool call answers "The answer is 4.";
+  - not installed: a clear message;
+  - stopped: chat starts it and reports the download.
+- UI (Set up button, status line) handed to Chat B in TWO_CHATS.md, since Chat B is editing `app/static/`.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

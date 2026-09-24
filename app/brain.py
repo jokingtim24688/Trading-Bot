@@ -8,6 +8,13 @@ local:        a Hermes model (default hermes3:8b) served by Ollama on the RTX 40
 auto:         hermes_agent if it answers, otherwise local.
 """
 import datetime as dt
+import json
+import os
+import shutil
+import subprocess
+import threading
+import time
+from pathlib import Path
 
 import httpx
 
@@ -53,10 +60,174 @@ def ollama_alive(s: dict) -> bool:
         return False
 
 
+# ---------- getting the local model ready by itself: start Ollama, download the model ----------
+
+_setup = {"stage": "", "pct": 0.0, "error": "", "busy": False}
+_lock = threading.Lock()
+
+
+def ollama_exe() -> str | None:
+    """Where Ollama is installed (PATH, or the Windows installer's default folders)."""
+    found = shutil.which("ollama")
+    if found:
+        return found
+    for base in (os.environ.get("LOCALAPPDATA"), os.environ.get("ProgramFiles")):
+        if base:
+            for sub in (("Programs", "Ollama", "ollama.exe"), ("Ollama", "ollama.exe")):
+                p = Path(base, *sub)
+                if p.exists():
+                    return str(p)
+    return None
+
+
+def _same_model(a: str, b: str) -> bool:
+    norm = lambda m: m if ":" in m else f"{m}:latest"          # noqa: E731
+    return norm(a) == norm(b)
+
+
+def model_ready(s: dict) -> bool:
+    try:
+        r = httpx.get(f"{s['ollama_url']}/api/tags", timeout=3)
+        return r.status_code == 200 and any(_same_model(m.get("name", ""), s["ollama_model"])
+                                            for m in r.json().get("models", []))
+    except (httpx.HTTPError, ValueError):
+        return False
+
+
+def start_ollama(s: dict, wait: float = 20) -> bool:
+    """Start `ollama serve` in the background (no window) if it isn't answering. True once it answers."""
+    if ollama_alive(s):
+        return True
+    exe = ollama_exe()
+    if not exe:
+        return False
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+    env = dict(os.environ)
+    host = s["ollama_url"].split("://", 1)[-1].rstrip("/")
+    env.setdefault("OLLAMA_HOST", host)
+    subprocess.Popen([exe, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                     creationflags=flags, env=env, start_new_session=os.name != "nt")
+    t0 = time.time()
+    while time.time() - t0 < wait:
+        if ollama_alive(s):
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def _pull(s: dict):
+    """Download the model through Ollama, recording progress for the app."""
+    try:
+        with httpx.stream("POST", f"{s['ollama_url']}/api/pull", json={"model": s["ollama_model"], "stream": True},
+                          timeout=httpx.Timeout(60, read=600)) as r:
+            if r.status_code != 200:
+                raise BackendError(f"Ollama couldn't download {s['ollama_model']} ({r.status_code}): {r.read()[:200]!r}")
+            for line in r.iter_lines():
+                if not line.strip():
+                    continue
+                d = json.loads(line)
+                if d.get("error"):
+                    raise BackendError(d["error"])
+                if d.get("total"):
+                    _setup["pct"] = d.get("completed", 0) / d["total"]
+                _setup["stage"] = f"downloading {s['ollama_model']}"
+        _setup.update(stage="ready", pct=1.0)
+    except (httpx.HTTPError, BackendError, ValueError) as e:
+        _setup.update(stage="", error=f"Download of {s['ollama_model']} stopped: {e}")
+    finally:
+        _setup["busy"] = False
+
+
+def prepare(s: dict | None = None, pull: bool = True) -> dict:
+    """Make the local model usable: start Ollama if it's installed, and download the model in the background if it's
+    missing. Returns right away with where things stand."""
+    s = s or load()
+    with _lock:
+        if _setup["busy"]:
+            return local_state(s)
+        if not ollama_alive(s):
+            if not ollama_exe():
+                return local_state(s)
+            _setup.update(stage="starting Ollama", error="")
+            if not start_ollama(s):
+                _setup.update(stage="", error="Ollama is installed but didn't start. Open the Ollama app once, then try again.")
+                return local_state(s)
+            _setup["stage"] = ""
+        if pull and not model_ready(s):
+            _setup.update(busy=True, stage=f"downloading {s['ollama_model']}", pct=0.0, error="")
+            threading.Thread(target=_pull, args=(s,), daemon=True).start()
+    return local_state(s)
+
+
+def local_state(s: dict) -> dict:
+    """The local backend in one word, plus the next step for the user."""
+    alive = ollama_alive(s)
+    ready = alive and model_ready(s)
+    model = s["ollama_model"]
+    if ready:
+        state, step = "ready", ""
+    elif _setup["busy"] or _setup["stage"].startswith("starting"):
+        state = "downloading" if _setup["busy"] else "starting"
+        step = (f"Downloading {model}: {_setup['pct']:.0%}. Hermes answers as soon as it's done." if _setup["busy"]
+                else "Starting Ollama…")
+    elif _setup["error"]:
+        state, step = "error", _setup["error"]
+    elif not alive and not ollama_exe():
+        state, step = "not_installed", ("Ollama isn't installed. Press Set up to install it (Windows winget), or get it "
+                                       "from https://ollama.com/download, then press Set up.")
+    elif not alive:
+        state, step = "stopped", "Ollama isn't running. Press Set up to start it."
+    else:
+        state, step = "no_model", f"{model} isn't downloaded yet. Press Set up to download it (about 4.7 GB, once)."
+    return {"local": state, "next_step": step, "download_pct": round(_setup["pct"], 3) if _setup["busy"] else None}
+
+
+def install_ollama() -> str:
+    """Install Ollama with winget (Windows). Runs in the background; prepare() finishes the job afterwards."""
+    if ollama_exe():
+        return "Ollama is already installed."
+    winget = shutil.which("winget")
+    if not winget:
+        return "winget isn't available here. Install Ollama from https://ollama.com/download, then press Set up."
+
+    def run():
+        _setup.update(busy=True, stage="installing Ollama", pct=0.0, error="")
+        try:
+            r = subprocess.run([winget, "install", "-e", "--id", "Ollama.Ollama", "--silent",
+                                "--accept-package-agreements", "--accept-source-agreements"],
+                               capture_output=True, text=True, timeout=900,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            _setup["busy"] = False
+            if not ollama_exe():
+                _setup.update(stage="", error=f"Installing Ollama didn't finish (winget exit {r.returncode}). "
+                                              "Get it from https://ollama.com/download.")
+                return
+            prepare()
+        except (OSError, subprocess.SubprocessError) as e:
+            _setup.update(busy=False, stage="", error=f"Installing Ollama failed: {e}")
+
+    threading.Thread(target=run, daemon=True).start()
+    return "Installing Ollama in the background…"
+
+
+def setup(install: bool = True) -> dict:
+    """The Set up button: install Ollama if needed (and allowed), start it, download the model."""
+    s = load()
+    _setup["error"] = ""
+    note = ""
+    if not ollama_exe() and install:
+        note = install_ollama()
+    else:
+        prepare(s)
+    return {**status(), "note": note}
+
+
 def status() -> dict:
     s = load()
-    return {"backend_setting": s["assistant_backend"], "hermes_agent": hermes_agent_alive(s),
-            "ollama": ollama_alive(s), "model": s["ollama_model"], "facts": len(memory.all_facts())}
+    agent = hermes_agent_alive(s)
+    return {"backend_setting": s["assistant_backend"], "hermes_agent": agent, "ollama": ollama_alive(s),
+            "model": s["ollama_model"], "facts": len(memory.all_facts()),
+            "installing": _setup["busy"] and _setup["stage"] == "installing Ollama", **local_state(s)}
 
 
 def _ask_hermes_agent(s: dict, text: str) -> str:
@@ -75,32 +246,57 @@ def _ask_local(s: dict, text: str, trace: list) -> str:
     system = SYSTEM.format(facts="\n".join(f"- {f}" for f in facts),
                            now=dt.datetime.now().strftime("%Y-%m-%d %H:%M (%A)"))
     past = memory.recent_messages(13)[:-1]      # the newest row is this message; it's appended below
-    history = [{"role": m["role"], "content": m["content"]} for m in past if m["role"] in ("user", "assistant")]
+    history = [{"role": m["role"], "content": m["content"]} for m in past
+               if m["role"] in ("user", "assistant") and not m["content"].startswith("⚠")]   # skip setup errors
     messages = [{"role": "system", "content": system}, *history, {"role": "user", "content": text}]
 
-    for _ in range(6):                           # tool-use loop
-        body = {"model": s["ollama_model"], "messages": messages, "tools": tools.schemas(), "stream": False,
+    use_tools = True
+    for rnd in range(7):                         # tool-use loop; the last round must answer in words
+        body = {"model": s["ollama_model"], "messages": messages, "stream": False,
                 "keep_alive": s["ollama_keep_alive"], "options": {"num_ctx": 8192, "temperature": 0.4}}
+        if use_tools and rnd < 6:
+            body["tools"] = tools.schemas()
         try:
-            r = httpx.post(f"{s['ollama_url']}/api/chat", json=body, timeout=300)
+            r = httpx.post(f"{s['ollama_url']}/api/chat", json=body, timeout=httpx.Timeout(30, read=600))
         except httpx.HTTPError as e:
-            raise BackendError(f"Can't reach Ollama at {s['ollama_url']} ({e}). Start Ollama, then run: ollama pull {s['ollama_model']}")
+            raise BackendError(f"Can't reach Ollama at {s['ollama_url']} ({type(e).__name__}).")
+        if r.status_code == 400 and "does not support tools" in r.text and use_tools:
+            use_tools = False                    # a model without tool support: plain chat instead
+            continue
         if r.status_code == 404:
-            raise BackendError(f"Model {s['ollama_model']} isn't downloaded. Run: ollama pull {s['ollama_model']}")
+            raise BackendError(f"{s['ollama_model']} isn't downloaded yet.")
         if r.status_code != 200:
             raise BackendError(f"Ollama error {r.status_code}: {r.text[:300]}")
-        msg = r.json()["message"]
+        msg = r.json().get("message") or {}
         calls = msg.get("tool_calls") or []
         messages.append({"role": "assistant", "content": msg.get("content", ""), "tool_calls": calls} if calls
                         else {"role": "assistant", "content": msg.get("content", "")})
         if not calls:
-            return msg.get("content", "").strip()
+            reply = (msg.get("content") or "").strip()
+            if reply:
+                return reply
+            if rnd == 6:
+                break
+            messages.append({"role": "user", "content": "Please answer my question in words now."})
+            continue
         for c in calls:
-            name, args = c["function"]["name"], c["function"].get("arguments", {})
+            fn = c.get("function") or {}
+            name, args = fn.get("name", ""), fn.get("arguments") or {}
             result = tools.call(name, args)
             trace.append({"tool": name, "args": args, "result": result[:400]})
             messages.append({"role": "tool", "content": result, "tool_name": name})
     return "I stopped after several tool calls without a final answer. Try asking more specifically."
+
+
+def _local_not_ready(s: dict) -> str | None:
+    """Why the local model can't answer yet (after trying to fix it), or None when it can."""
+    if ollama_alive(s) and model_ready(s):
+        return None
+    if s.get("assistant_autosetup", True):
+        prepare(s)
+        if ollama_alive(s) and model_ready(s):
+            return None
+    return local_state(s)["next_step"] or "The local model isn't ready yet."
 
 
 def chat(text: str) -> dict:
@@ -111,7 +307,24 @@ def chat(text: str) -> dict:
     trace: list = []
     memory.add_message("user", text)
     try:
-        reply = _ask_hermes_agent(s, text) if choice == "hermes_agent" else _ask_local(s, text, trace)
+        if choice == "hermes_agent":
+            try:
+                reply = _ask_hermes_agent(s, text)
+            except (BackendError, httpx.HTTPError, KeyError, ValueError) as e:
+                if s["assistant_backend"] != "auto":
+                    raise BackendError(f"Hermes Agent didn't answer ({e}). Is `hermes gateway` running?")
+                choice = "local"                 # auto: fall back to the local model
+                reply = None
+            if reply is None:
+                why = _local_not_ready(s)
+                if why:
+                    raise BackendError(why)
+                reply = _ask_local(s, text, trace)
+        else:
+            why = _local_not_ready(s)
+            if why:
+                raise BackendError(why)
+            reply = _ask_local(s, text, trace)
     except BackendError as e:
         reply = f"⚠ {e}"
     memory.add_message("assistant", reply)
