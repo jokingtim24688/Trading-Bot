@@ -725,4 +725,14 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Settings → Hermes: start Hermes Agent with the app, the command, the WSL distro.
 - Tested with mocked statuses and a 23 s mocked reply: 0 errors.
 
+### 2026-09-24: Trade-finish bell
+- The user asked for a bell like the one the Neverlose cheat plays as its kill sound for profitable closes, and the
+  same sound one octave down for a stop loss. The app can't ship that sound file (it isn't ours), so it synthesises a
+  short, bright bell (struck-bar partials plus a tiny strike click); the loss bell is the same sound at half speed
+  (one octave down, twice as long). Dropping a file in `app/static/sounds/` as `profit.wav` / `profit.mp3` replaces
+  it, and a loss plays that file at half speed.
+- Rings for: TP/SL alerts from `/api/events`, other closes from the feed (bell only), and the bot's paper/replay closes
+  (demo/real ring from the feed, so nothing rings twice). Settings > Manual trading has "Play profit bell" /
+  "Play loss bell". Rendered both to WAV and sent them to the user.
+
 <!-- Chat B: add new entries above this line -->

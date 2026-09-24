@@ -508,6 +508,40 @@ function beep(notes, force = false) {         // force: the caller already check
   } catch (e) {}
 }
 document.addEventListener("pointerdown", () => audioCtx && audioCtx.state === "suspended" && audioCtx.resume());
+/* trade-finish sound: a small bright bell (a glockenspiel-like "ding") when a trade closes in profit, and the same bell
+   one octave down (half speed) for a stop loss or any losing close. Drop your own sound in app/static/sounds/ as
+   profit.wav or profit.mp3 and it replaces the synth bell; a loss plays that file at half speed, one octave down. */
+const bell = { buf: null };
+setTimeout(async () => {                         // look for a custom sound once, after start-up
+  for (const ext of ["wav", "mp3"]) {
+    try {
+      const r = await fetch(`/static/sounds/profit.${ext}`); if (!r.ok) continue;
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      bell.buf = await audioCtx.decodeAudioData(await r.arrayBuffer()); return;
+    } catch (e) {}
+  }
+}, 4000);
+function playBell(win, force = false) {
+  if (!force && !state.settings?.alert_sound) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const rate = win ? 1 : 0.5, t = audioCtx.currentTime + 0.01, out = audioCtx.createGain();
+    out.gain.value = 0.85; out.connect(audioCtx.destination);
+    if (bell.buf) { const src = audioCtx.createBufferSource(); src.buffer = bell.buf; src.playbackRate.value = rate; src.connect(out); src.start(t); return; }
+    const f0 = 1318.5 * rate;                     // E6 for a win, E5 for a loss; every decay doubles too, like half-speed playback
+    [[1, 1, .9], [2.76, .42, .42], [5.4, .2, .22], [8.93, .09, .12]].forEach(([ratio, amp, dec]) => {   // struck-bar partials
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = "sine"; o.frequency.value = f0 * ratio; o.connect(g); g.connect(out);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.26 * amp, t + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dec / rate);
+      o.start(t); o.stop(t + dec / rate + 0.05);
+    });
+    const n = audioCtx.createBufferSource(), len = Math.floor(audioCtx.sampleRate * 0.012), buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const ch = buf.getChannelData(0); for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len);   // the tiny strike click
+    const hp = audioCtx.createBiquadFilter(), ng = audioCtx.createGain(); hp.type = "highpass"; hp.frequency.value = 3000 * rate; ng.gain.value = 0.05;
+    n.buffer = buf; n.playbackRate.value = rate; n.connect(hp); hp.connect(ng); ng.connect(out); n.start(t);
+  } catch (e) {}
+}
 const px = (v, sym) => v == null ? "—" : Number(v).toFixed(sym === state.symbol ? state.digits : (v < 20 ? 5 : 2));
 const signed = v => v == null ? "—" : `${v >= 0 ? "+" : ""}${fmt(v)}`;
 const cls = v => v > 0 ? "up" : v < 0 ? "down" : "";
@@ -528,7 +562,7 @@ async function pollBot() {
         tradeMoment();
       } else if (before === "open" && t.status === "closed") {
         toast(`Bot closed #${t.id} ${t.symbol} · ${t.exit_reason} · ${signed(t.pnl)}${t.score != null ? ` · ${pts(t.score)} pts` : ""}`, t.pnl < 0);
-        beep(t.pnl >= 0 ? [700, 940, 1180] : [520, 390]);
+        if (!(alertsState.ok && (t.mode === "demo" || t.mode === "real"))) playBell(t.pnl >= 0);   // demo/real ring from /api/events
         state.cal.loaded = 0;                       // the calendar picks the closed trade up on its next look
       }
     }
@@ -1645,8 +1679,8 @@ $("#bt-table").addEventListener("click", e => { const r = e.target.closest("tr")
 const selfClosed = new Set();
 const alertsState = { since: null, ok: null, prev: null, titleT: null };
 const ALERT = {
-  tp: { head: "Take profit hit", tone: [660, 880, 1100], cls: "tp" },
-  sl: { head: "Stop loss hit", tone: [520, 390], cls: "sl" },
+  tp: { head: "Take profit hit", bell: true, cls: "tp" },
+  sl: { head: "Stop loss hit", bell: false, cls: "sl" },
   be: { head: "Stop moved to break-even", tone: null, cls: "info" },
   trail: { head: "Trailing stop moved", tone: null, cls: "info" },
 };
@@ -1665,7 +1699,7 @@ function showAlert(ev) {
   el.querySelector("button").onclick = bye; el.addEventListener("click", e => { if (!e.target.closest("button")) { bye(); showTab("manual"); } });
   box.prepend(el); while (box.children.length > 4) box.lastElementChild.remove();
   setTimeout(bye, a.cls === "info" ? 5000 : 8000);
-  if (a.tone) beep(a.tone, true);
+  if (a.bell != null) playBell(a.bell, true);
   if (document.hidden && a.cls !== "info") {        // the taskbar title says it too while the window is in the background
     const t0 = document.title; document.title = `${a.head}: ${signed(ev.profit)}`;
     const back = () => { document.title = t0; document.removeEventListener("visibilitychange", back); };
@@ -1677,7 +1711,10 @@ async function pollEvents() {
   try {
     const r = await api(`/api/events${alertsState.since != null ? `?since=${alertsState.since}` : ""}`);
     alertsState.ok = true;
-    if (alertsState.since != null) (r.events || []).forEach(showAlert);
+    if (alertsState.since != null) (r.events || []).forEach(ev => {
+      if (ev.kind === "close" && ev.profit != null && pref("tpslAlerts", true)) playBell(ev.profit >= 0, true);   // closed early or by hand: bell only
+      else showAlert(ev);
+    });
     alertsState.since = r.last_id;
   } catch (e) { if (e.status === 404) alertsState.ok = false; }
 }
@@ -1953,6 +1990,7 @@ $("#bk-copy").onclick = async () => {
   const k = $("#pref-keys"), t = $("#pref-tpsl");
   k.checked = pref("manKeys", false); k.onchange = () => { setPref("manKeys", k.checked); renderKeysHint(); };
   t.checked = pref("tpslAlerts", true); t.onchange = () => setPref("tpslAlerts", t.checked);
+  $("#bell-win").onclick = () => playBell(true, true); $("#bell-loss").onclick = () => playBell(false, true);
   $('#set-nav a[href="#set-backup"]').addEventListener("click", loadBackups);
   $$(".rail-btn").forEach(b => b.addEventListener("click", () => b.dataset.tab === "settings" && loadBackups()));
 })();

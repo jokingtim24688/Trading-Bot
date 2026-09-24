@@ -108,3 +108,6 @@
 - Hermes Agent (Chat A's `agent` / `agent_step` status): `whoAnswers()`, `#brain-which` tag (`.by.hermes_agent` /
   `.by.local`), reply tags from `r.backend`, a still-working timer in the pending bubble; settings
   `hermes_agent_autostart`, `hermes_agent_cmd`, `hermes_wsl_distro`.
+- Trade-finish bell: `playBell(win)` (synth struck-bar bell; loss = half speed, one octave down), custom file
+  `app/static/sounds/profit.wav|mp3` (`bell.buf`); used by `showAlert`, `pollEvents` "close" events and `pollBot`
+  (paper/replay only when the feed is on); test buttons `#bell-win` / `#bell-loss`.

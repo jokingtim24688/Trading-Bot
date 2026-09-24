@@ -849,3 +849,4 @@ label.waiting { opacity: .5; }
 .by[hidden] { display: none; }
 .by.hermes_agent { color: var(--gold); border-color: rgba(201,162,74,.45); background: var(--gold-soft); }
 .msg .tools .by { margin-right: 8px; padding: 0 7px; }
+.bell-test { display: flex; gap: 6px; margin-top: 6px; }

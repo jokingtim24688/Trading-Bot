@@ -485,8 +485,9 @@
           <span class="help span-all">Used for every new manual order; change them per order in the ticket or per trade in Positions. The app moves the stop for you, even with the Manual tab closed.</span>
           <label class="check"><input type="checkbox" id="pref-keys"> Keyboard shortcuts on the Manual tab</label>
           <span class="help"><kbd>B</kbd> buy, <kbd>S</kbd> sell, <kbd>Shift</kbd>+<kbd>X</kbd> close all, <kbd>Esc</kbd> cancel, <kbd>+</kbd>/<kbd>−</kbd> lots. Buy, Sell and Close all still ask twice unless one-click is on.</span>
-          <label class="check"><input type="checkbox" id="pref-tpsl"> Sound and a banner when a take profit or stop loss is hit</label>
-          <span class="help">For every trade: yours, the bot's and Hermes'. This PC only.</span>
+          <label class="check"><input type="checkbox" id="pref-tpsl"> Bell when a trade closes, and a banner when a take profit or stop loss is hit</label>
+          <span class="help">For every trade: yours, the bot's and Hermes'. A profit rings a bright bell; a stop loss or any loss rings the same bell one octave down. This PC only.
+            <span class="bell-test"><button class="btn xs" type="button" id="bell-win">Play profit bell</button><button class="btn xs" type="button" id="bell-loss">Play loss bell</button></span></span>
         </fieldset>
         <fieldset class="panel" id="set-quiz"><legend>Quiz school<small>how the practice quiz runs</small></legend>
           <label>Question creators when Build quiz is pressed (0 = up to 10)<span class="u" data-u="creators"><input name="quiz_workers" type="number" min="0" max="16"></span></label>
