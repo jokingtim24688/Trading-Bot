@@ -482,6 +482,33 @@ def quiz_labels():
             "answers": [x["answer"] for x in prac], "difficulty": [x.get("difficulty", "") for x in prac]}
 
 
+@app.get("/api/quiz/report")
+def quiz_report_get():
+    """The weak-spot report: what the quiz agent gets stuck on (made by the quiz every 5 minutes and after each run)."""
+    from agent import quiz as q, quiz_report as rp
+    stale = not rp.REPORT_JSON.exists() or (q.PROGRESS.exists() and not jobs.jobs["quiz"].running
+                                            and rp.REPORT_JSON.stat().st_mtime < q.PROGRESS.stat().st_mtime)
+    if stale:
+        try:
+            rp.make_report()
+        except Exception:                               # noqa: BLE001 - a missing or old quiz just means no report yet
+            pass
+    return {"report": q._load_json(rp.REPORT_JSON, None),
+            "markdown": rp.REPORT_MD.read_text(encoding="utf-8") if rp.REPORT_MD.exists() else ""}
+
+
+@app.post("/api/quiz/report")
+def quiz_report_make():
+    from agent import quiz_report as rp
+    try:
+        rep = rp.make_report()
+    except Exception as e:                              # noqa: BLE001
+        raise HTTPException(500, f"Couldn't make the report: {e}")
+    if rep is None:
+        raise HTTPException(400, "No quiz progress yet: build a quiz and run it first.")
+    return {"report": rep, "markdown": rp.REPORT_MD.read_text(encoding="utf-8")}
+
+
 @app.get("/api/quiz/question/{qid}")
 def quiz_question(qid: int):
     from agent import quiz as q

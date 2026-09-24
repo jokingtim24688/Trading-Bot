@@ -22,6 +22,8 @@ Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. R
   REINFORCE with per-question baseline, adaptive exploration, sticky mastery, loops until done (stall tactics:
   extra reps + bigger steps -> grow network -> reset stuck); writes .claude/skills/quiz-lessons; progress data/quiz_progress.npz,
   agent models/quiz_policy.json, live data/quiz_state.json. `--quiz-filter` in run/replay.
+- **quiz_report.py**: weak-spot report (every 5 min + end of run): groups by setup/trap, weak spots, missed-vs-right
+  contrasts, trap separability, fixes -> data/quiz_report.{md,json} + .claude/skills/quiz-weak-spots/.
 - **pro.py**: professional-trader inputs (prior-day levels, Asian range, London/NY opening ranges, session average,
   liquidity sweeps, FVGs, H1 structure, round numbers) added by `build_features`; `active_setups()` / `primary_setup()`
   name setups for the bot card, ledger `setup` column and learn.py "by_setup" / `blocked_setups`.

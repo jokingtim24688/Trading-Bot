@@ -17,3 +17,4 @@
 - Quiz tab (layout A): /api/quiz/build, /api/quiz/train {resume|focus}, /api/quiz/control, /api/quiz/state,
   /api/quiz/labels, /api/quiz/question/{id}, /api/quiz/ask; canvas mastery board with picking; job "quiz";
   settings `quiz_filter`, `quiz_speed` (0 = max).
+- Quiz tab Weak spots panel: GET/POST /api/quiz/report; Copy report for Claude; Work on these (focus ids).

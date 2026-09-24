@@ -216,6 +216,15 @@
           <div id="quiz-chart" class="quiz-chart"></div>
           <div id="quiz-answer" class="quiz-answer"><p class="empty">Build the quiz from your downloaded history, then start it. At full speed the chart holds on its latest mistake, since those are the answers worth reading.</p></div>
         </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Weak spots</h3>
+            <div class="row-inline"><span id="quiz-report-meta" class="muted small"></span>
+              <button id="quiz-report-refresh" class="btn xs">Refresh</button>
+              <button id="quiz-report-copy" class="btn primary xs">Copy report for Claude</button></div></div>
+          <p class="muted small" style="margin:0 0 8px">Where it keeps getting stuck and what those charts have in common. Updated every 5 minutes while the quiz runs and after every run, and saved as the <code>quiz-weak-spots</code> skill. Paste the copied report to Claude to get new skills written from it.</p>
+          <div id="quiz-weak" class="weak-list"><p class="empty">Shows up after the quiz has run for a few minutes.</p></div>
+          <textarea id="quiz-report-text" class="report-text" readonly hidden></textarea>
+        </div>
         <div class="two-even">
           <div class="panel">
             <div class="panel-head"><h3>Hardest right now</h3><button id="quiz-focus-hard" class="btn xs">Work on these</button></div>

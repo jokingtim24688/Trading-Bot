@@ -579,9 +579,10 @@ def read_control() -> dict:
     return _load_json(CONTROL, {"speed": 0, "stop": False})
 
 
-def _save_progress(built, streak, right, asked, done_q, expect, last_right):
+def _save_progress(built, streak, right, asked, done_q, expect, last_right, wrong=None, exam_pick=None, stuck=None):
+    extra = {k: v for k, v in (("wrong", wrong), ("exam_pick", exam_pick), ("stuck", stuck)) if v is not None}
     np.savez(PROGRESS, streak=streak, right=right, asked=asked, done=done_q, expect=expect, last_right=last_right,
-             built=np.array(built))
+             built=np.array(built), **extra)
 
 
 def quiz_inputs(quiz: dict, pol: QuizPolicy) -> np.ndarray:
@@ -627,10 +628,14 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
     misses = np.zeros(n, int)                            # wrong answers in a row
     expect = np.zeros(n)                                 # points it usually earns on each question
     last_right = np.zeros(n, int)                        # round of its last right answer
+    wrong = np.zeros((n, 3), int)                        # which wrong answers it gave (for the weak-spot report)
+    exam_pick = np.full(n, -1)                           # its exam answers (-1: not an exam question)
     if (resume or focus) and PROGRESS.exists():
         pr = np.load(PROGRESS)
         if str(pr["built"]) == quiz["built"] and len(pr["streak"]) == n:
             streak, right, asked, done_q, expect = (pr[k].copy() for k in ("streak", "right", "asked", "done", "expect"))
+            if "wrong" in pr and pr["wrong"].shape == wrong.shape:
+                wrong = pr["wrong"].copy()
     pool = prac
     held_back = prac[:0]                                  # hard questions waiting for the curriculum
     if not focus:
@@ -692,9 +697,18 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
     def save_all(meta):
         pol.meta = meta
         pol.save()
-        _save_progress(quiz["built"], streak, right, asked, done_q, expect, last_right)
+        _save_progress(quiz["built"], streak, right, asked, done_q, expect, last_right, wrong, exam_pick,
+                       stuck_mask(rnd))
+
+    def report():
+        try:                                             # the weak-spot report never gets in the way of training
+            from .quiz_report import make_report
+            make_report()
+        except Exception as e:                           # noqa: BLE001
+            print(f"(weak-spot report skipped: {e})", flush=True)
 
     rnd, stopped, reason = 0, False, ""
+    last_report = time.time()
     while not max_rounds or rnd < max_rounds:
         rnd += 1
         round_points = 0
@@ -730,6 +744,7 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
                     done_q[i] = True
             else:
                 streak[i] = 0
+                wrong[i, a] += 1
                 mistake = {"id": int(i) + 1, "action": act, "points": pts, "verdict": verdict,
                            "probs": {k: round(float(v), 3) for k, v in zip(ACTIONS, p)}, "at": n_asked}
             now = time.time()
@@ -737,6 +752,9 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
                 if now - last_saved > 20:                # keep progress if the app is closed mid-quiz
                     save_all({"quiz_built": quiz["built"], "partial": True})
                     last_saved = now
+                    if now - last_report > 300:          # refresh the weak-spot report every 5 minutes
+                        report()
+                        last_report = time.time()
                 if mistake and "bars" not in mistake:
                     mistake.update(question_view(mistake["id"], quiz))
                 state(rnd, current=int(i) + 1)          # the question it is on right now (baby blue on the board)
@@ -787,6 +805,7 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
     exam_result = None
     if len(exam):
         pe = np.array([pol.probs(X[i]) for i in exam]).argmax(1)
+        exam_pick[exam] = pe
         ok = pe == ans[exam]
         pts = sum(points_for(ACTIONS[a], qs[i]["answer"])[0] for a, i in zip(pe, exam))
         by = {}
@@ -800,6 +819,7 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
               "points": points, "mastered": mastered, "practice": len(prac), "exam": exam_result,
               "quiz_built": quiz["built"], "reason": reason, "hidden": pol.hidden, "inputs": int(X.shape[1])})
     state(rnd, done=True, stopped=stopped, exam_result=exam_result, reason=reason)
+    report()
     try:
         write_lessons(quiz, prac, done_q, right, asked, stuck_mask(rnd), exam_result, pol, rnd, points)
     except OSError:
@@ -809,7 +829,8 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
     if exam_result:
         print(f"exam (never-seen questions): {exam_result['right']:,}/{exam_result['total']:,} right "
               f"({exam_result['pct']}%, guessing would be ~33%), {exam_result['points']:+,d} points", flush=True)
-    print("saved the quiz agent to models/quiz_policy.json and its lessons to .claude/skills/quiz-lessons/", flush=True)
+    print("saved the quiz agent to models/quiz_policy.json, its lessons to .claude/skills/quiz-lessons/ and the "
+          "weak-spot report to data/quiz_report.md (+ .claude/skills/quiz-weak-spots/)", flush=True)
 
 
 LESSONS = ROOT / ".claude" / "skills" / "quiz-lessons"

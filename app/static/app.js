@@ -24,7 +24,7 @@ function showTab(name) {
   if (name === "chat") { loadHistory(); loadFacts(); }
   if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); loadProgress(); }
   if (name === "train") pollTrainLog();
-  if (name === "quiz") loadQuiz();
+  if (name === "quiz") { loadQuiz(); loadReport(false); }
 }
 $$(".rail-btn").forEach(b => b.onclick = () => showTab(b.dataset.tab));
 document.addEventListener("click", e => { const g = e.target.closest("[data-goto]"); if (g) showTab(g.dataset.goto); });
@@ -795,3 +795,38 @@ $("#quiz-ask").onclick = async () => {
       ${r.setups.length ? `<div class="setups"><span class="muted small">Pro read:</span>${r.setups.map(x => `<span class="setup-chip">${x}</span>`).join("")}</div>` : `<p class="muted small" style="margin:6px 0 0">No pro setup on the current candle.</p>`}`;
   } catch (e) { $("#quiz-live").textContent = e.message; }
 };
+
+/* weak-spot report: what the quiz agent gets stuck on */
+const report = { data: null, md: "", loaded: 0 };
+const pct0 = v => v == null ? "–" : `${Math.round(v * 100)}%`;
+function renderReport() {
+  const r = report.data;
+  if (!r || !r.weak) { $("#quiz-weak").innerHTML = `<p class="empty">Shows up after the quiz has run for a few minutes.</p>`; $("#quiz-report-meta").textContent = ""; return; }
+  $("#quiz-report-meta").textContent = `updated ${r.generated.slice(11, 16)} UTC`;
+  $("#quiz-weak").innerHTML = r.weak.map((g, k) => `<div class="weak">
+      <div class="weak-head"><b>${k + 1}. ${g.name}</b><span class="muted small num">pro answer ${ACT[g.answer]} · practice ${pct0(g.acc)} · exam ${pct0(g.exam)} (${g.exam_n}) · finished ${pct0(g.finished)}</span></div>
+      ${g.main_wrong ? `<div class="muted small">Its usual mistake: ${ACT[g.main_wrong]} (${Math.round(g.main_wrong_share * 100)}%)</div>` : ""}
+      <ul>${(g.patterns.length ? g.patterns : ["Nothing stands out yet."]).slice(0, 3).map(p => `<li>${p}</li>`).join("")}${g.trap_check ? `<li>${g.trap_check}</li>` : ""}</ul>
+      <p class="fix"><b>Suggested:</b> ${g.fix[0]}</p>
+      ${g.ids?.length ? `<button class="btn xs" data-weak="${k}" style="margin-top:6px">Work on these (${g.ids.length.toLocaleString()})</button>` : ""}
+    </div>`).join("");
+  document.querySelectorAll("[data-weak]").forEach(b => b.onclick = () => {
+    const g = report.data.weak[+b.dataset.weak];
+    startQuiz({ focus: g.ids }, `Working on ${g.ids.length.toLocaleString()} ${g.name} question(s).`);
+  });
+}
+async function loadReport(force) {
+  try {
+    const r = force ? await api("/api/quiz/report", { method: "POST" }) : await api("/api/quiz/report");
+    report.data = r.report; report.md = r.markdown || ""; report.loaded = Date.now(); renderReport();
+  } catch (e) { if (force) toast(e.message, true); }
+}
+$("#quiz-report-refresh").onclick = () => loadReport(true);
+$("#quiz-report-copy").onclick = async () => {
+  if (!report.md) await loadReport(true);
+  if (!report.md) return;
+  const ta = $("#quiz-report-text");
+  try { await navigator.clipboard.writeText(report.md); ta.hidden = true; toast("Report copied. Paste it into your chat with Claude."); }
+  catch (e) { ta.value = report.md; ta.hidden = false; ta.focus(); ta.select(); toast("Press Ctrl+C to copy the selected report, then paste it to Claude."); }
+};
+setInterval(() => state.tab === "quiz" && Date.now() - report.loaded > 30000 && loadReport(false), 5000);

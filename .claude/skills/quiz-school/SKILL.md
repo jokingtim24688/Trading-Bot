@@ -118,3 +118,35 @@ python -m agent.quiz train --max-rounds 500  # cap, for tests
 | `models/quiz_policy.json` | The agent |
 | `data/quiz_state.json` | Live progress for the app |
 | `data/quiz_control.json` | Speed and Stop |
+
+## Weak spots: the automatic report and Claude's skills
+Every 5 minutes while the quiz runs, and after every run, `agent/quiz_report.py` writes a weak-spot report.
+
+Groups:
+- Each setup, with traps counted separately.
+- One combined "Traps (all setups)" group.
+
+For each group it records practice and exam accuracy, finished share, stuck count, and its usual mistake. The worst
+8 groups become **weak spots**. For each weak spot it:
+- compares the questions it misses with the ones it gets right on readable measures: time window, weekday, year,
+  volatility, H1 trend support, how far price has already travelled (session average, 200 EMA, day's range), RSI
+  lean, round numbers, prior-day levels and spread;
+- checks whether traps can be told apart from winners on the chart at all.
+
+It writes three things:
+
+| Output | What it is |
+|---|---|
+| `data/quiz_report.md` | The report the **Copy report for Claude** button copies |
+| `data/quiz_report.json` | Feeds the Quiz tab's Weak spots panel (with a **Work on these** button per spot) |
+| `.claude/skills/quiz-weak-spots/` | The auto skill, with one page per spot |
+
+When the user pastes a report, read it and do three things:
+1. Write `quiz-weak-spots/references/claude-<topic>.md` pages covering what you can work out: the likely market
+   reason, what a pro would check, and whether to trust the agent there.
+2. Propose builder or input changes the report points to, e.g. a filter, a new setup condition, or a new input when
+   "nothing on the chart separates" the traps.
+3. Tell the user which weak spots to put on the board with **Work on these**.
+
+`claude-*` pages are never overwritten by the automatic report. Read the numbers critically: small groups (under
+about 30 questions) produce chance patterns.

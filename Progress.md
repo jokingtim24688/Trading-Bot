@@ -247,3 +247,24 @@
 - Synthetic tests (4 years of candles): 1,000 built in 21 s with all 18 setups (337 buy / 335 sell / 328 stay out,
   102 traps; 511 easy / 282 medium / 207 hard); 20,000 requested -> 19,264 built in 64 s (history nearly full at
   15-minute spacing); training: curriculum added 158 hard, 742/750 in a 400-round test cap, exam 73.6%.
+
+## 2026-09-24: Weak-spot report + skills from what the quiz gets stuck on
+- Trainer records the wrong answer it gave per question and its exam picks (quiz_progress.npz) and runs the report
+  every 5 minutes and at the end.
+- `agent/quiz_report.py`:
+  - Groups by setup (traps separate) plus "Traps (all setups)".
+  - Ranks weak spots by practice/exam accuracy and unfinished share.
+  - Compares missed vs right questions on readable measures (effect size >= 0.35 plus a real-world minimum gap;
+    time window / weekday / year bunching).
+  - Trap check (can the chart separate traps from winners?) and rule-based suggested fixes.
+  - Writes data/quiz_report.md (for Claude), data/quiz_report.json (app) and the auto skill
+    `.claude/skills/quiz-weak-spots/` (index + page per spot; claude-*.md pages kept).
+- App: Weak spots panel (patterns, usual mistake, suggestion, Work on these), Refresh, Copy report for Claude (with
+  a select-and-Ctrl+C fallback).
+- quiz-school skill: how Claude turns a pasted report into claude-*.md skill pages.
+- Tested:
+  - 2,000-question synthetic run: report + skill pages written.
+  - Planted pattern (one setup failing only during the NY open) caught: "100% of the ones it misses are in the New
+    York open, vs 0%".
+  - Copy button copied the 14.9k-char report.
+  - Work on these sent the spot's question ids.
