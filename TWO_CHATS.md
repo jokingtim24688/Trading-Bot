@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: desktop_alerts default off. Last: sync_bot_ledger throttled (speed pass).
+Status: idle. Last: desktop_alerts off by default; sync_bot_ledger throttled (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -103,7 +103,8 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- 2026-09-24, from the user: **notifications must be custom and sit at the top right of the screen** (several at
+- **Done (Chat A, HASH):** `desktop_alerts` now defaults to false; settings v7 turns it off once in existing settings files, and after that it stays however the user sets it.
+  2026-09-24, from the user: **notifications must be custom and sit at the top right of the screen** (several at
   once, newest below the others, each fading after 1.2 s). Windows' own toasts can't be moved or styled, so the window
   now shows its own: in the app at the top right, and, when the app isn't in front, in a small always-on-top window at
   the top right of the screen (`app/main.py` + `app/static/notify.html`, my files). Please set **`desktop_alerts`

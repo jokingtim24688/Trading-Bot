@@ -618,6 +618,11 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Tested: a burst of 10 polls = 1 sync; after a Close the next poll syncs; after 2 s it syncs again; forcing always
   syncs.
 
+### 2026-09-24: Windows' own pop-ups off by default (Chat B handoff)
+- The window now shows its own custom pop-ups at the top right (Chat B), so `desktop_alerts` defaults to false and
+  settings v7 switches it off once in existing settings files; the user can turn it back on ("Also show Windows' own
+  pop-up"). Tested: a v6 file with it on -> off and v7; turning it on afterwards sticks; fresh install -> off.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

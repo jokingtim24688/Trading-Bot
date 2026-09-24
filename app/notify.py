@@ -1,5 +1,6 @@
 """Windows pop-up notifications (toasts) for take-profit and stop-loss hits, so you see them with the app minimised or
-behind other windows. Setting `desktop_alerts` (default on). Uses `winotify` when installed, otherwise PowerShell's own
+behind other windows. Setting `desktop_alerts` (default off since the window shows its own custom pop-ups at the top
+right; this adds Windows' own on top). Uses `winotify` when installed, otherwise PowerShell's own
 toast API; does nothing on other systems. Shown from a background thread, so a slow toast never holds up the app.
 """
 import os
@@ -41,7 +42,7 @@ def _powershell(title: str, msg: str):
 
 def show(title: str, msg: str):
     """Pop up a Windows notification (if on Windows and `desktop_alerts` is on)."""
-    if os.name != "nt" or not load().get("desktop_alerts", True):
+    if os.name != "nt" or not load().get("desktop_alerts", False):
         return
 
     def run():

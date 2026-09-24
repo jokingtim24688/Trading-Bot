@@ -44,7 +44,7 @@ DEFAULTS = {
     # Manual tab: automatic stop moves for your own trades (points; 0 = off). Applied to new manual orders.
     "manual_be_points": 0,                 # once a trade is this many points up, move its stop to entry + 2 points
     "manual_trail_points": 0,              # the stop follows the price at this distance, only ever tightening
-    "desktop_alerts": True,                # Windows pop-up when a take profit or stop loss is hit (any owner)
+    "desktop_alerts": False,               # also show Windows' own pop-up on a TP/SL hit (the app shows its own at the top right)
     # Owned by the UI (Keybinds and Sounds pages); the server only stores them so they survive and ride in backups
     "keybinds": {},                        # {"bindings": {"man.buy": "B", ...}, "groups": {"app": true, ...}}
     "sounds": {},                          # {"master": {...}, "events": {"profit": {...}, ...}}
@@ -70,7 +70,7 @@ DEFAULTS = {
     # MCP bridge for Hermes Agent
     "mcp_http_port": 8765,
     "mcp_autostart": True,
-    "settings_version": 6,
+    "settings_version": 7,
 }
 
 
@@ -99,6 +99,10 @@ def load() -> dict:
                     s["ollama_model"] = "llama3.2:3b"
                 s["ollama_cpu_only"] = True
                 s["settings_version"] = 6
+                PATH.write_text(json.dumps(s, indent=2))
+            if s.get("settings_version", 1) < 7:          # v7: the app shows its own TP/SL pop-ups; Windows' are extra
+                s["desktop_alerts"] = False
+                s["settings_version"] = 7
                 PATH.write_text(json.dumps(s, indent=2))
         except json.JSONDecodeError:
             pass
