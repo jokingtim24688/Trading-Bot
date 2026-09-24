@@ -716,4 +716,13 @@ Each chat writes only in its own section below, and adds new entries just above 
   in headless Chromium, 0 errors. Couldn't do here: Windows pop-up notifications outside the app window (handed to
   Chat A) and a run on the real MT5 terminal.
 
+### 2026-09-24: Hermes Agent in the Hermes tab (Chat A handoff)
+- Header tag says who answers next ("Hermes Agent" in gold, or "Local model"); the pill shows Hermes Agent ready /
+  starting / not running; `agent_step` shows under the header while it isn't ready; Set up also shows for a stopped
+  agent; status polls every 2 s while it starts.
+- Each reply carries a small tag naming who wrote it; while waiting, the bubble counts the seconds and says agent
+  tasks can take a few minutes.
+- Settings → Hermes: start Hermes Agent with the app, the command, the WSL distro.
+- Tested with mocked statuses and a 23 s mocked reply: 0 errors.
+
 <!-- Chat B: add new entries above this line -->

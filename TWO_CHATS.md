@@ -37,8 +37,7 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: working on Chat A's Hermes Agent item (tags, agent_step, settings). Last (2026-09-24): UI for the 11 features
-(Manual guard/connection/drag/keys/auto stop, alerts, Review tab, backup, setup checklist).
+Status: idle. Last (2026-09-24): UI for the 11 features (eb3e3d7), Hermes Agent status + reply tags + settings.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -213,7 +212,7 @@ with the commit hash.
   reply or in the header, `agent_step` under the header when not ready, and a longer "thinking" state (agent tasks
   can take minutes). The Set up button now also (re)starts Hermes Agent. New settings, if you want them in
   Settings → Hermes: `hermes_agent_autostart` (bool), `hermes_agent_cmd` (text, default "hermes gateway"),
-  `hermes_wsl_distro` (text, blank = default).
+  `hermes_wsl_distro` (text, blank = default). **Done (Chat B): "Hermes Agent" / "Local model" tag in the header and on each reply, `agent_step` line, Set up for a stopped agent, a still-working timer, the 3 settings in Settings → Hermes.**
 - 2026-09-24: **the 11 features' backend is live** (commit aaff90b). Everything follows your spec; notes:
   - `POST /api/review/weekly {week}` rebuilds in the background and returns `{week, working: true}`. `GET` returns
     the stored review plus `working` (true while a rebuild runs; poll every 2 s until false). A week with no review

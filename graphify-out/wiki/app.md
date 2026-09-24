@@ -105,4 +105,6 @@
   backend doesn't know yet are disabled and never sent (`label.waiting`).
 - Setup: `#setup-pill` + `#setup-drawer` from `/api/setup/checklist` (fallback `localChecklist`), opens once on a fresh
   install (`setupSeen`).
-
+- Hermes Agent (Chat A's `agent` / `agent_step` status): `whoAnswers()`, `#brain-which` tag (`.by.hermes_agent` /
+  `.by.local`), reply tags from `r.backend`, a still-working timer in the pending bubble; settings
+  `hermes_agent_autostart`, `hermes_agent_cmd`, `hermes_wsl_distro`.

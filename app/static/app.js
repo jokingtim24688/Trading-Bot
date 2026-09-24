@@ -936,9 +936,15 @@ async function pollTrainLog() {
 }
 
 /* ---------- Hermes chat ---------- */
-function addMsg(role, text, tools, animate = false) {
+const BACKEND_NAME = { hermes_agent: "Hermes Agent", local: "Local model" };
+function addMsg(role, text, tools, animate = false, backend = null) {
   const d = document.createElement("div"); d.className = `msg ${role}${animate ? " enter" : ""}`; d.textContent = text;
-  if (tools && tools.length) { const t = document.createElement("div"); t.className = "tools"; t.textContent = "used: " + tools.map(x => x.tool).join(", "); d.appendChild(t); }
+  if ((tools && tools.length) || backend) {
+    const t = document.createElement("div"); t.className = "tools";
+    if (backend) { const b = document.createElement("span"); b.className = `by ${backend}`; b.textContent = BACKEND_NAME[backend] || backend; t.appendChild(b); }
+    if (tools && tools.length) t.append(`used: ${tools.map(x => x.tool).join(", ")}`);
+    d.appendChild(t);
+  }
   $("#thread").appendChild(d); $("#thread").scrollTop = $("#thread").scrollHeight; return d;
 }
 async function loadHistory() {
@@ -952,12 +958,17 @@ async function loadHistory() {
 async function send(text) {
   text = text.trim(); if (!text) return;
   $("#suggest").classList.add("hidden"); $("#chat-intro").classList.add("hidden"); addMsg("user", text, null, true);
-  const pending = addMsg("assistant pending", "Thinking", null, true);
+  const agent = whoAnswers() === "hermes_agent", pending = addMsg("assistant pending", agent ? "Hermes Agent is working" : "Thinking", null, true), t0 = Date.now();
+  const tick = setInterval(() => {                // Hermes Agent tasks can take minutes: show that it's still going
+    const sec = Math.round((Date.now() - t0) / 1000); if (sec < 8) return;
+    pending.textContent = `${agent ? "Hermes Agent is still working" : "Still thinking"} (${sec < 60 ? `${sec} s` : `${Math.floor(sec / 60)} min ${sec % 60} s`})${agent && sec >= 20 ? ". Agent tasks can take a few minutes." : ""}`;
+  }, 1000);
   try {
-    const r = await api("/api/chat", { method: "POST", body: { text } }); pending.remove(); addMsg("assistant", r.reply, r.tools, true); loadFacts();
+    const r = await api("/api/chat", { method: "POST", body: { text } }); pending.remove(); addMsg("assistant", r.reply, r.tools, true, r.backend); loadFacts();
     if ((r.reply || "").startsWith("⚠")) brainStatus();       // set-up messages: refresh the status line
   }
   catch (e) { pending.remove(); addMsg("assistant", `Couldn't reach the assistant: ${e.message}`, null, true); }
+  clearInterval(tick);
 }
 $("#chat-form").onsubmit = e => { e.preventDefault(); const i = $("#chat-input"); const t = i.value; i.value = ""; i.style.height = ""; send(t); };
 $("#chat-input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chat-form").requestSubmit(); } });
@@ -965,14 +976,25 @@ $("#chat-input").addEventListener("input", e => { e.target.style.height = "auto"
 $$("#suggest button").forEach(b => b.onclick = () => send(b.textContent));
 // status pill + next step + Set up button; the local model can install/start/download itself (backend by Chat A)
 const LOCAL_TEXT = { not_installed: "Ollama not installed", stopped: "Ollama not running", no_model: "Model not downloaded", error: "Set-up problem", starting: "Starting Ollama…" };
+/* which one answers the next message: the Hermes Agent app when it's up (or forced), else the small local model */
+function whoAnswers(s = state.brain) {
+  if (!s) return null;
+  const agentUp = s.agent ? s.agent === "ready" : s.hermes_agent;
+  return s.backend_setting === "hermes_agent" || (s.backend_setting === "auto" && agentUp) ? "hermes_agent" : "local";
+}
 async function brainStatus() {
   let s; try { s = await api("/api/assistant/status"); } catch (e) { return; }
   state.brain = s;
   const el = $("#brain-state"), next = $("#brain-next"), setup = $("#brain-setup");
-  const useAgent = s.backend_setting === "hermes_agent" || (s.backend_setting === "auto" && s.hermes_agent);
+  const useAgent = whoAnswers(s) === "hermes_agent", agentUp = s.agent ? s.agent === "ready" : s.hermes_agent;
+  const agentBusy = s.agent === "starting", agentFix = ["stopped", "error"].includes(s.agent) && s.backend_setting !== "local";
   const localReady = s.local ? s.local === "ready" : s.ollama;
+  const which = $("#brain-which"); which.hidden = !s.agent; which.textContent = useAgent ? "Hermes Agent" : "Local model";
+  which.className = `by ${useAgent ? "hermes_agent" : "local"}`;
+  which.title = useAgent ? "Replies come from the Hermes Agent app in WSL" : `Replies come from the small local model${s.agent && s.agent !== "off" && s.agent !== "ready" ? " until Hermes Agent is running" : ""}`;
   let text, live = false;
-  if (useAgent && s.hermes_agent) { text = "Hermes Agent · connected"; live = true; }
+  if (useAgent && agentUp) { text = "Hermes Agent · ready"; live = true; }
+  else if (agentBusy && s.backend_setting !== "local") text = "Starting Hermes Agent…";
   else if (useAgent) text = "Hermes Agent not running";
   else if (localReady) { text = `${s.model} on ${s.device || "GPU"}`; live = true; }
   else if (s.installing) text = "Installing Ollama…";
@@ -980,14 +1002,14 @@ async function brainStatus() {
   else text = LOCAL_TEXT[s.local] || "Ollama not running";
   setHTML(el, live ? `<span class="live-dot"></span>${text}` : text);
   el.className = "pill " + (live ? "live" : "warn");
-  const step = !live && s.next_step ? s.next_step : "";
+  const step = s.agent_step && s.backend_setting !== "local" && s.agent !== "off" && !agentUp ? s.agent_step : !live && s.next_step ? s.next_step : "";
   if (next.textContent !== step) next.textContent = step;
   next.hidden = !step;
-  setup.hidden = useAgent || s.installing || !["not_installed", "stopped", "no_model", "error"].includes(s.local);
+  setup.hidden = !agentFix && (useAgent || s.installing || !["not_installed", "stopped", "no_model", "error"].includes(s.local));
   const dl = s.local === "downloading" && !useAgent;
   $("#brain-dl").hidden = !dl; if (dl) $("#brain-bar").style.width = `${Math.round((s.download_pct || 0) * 100)}%`;
   clearTimeout(state.brainT);                    // poll faster while it is busy setting itself up
-  if (!useAgent && (s.installing || ["downloading", "starting"].includes(s.local))) state.brainT = setTimeout(brainStatus, 2000);
+  if (agentBusy || (!useAgent && (s.installing || ["downloading", "starting"].includes(s.local)))) state.brainT = setTimeout(brainStatus, 2000);
 }
 $("#brain-setup").onclick = async () => {
   const b = $("#brain-setup"); b.disabled = true; b.textContent = "Setting up…";

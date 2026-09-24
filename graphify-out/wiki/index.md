@@ -72,4 +72,5 @@ Each chat adds lines only to its own list, just above its marker line.
   profitable / negative above the chart; Latest lesson + caution chips; "Always on" rule in TWO_CHATS.md.
 - 2026-09-24: 11 features UI: real-account guard, connection pill, drag SL/TP, keys, BE/trailing, TP/SL alerts, Review tab
   (you vs bot, trade replay, weekly summary), settings backup, setup checklist; see app.md "11 features".
+- 2026-09-24: Hermes tab shows Hermes Agent vs local model (header + each reply), agent_step, still-working timer, 3 settings.
 <!-- Chat B: add new lines above this marker -->

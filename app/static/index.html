@@ -376,7 +376,7 @@
   <section id="tab-chat" class="tab">
     <div class="chat-grid">
       <div class="panel chat-panel">
-        <div class="panel-head"><h3>Hermes</h3><div class="row gap"><button id="brain-setup" class="btn primary xs" hidden>Set up</button><span id="brain-state" class="pill">checking…</span></div></div>
+        <div class="panel-head"><h3>Hermes</h3><div class="row gap"><button id="brain-setup" class="btn primary xs" hidden>Set up</button><span id="brain-which" class="by" hidden></span><span id="brain-state" class="pill">checking…</span></div></div>
         <p id="brain-next" class="brain-next small" hidden></p>
         <div id="brain-dl" class="bar brain-bar" hidden><i id="brain-bar"></i></div>
         <div id="thread" class="thread"></div>
@@ -501,6 +501,8 @@
             <select name="assistant_backend"><option value="auto">Auto (Hermes Agent if running, else local)</option><option value="hermes_agent">Hermes Agent (WSL)</option><option value="local">Local Hermes model (Ollama)</option></select>
           </label>
           <label>Hermes Agent URL<input name="hermes_url"></label>
+          <label>Command that starts Hermes Agent<input name="hermes_agent_cmd" spellcheck="false"></label>
+          <label>WSL distro (blank = the default one)<input name="hermes_wsl_distro" spellcheck="false"></label>
           <label>Hermes Agent API key<input name="hermes_key" type="password"></label>
           <label>Ollama URL<input name="ollama_url"></label>
           <label>Local model<input name="ollama_model"></label>
@@ -508,6 +510,8 @@
           <label class="check"><input type="checkbox" name="ollama_cpu_only"> Run the local model on the CPU only, so the RTX 4060 stays free for training</label>
           <label class="check"><input type="checkbox" name="allow_web"> Let Hermes read web pages</label>
           <label class="span-all">Hermes may only open these trading and market sites (one per line; "site/path" keeps it to one section, e.g. reuters.com/markets)<textarea name="web_sites" rows="4" spellcheck="false"></textarea></label>
+          <label class="check"><input type="checkbox" name="hermes_agent_autostart"> Start Hermes Agent (in WSL) when the app opens, if it's installed</label>
+          <span class="help">Hermes Agent does the real work: longer tasks, tools, the web. The small local model only answers when it isn't running.</span>
           <label class="check"><input type="checkbox" name="mcp_autostart"> Start the MT5 bridge for Hermes Agent when the app opens</label>
         </fieldset>
         <fieldset class="panel" id="set-display"><legend>Display<small>this PC only</small></legend>
