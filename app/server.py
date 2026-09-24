@@ -411,7 +411,9 @@ def quiz_build(body: dict = Body(default={})):
     s = settings.load()
     n = max(34, min(100_000, int(body.get("questions", 40))))
     try:
-        jobs.start("quiz", ["-m", "agent.quiz", "build", "--symbol", s["symbol"], "--questions", str(n), "--point", str(s["point"])])
+        (QUIZ_DIR / "quiz_build.json").unlink(missing_ok=True)
+        jobs.start("quiz", ["-m", "agent.quiz", "build", "--symbol", s["symbol"], "--questions", str(n), "--point", str(s["point"]),
+                            "--workers", str(int(s.get("quiz_workers", 0) or 0))])
     except RuntimeError as e:
         raise HTTPException(409, str(e))
     return {"started": True}
@@ -464,6 +466,7 @@ def quiz_state():
     qz = q._load_json(q.QUIZ, None)
     pol = q.load_policy()
     return {"state": st, "control": q.read_control(), "job_running": jobs.jobs["quiz"].running,
+            "build": q._load_json(q.BUILD_STATE, None),
             "quiz": None if not qz else {"built": qz["built"], "count": len(qz["questions"]), "points": qz["points"],
                                          "practice": sum(x["set"] == "practice" for x in qz["questions"])},
             "policy": pol.meta if pol else None}
@@ -490,7 +493,8 @@ def quiz_wipe():
     from agent import quiz as q, quiz_report as rp
     jobs.stop("quiz")
     removed = 0
-    for f in (q.QUIZ, q.QX, q.QBARS, q.QTIMES, q.PROGRESS, q.STATE, q.CONTROL, rp.REPORT_JSON, rp.REPORT_MD):
+    for f in (q.QUIZ, q.QX, q.QBARS, q.QTIMES, q.QC, q.PROGRESS, q.STATE, q.CONTROL, q.BUILD_STATE,
+              rp.REPORT_JSON, rp.REPORT_MD, *q.DATA.glob("quiz_build_w*.json")):      # the finder cache is kept
         if f.exists():
             f.unlink()
             removed += 1

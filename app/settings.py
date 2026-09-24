@@ -26,7 +26,8 @@ DEFAULTS = {
     "auto_promote_demo": True,             # move Paper -> Demo by itself once the Paper gate is passed
     "use_learned": True,                   # apply the rules the bot learned from its own trades
     "quiz_filter": False,
-    "quiz_refresh": True,                  # quiz: silently refresh finished questions so it doesn't forget them                  # only enter when the quiz agent (Quiz tab) picks the same side
+    "quiz_refresh": True,
+    "quiz_workers": 0,                     # quiz: question finders working at once (0 = automatic: cores and free RAM)                  # quiz: silently refresh finished questions so it doesn't forget them                  # only enter when the quiz agent (Quiz tab) picks the same side
     "quiz_speed": 0,                       # quiz questions per second (0 = max)
     "learn_every": 50,                     # re-learn after this many new closed trades                    # bot may close a trade before its stop when the model turns against it
     "sl_score_mult": 1.5,                  # score: a stop-loss hit counts this many times worse than an early close

@@ -178,6 +178,11 @@
             <datalist id="quiz-n-list"><option value="100"></option><option value="1000"></option><option value="5000"></option><option value="10000"></option><option value="25000"></option><option value="50000"></option><option value="100000"></option></datalist>
             <button id="quiz-build" class="btn">Build quiz</button>
           </div>
+          <div id="quiz-build-prog" class="build-prog" hidden>
+            <div class="build-line"><span id="quiz-build-stage" class="small"></span><span id="quiz-build-time" class="muted small num"></span></div>
+            <div class="bar"><i id="quiz-build-bar"></i></div>
+            <div id="quiz-finders" class="finders"></div>
+          </div>
           <div class="row-inline" style="margin-top:8px">
             <button id="quiz-start" class="btn">Start over</button>
             <button id="quiz-resume" class="btn primary">Continue</button>
@@ -280,6 +285,7 @@
         <label class="check"><input type="checkbox" name="practice"> Practice mode: on Paper and Replay, trade the model's top-10% setups instead of the confidence threshold</label>
         <label class="check"><input type="checkbox" name="auto_promote_demo"> Move from Paper to Demo automatically when the Paper gate is passed</label>
         <label class="check"><input type="checkbox" name="use_learned"> Apply the rules the bot learned from its own trades</label>
+        <label>Quiz: question finders working at once (0 = automatic, from your CPU cores and free RAM; about 1 GB each)<input name="quiz_workers" type="number" min="0" max="16"></label>
         <label class="check"><input type="checkbox" name="quiz_refresh"> Quiz: silently refresh finished questions so it doesn't forget them (recommended; they're never asked or shown)</label>
         <label class="check"><input type="checkbox" name="quiz_filter"> Second opinion from the quiz agent: only enter when it picks the same side (Quiz tab)</label>
       </fieldset>

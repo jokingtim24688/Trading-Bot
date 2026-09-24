@@ -727,6 +727,7 @@ async function loadQuiz() {
   const st = r.state || {}, qz = r.quiz, pol = r.policy;
   quiz.st = st;
   if (qz && quiz.labels?.built !== qz.built) { try { quiz.labels = await api("/api/quiz/labels"); quiz.picked.clear(); updatePicked(); } catch (e) {} }
+  renderBuild(r.build, r.job_running);
   const sp = r.control?.speed ?? 0;
   document.querySelectorAll("#quiz-speed button").forEach(b => b.classList.toggle("active", +b.dataset.speed === sp));
   $("#quiz-status").textContent = r.job_running ? (st.round ? (st.focus ? `working on ${st.focus.length.toLocaleString()} picked` : "running") : "working...")
@@ -854,3 +855,19 @@ $("#quiz-wipe").onclick = async () => {
     loadQuiz();
   } catch (e) { toast(e.message, true); }
 };
+
+/* build progress: several question finders work through slices of history at once */
+function renderBuild(b, running) {
+  const box = $("#quiz-build-prog");
+  const fresh = b && (b.running ? running : b.done && Date.now() - (renderBuild.doneAt || (renderBuild.doneAt = Date.now())) < 20000);
+  if (!b || !fresh) { box.hidden = true; if (!b?.done) renderBuild.doneAt = 0; return; }
+  if (b.running) renderBuild.doneAt = 0;
+  box.hidden = false;
+  $("#quiz-build-stage").textContent = b.cached && b.running ? `${b.stage} (using saved finder results)` : b.stage;
+  $("#quiz-build-time").textContent = `${Math.round(b.elapsed)}s`;
+  $("#quiz-build-bar").style.width = `${Math.round((b.pct || 0) * 100)}%`;
+  $("#quiz-finders").innerHTML = (b.finders || []).length && b.running
+    ? `<div class="finder" style="grid-column:1/-1">${b.workers} finder(s) working at once</div>` + b.finders.map(f =>
+        `<div class="finder ${f.pct >= 1 ? "done" : ""}">${f.label}<div class="bar"><i style="width:${Math.round(f.pct * 100)}%"></i></div></div>`).join("")
+    : "";
+}

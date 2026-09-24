@@ -74,6 +74,22 @@ On the board, each square is one practice question:
 
 The chart panel holds the latest mistake with the pro answer.
 
+## How questions are built fast
+- **Several question finders work at once.**
+  - The history is cut into slices of about 300,000 candles (roughly 10 months each, with 30,000 candles of
+    warm-up so indicators match a full run).
+  - Finders, by default one per CPU core but one and capped by free RAM at about 1 GB each (Settings -> "question
+    finders"), work through the slices in parallel, each taking the next slice when done.
+  - Each finder computes the indicators, finds the 18 setups and stay-out spots, and checks what happened after
+    each. The results are merged and the picking happens in one place.
+  - Tested: identical candidates and outcomes to a single finder; indicator values match to 0.000004.
+- **Cache:** the finders' results are saved in `data/quiz_cache/`, keyed to the history files. Rebuilding with any
+  size skips straight to picking. Downloading new history refreshes it automatically; Wipe keeps it.
+- **Look-alike comparison runs on several threads and is incremental:** a top-up compares only the new questions.
+- Chart inputs are saved at build time (`data/quiz_c.npy`), so training starts at once.
+- The Quiz tab shows build progress with a bar per slice.
+- Measured on 4 years of candles, 20,000 questions (4-core machine): 58 s before, 18 s cold, 11 s from cache.
+
 ## It loops until done, never re-asks finished questions, and doesn't forget
 - A question is **finished** when it is right 5 times in a row **and** its best answer is right, so lucky streaks
   don't count.

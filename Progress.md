@@ -301,3 +301,19 @@
   - Start modes keep/clear progress correctly.
 - Report: merges measures that move together, candle-size wording for spread/ATR, month bunching, 20+ per side for
   bunching, small-group flag, warnings (exam below guessing, exam fell, memorised).
+
+## 2026-09-24: Faster question building (several finders at once)
+- Profiled the 20k build (58 s): look-alike comparison 45 s (full recompute on each of 4 top-ups), features 17 s,
+  outcome walk 1 s.
+- Several question finders at once:
+  - History cut into ~300k-candle slices with 30k warm-up; a process pool (auto: physical cores - 1, capped by free
+    RAM at ~1 GB each; Settings `quiz_workers`) works through them; results merged.
+  - Verified identical candidates/outcomes to one finder, indicators within 4e-6.
+  - 1 finder 17.9 s -> 3 finders 3.9-5.6 s.
+  - Memory measured: 2.3 GB for a 1.23M-candle slice, which is why slices are ~300k (~0.9 GB).
+- Cache of finder results in data/quiz_cache (keyed to history files); rebuilds skip finding.
+- Look-alikes: incremental (top-ups compare only new questions; verified identical to one-shot), threaded
+  (6.6 s -> 3.3 s on 4 threads), sparse near-pair checks, in-place distances.
+- Chart inputs vectorised (identical) and saved as data/quiz_c.npy.
+- Build progress file + Quiz tab progress bar with one bar per slice.
+- Result: 20k-question build 58 s -> 18 s cold, 11 s from cache (4-core sandbox).

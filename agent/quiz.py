@@ -56,6 +56,7 @@ QUIZ = DATA / "quiz.json"
 QX = DATA / "quiz_x.npy"
 QBARS = DATA / "quiz_bars.npy"
 QTIMES = DATA / "quiz_times.npy"
+QC = DATA / "quiz_c.npy"
 STATE = DATA / "quiz_state.json"
 CONTROL = DATA / "quiz_control.json"
 POLICY = ROOT / "models" / "quiz_policy.json"
@@ -259,82 +260,319 @@ def _year_balanced(idx: np.ndarray, quality: np.ndarray, years: np.ndarray) -> n
     return idx[np.array(out, int)] if out else idx[:0]
 
 
-def _neighbours(Xz: np.ndarray, answers: np.ndarray, k: int = 5, twin: float = 3.0, dup: float = 1.0):
-    """For every question: the share of its k closest look-alikes with the same answer, whether a near-twin has the
-    other answer (a contradiction), and whether a near-copy with the same answer came earlier (a duplicate)."""
-    n = len(Xz)
-    same_share = np.ones(n)
-    contra = np.zeros(n, bool)
-    dupe = np.zeros(n, bool)
-    Xf = Xz.astype(np.float32)
-    sq = (Xf ** 2).sum(1)
-    step = max(100, min(1000, 30_000_000 // max(1, n)))
-    for s in range(0, n, step):
-        blk = Xf[s:s + step]
-        d2 = sq[s:s + step, None] + sq[None, :] - 2 * blk @ Xf.T
-        rows = np.arange(len(blk))
-        d2[rows, rows + s] = np.inf
-        diff = answers[s:s + step, None] != answers[None, :]
-        contra[s:s + step] = ((d2 < twin * twin) & diff).any(1)
-        earlier = np.arange(n)[None, :] < (rows + s)[:, None]
-        dupe[s:s + step] = ((d2 < dup * dup) & ~diff & earlier).any(1)
-        if n > k:
-            nn = np.argpartition(d2, k, axis=1)[:, :k]
-            same_share[s:s + step] = (answers[nn] == answers[s:s + step, None]).mean(1)
-    return same_share, contra, dupe
+CACHE_DIR = DATA / "quiz_cache"
+BUILD_STATE = DATA / "quiz_build.json"
+CACHE_VERSION = 1
+WARMUP = 30_000                   # candles of warm-up before each finder's slice, so its indicators match the full run
+SLICE = 300_000                   # candles per slice: a finder working on one needs about 0.9 GB of RAM
+TRADE_FIELDS = ("idx", "won", "mins", "mae", "stop", "target", "entry")
 
 
-def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.25, point: float = 0.01, seed: int = 7):
-    from .history import load_bars
-    n_questions = int(min(MAX_QUESTIONS, max(34, n_questions)))
-    df = load_bars(symbol)
-    print(f"looking for pro setups in {len(df):,} candles ({df.index[0]:%Y-%m-%d} -> {df.index[-1]:%Y-%m-%d})...", flush=True)
+def default_workers() -> int:
+    """Question finders to run at once: one per physical core but one, fewer if RAM is short (~1 GB each)."""
+    try:
+        import psutil
+        cores = psutil.cpu_count(logical=False) or 2
+        free_gb = psutil.virtual_memory().available / 1e9
+    except Exception:                                    # noqa: BLE001
+        import os
+        cores, free_gb = max(1, (os.cpu_count() or 2) // 2), 8.0
+    return max(1, min(cores - 1, int(free_gb * 0.6 // 1.0), 8))
+
+
+class _Progress:
+    """Build progress for the app (data/quiz_build.json); finders write their own files next to it."""
+
+    def __init__(self, workers):
+        self.t0, self.workers = time.time(), workers
+        self.stage, self.pct, self.cached, self.labels = "starting", 0.0, False, []
+        for p in DATA.glob("quiz_build_w*.json"):
+            p.unlink()
+
+    def set(self, stage=None, pct=None, done=False):
+        self.stage = stage or self.stage
+        self.pct = self.pct if pct is None else pct
+        finders = []
+        for k, label in enumerate(self.labels):
+            w = _load_json(DATA / f"quiz_build_w{k}.json", {})
+            finders.append({"label": label, "stage": w.get("stage", "waiting"), "pct": w.get("pct", 0)})
+        _write(BUILD_STATE, {"running": not done, "done": done, "stage": self.stage, "pct": round(self.pct, 3),
+                             "elapsed": round(time.time() - self.t0, 1), "cached": self.cached, "workers": self.workers,
+                             "finders": finders})
+
+
+def _find(job):
+    """One question finder: every pro setup and stay-out spot in its slice of history, and what happened after each.
+    Runs in its own process; several run at once on different years and the build merges what they find."""
+    k, lo, own_lo, own_hi, total, times_ns, ohlc, spread_pts, point, n_workers = job
+
+    def report(stage, pct):
+        _write(DATA / f"quiz_build_w{k}.json", {"stage": stage, "pct": round(pct, 3)})
+
+    report("reading indicators", 0.02)
+    df = pd.DataFrame(ohlc, columns=["open", "high", "low", "close"], index=pd.DatetimeIndex(times_ns, tz="UTC"))
+    df["tick_volume"] = 0
+    df["spread"] = spread_pts
     f = build_features(df, point)
     a = atr(df, 14).to_numpy()
-    df_np = tuple(df[k].to_numpy() for k in ("open", "high", "low", "close"))
-    spread = df["spread"].to_numpy(dtype=float) * point
-    years = df.index.year.to_numpy()
+    df_np = tuple(df[c].to_numpy() for c in ("open", "high", "low", "close"))
+    spread = spread_pts.astype(float) * point
+    report("finding setups", 0.5)
     cands = _candidates(f)
-    rng = np.random.default_rng(seed)
-    usable = lambda v: v[(v >= 3000) & (v + HORIZON < len(df)) & (a[v] > 0)]      # noqa: E731
+    s0, s1 = own_lo - lo, own_hi - lo                    # this finder's own candles (the rest is warm-up/look-ahead)
 
-    # score every candidate at once: clean pro winners, traps (quick failures) and clean stay-out spots
-    pools = {}                                            # (kind, answer, trap) -> ordered candle positions
-    trades = {}                                           # candle -> trade details for the explanation
-    print("checking what happened after every candidate...", flush=True)
-    for kind, (side, _) in PRO_SETUPS.items():
+    def usable(v):
+        g = v + lo
+        return v[(v >= s0) & (v < s1) & (g >= 3000) & (g + HORIZON < total) & (a[v] > 0)]
+
+    out = {}
+    kinds = list(PRO_SETUPS)
+    for j, kind in enumerate(kinds):
+        side = PRO_SETUPS[kind][0]
         idx = usable(cands[kind])
-        if not len(idx):
-            continue
-        sd = _stop_dist(kind, idx, df_np, a, spread)
-        won, mins, mae, stop, target, entry = _outcomes(df_np, idx, side, sd, spread)
-        clean = won & (mins <= CLEAN_MINUTES) & (mae <= CLEAN_MAE)
-        trap = ~won & (mins <= TRAP_MINUTES)
-        for mask, is_trap, quality in ((clean, False, (1 - mae) + (1 - mins / CLEAN_MINUTES)), (trap, True, 1 - mins / TRAP_MINUTES)):
-            sel = np.flatnonzero(mask)
-            pools[(kind, "wait" if is_trap else side, is_trap)] = _year_balanced(idx[sel], quality[sel], years[idx[sel]])
-            for k in sel:
-                trades[int(idx[k])] = {"minutes": int(mins[k]), "stop": round(float(stop[k]), 2),
-                                       "target": round(float(target[k]), 2), "entry": round(float(entry[k]), 2)}
-        print(f"  {setup_name(kind)}: {len(idx):,} seen, {int(clean.sum()):,} clean winners, {int(trap.sum()):,} traps",
-              flush=True)
+        if len(idx):
+            sd = _stop_dist(kind, idx, df_np, a, spread)
+            won, mins, mae, stop, target, entry = _outcomes(df_np, idx, side, sd, spread)
+            out[kind] = {"idx": idx + lo, "won": won, "mins": mins.astype(np.int16), "mae": mae.astype(np.float32),
+                         "stop": stop, "target": target, "entry": entry}
+        report("checking what happened", 0.5 + 0.45 * (j + 1) / (len(kinds) + 1))
     idx = usable(cands["wait"])
     if len(idx):
         sd = 1.5 * a[idx]
         wb, mb, eb, *_ = _outcomes(df_np, idx, "buy", sd, spread)
         ws, ms, es, *_ = _outcomes(df_np, idx, "sell", sd, spread)
-        clean_b = wb & (mb <= CLEAN_MINUTES) & (eb <= CLEAN_MAE)
-        clean_s = ws & (ms <= CLEAN_MINUTES) & (es <= CLEAN_MAE)
-        sel = np.flatnonzero(~clean_b & ~clean_s)
-        pools[("wait", "wait", False)] = _year_balanced(idx[sel], rng.random(len(sel)), years[idx[sel]])
-        print(f"  {WAIT_NAME}: {len(idx):,} seen, {len(sel):,} clean stay-out spots", flush=True)
+        out["wait"] = {"idx": idx + lo, "clean_b": wb & (mb <= CLEAN_MINUTES) & (eb <= CLEAN_MAE),
+                       "clean_s": ws & (ms <= CLEAN_MINUTES) & (es <= CLEAN_MAE)}
+    pos = np.unique(np.concatenate([v["idx"] for v in out.values()])) if out else np.zeros(0, np.int64)
+    X = f.to_numpy(np.float32)[pos - lo] if len(pos) else np.zeros((0, f.shape[1]), np.float32)
+    own = f.iloc[s0:s1].dropna()
+    sample = own.sample(min(len(own), 50_000 // n_workers + 1), random_state=k).to_numpy(np.float32)
+    report("done", 1.0)
+    return {"out": out, "pos": pos, "X": X, "sample": sample, "columns": list(f.columns)}
+
+
+def _history_key(symbol, point):
+    files = []
+    for name in (f"{symbol}_M1.parquet", f"{symbol}_M1_history.parquet"):
+        p = DATA / name
+        if p.exists():
+            st = p.stat()
+            files.append([name, st.st_size, int(st.st_mtime)])
+    return {"version": CACHE_VERSION, "symbol": symbol, "point": point, "files": files, "horizon": HORIZON,
+            "clean": [CLEAN_MINUTES, CLEAN_MAE], "session": list(SESSION)}
+
+
+def _load_cache(key):
+    meta = _load_json(CACHE_DIR / "key.json", None)
+    if not meta or meta.get("key") != key or not (CACHE_DIR / "raw.npz").exists():
+        return None
+    z = np.load(CACHE_DIR / "raw.npz")
+    raw = {"pos": z["pos"], "X": z["X"], "mean": z["mean"], "std": z["std"], "columns": meta["columns"], "out": {}}
+    for name in z.files:
+        if "__" in name:
+            kind, field = name.split("__", 1)
+            raw["out"].setdefault(kind, {})[field] = z[name]
+    return raw
+
+
+def _save_cache(key, raw):
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    arrays = {"pos": raw["pos"], "X": raw["X"], "mean": raw["mean"], "std": raw["std"]}
+    for kind, d in raw["out"].items():
+        for field, v in d.items():
+            arrays[f"{kind}__{field}"] = v
+    np.savez(CACHE_DIR / "raw.npz", **arrays)
+    _write(CACHE_DIR / "key.json", {"key": key, "columns": raw["columns"]})
+
+
+def _find_all(df, point, workers, prog):
+    """Cut the history into slices (~300k candles each) and let several question finders work through them at the
+    same time, each taking the next slice when it finishes one; then merge what they found."""
+    n = len(df)
+    n_slices = max(1, round(n / SLICE))
+    workers = max(1, min(workers, n_slices))
+    bounds = np.linspace(0, n, n_slices + 1).astype(int)
+    times_ns = df.index.asi8
+    ohlc = df[["open", "high", "low", "close"]].to_numpy(np.float64)
+    spread_pts = df["spread"].to_numpy(np.float64)
+    jobs = []
+    prog.labels = []
+    for k in range(n_slices):
+        own_lo, own_hi = int(bounds[k]), int(bounds[k + 1])
+        lo, hi = max(0, own_lo - WARMUP), min(n, own_hi + HORIZON + 1)
+        jobs.append((k, lo, own_lo, own_hi, n, times_ns[lo:hi], ohlc[lo:hi], spread_pts[lo:hi], point, workers))
+        prog.labels.append(f"{df.index[own_lo]:%Y-%m} to {df.index[own_hi - 1]:%Y-%m}")
+    prog.workers = workers
+    print(f"  {workers} question finder(s) working at once through {n_slices} slice(s) of history "
+          f"({prog.labels[0][:7]} to {prog.labels[-1][-7:]})", flush=True)
+    prog.set("finders at work", 0.05)
+    if workers == 1:
+        results = []
+        for j in jobs:
+            results.append(_find(j))
+            prog.set("finders at work", 0.05 + 0.6 * len(results) / len(jobs))
+    else:
+        from concurrent.futures import ProcessPoolExecutor, wait
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            futs = [ex.submit(_find, j) for j in jobs]
+            while True:
+                done, pending = wait(futs, timeout=0.5)
+                prog.set("finders at work", 0.05 + 0.6 * len(done) / len(futs))
+                if not pending:
+                    break
+            results = [f.result() for f in futs]
+    out = {}
+    for r in results:
+        for kind, d in r["out"].items():
+            if kind not in out:
+                out[kind] = {k2: [v] for k2, v in d.items()}
+            else:
+                for k2, v in d.items():
+                    out[kind][k2].append(v)
+    out = {kind: {k2: np.concatenate(v) for k2, v in d.items()} for kind, d in out.items()}
+    sample = np.vstack([r["sample"] for r in results])
+    mean = np.nanmean(sample, 0)
+    std = np.nanstd(sample, 0, ddof=1)
+    std[~(std > 0)] = 1.0
+    return {"out": out, "pos": np.concatenate([r["pos"] for r in results]), "X": np.vstack([r["X"] for r in results]),
+            "mean": mean, "std": std, "columns": results[0]["columns"]}
+
+
+class _Neighbours:
+    """Each question's 5 closest look-alikes, kept up to date as questions are added (so top-ups only compare the new
+    ones), computed on several CPU threads. Flags contradictions (a near-twin with the other answer) and near-copies
+    (an earlier near-identical question with the same answer)."""
+
+    def __init__(self, k=5, twin=3.0, dup=1.0, threads=None):
+        import os
+        self.k, self.t2, self.d2 = k, twin * twin, dup * dup
+        self.threads = threads or max(1, os.cpu_count() or 1)
+        self.Z = None
+
+    def _map(self, fn, starts):
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=self.threads) as ex:
+            list(ex.map(fn, starts))
+
+    def add(self, Znew, ans_new):
+        Znew = Znew.astype(np.float32)
+        k, m = self.k, len(Znew)
+        if self.Z is None:
+            n0 = 0
+            self.Z, self.ans = Znew, ans_new
+            self.nd = np.full((m, k), np.inf, np.float32)
+            self.na = np.empty((m, k), ans_new.dtype)
+            self.contra = np.zeros(m, bool)
+            self.dupe = np.zeros(m, bool)
+        else:
+            n0 = len(self.Z)
+            self.Z, self.ans = np.vstack([self.Z, Znew]), np.concatenate([self.ans, ans_new])
+            self.nd = np.vstack([self.nd, np.full((m, k), np.inf, np.float32)])
+            self.na = np.concatenate([self.na, np.empty((m, k), ans_new.dtype)])
+            self.contra = np.concatenate([self.contra, np.zeros(m, bool)])
+            self.dupe = np.concatenate([self.dupe, np.zeros(m, bool)])
+        Z, ans, n = self.Z, self.ans, len(self.Z)
+        sq = (Z * Z).sum(1)
+        step = max(64, min(2048, 20_000_000 // max(1, n)))
+
+        def new_rows(s):                                 # the new questions against everything
+            r = np.arange(n0 + s, min(n, n0 + s + step))
+            d2 = Z[r] @ Z.T                                # squared distances, built in place (no big temporaries)
+            d2 *= -2
+            d2 += sq[None, :]
+            d2 += sq[r, None]
+            d2[np.arange(len(r)), r] = np.inf
+            ii, jj = np.nonzero(d2 < self.t2)              # near pairs are rare: check only those
+            if len(ii):
+                other = ans[r[ii]] != ans[jj]
+                self.contra[r[np.unique(ii[other])]] = True
+                cp = ~other & (d2[ii, jj] < self.d2) & (jj < r[ii])
+                self.dupe[r[np.unique(ii[cp])]] = True
+            if n > k:
+                nn = np.argpartition(d2, k, axis=1)[:, :k]
+                self.nd[r] = np.take_along_axis(d2, nn, 1)
+                self.na[r] = ans[nn]
+
+        def old_rows(s):                                 # older questions: merge in the new ones as look-alikes
+            r = np.arange(s, min(n0, s + step))
+            d2 = Z[r] @ Z[n0:].T
+            d2 *= -2
+            d2 += sq[None, n0:]
+            d2 += sq[r, None]
+            ii, jj = np.nonzero(d2 < self.t2)
+            if len(ii):
+                self.contra[r[np.unique(ii[ans[r[ii]] != ans[n0 + jj]])]] = True
+            cand_d = np.hstack([self.nd[r], d2])
+            cand_a = np.hstack([self.na[r], np.broadcast_to(ans[None, n0:], d2.shape)])
+            nn = np.argpartition(cand_d, k, axis=1)[:, :k] if cand_d.shape[1] > k else np.arange(cand_d.shape[1])[None].repeat(len(r), 0)
+            self.nd[r] = np.take_along_axis(cand_d, nn, 1)
+            self.na[r] = np.take_along_axis(cand_a, nn, 1)
+
+        self._map(new_rows, range(0, m, step))
+        if n0:
+            self._map(old_rows, range(0, n0, step))
+        # contradictions are mutual: an old question whose near-twin just arrived is flagged by old_rows above
+
+    def result(self):
+        if len(self.Z) <= self.k:
+            return np.ones(len(self.Z)), self.contra, self.dupe
+        return (self.na == self.ans[:, None]).mean(1), self.contra, self.dupe
+
+
+def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.25, point: float = 0.01, seed: int = 7,
+          workers: int = 0):
+    from .history import load_bars
+    n_questions = int(min(MAX_QUESTIONS, max(34, n_questions)))
+    workers = workers or default_workers()
+    prog = _Progress(workers)
+    t0 = time.time()
+    prog.set("loading history", 0.01)
+    df = load_bars(symbol)
+    print(f"looking for pro setups in {len(df):,} candles ({df.index[0]:%Y-%m-%d} -> {df.index[-1]:%Y-%m-%d})...", flush=True)
+    key = _history_key(symbol, point)
+    raw = _load_cache(key)
+    if raw is not None:
+        prog.cached = True
+        print("  using the saved finder results for this history (cache): skipping straight to picking", flush=True)
+    else:
+        raw = _find_all(df, point, workers, prog)
+        _save_cache(key, raw)
+    t_find = time.time()
+    prog.set("picking the best questions", 0.7)
+    df_np = tuple(df[c].to_numpy() for c in ("open", "high", "low", "close"))
+    years = df.index.year.to_numpy()
+    rng = np.random.default_rng(seed)
+    pos, Xall, mean, std = raw["pos"], raw["X"], raw["mean"], raw["std"]
+
+    # clean pro winners, traps (quick failures) and clean stay-out spots, best examples first across years
+    pools, trades = {}, {}
+    for kind, (side, _) in PRO_SETUPS.items():
+        d = raw["out"].get(kind)
+        if d is None or not len(d["idx"]):
+            continue
+        idx, won, mins, mae = d["idx"], d["won"], d["mins"].astype(float), d["mae"].astype(float)
+        clean = won & (mins <= CLEAN_MINUTES) & (mae <= CLEAN_MAE)
+        trap = ~won & (mins <= TRAP_MINUTES)
+        for mask, is_trap, quality in ((clean, False, (1 - mae) + (1 - mins / CLEAN_MINUTES)), (trap, True, 1 - mins / TRAP_MINUTES)):
+            sel = np.flatnonzero(mask)
+            pools[(kind, "wait" if is_trap else side, is_trap)] = _year_balanced(idx[sel], quality[sel], years[idx[sel]])
+            for j in sel:
+                trades[int(idx[j])] = {"minutes": int(d["mins"][j]), "stop": round(float(d["stop"][j]), 2),
+                                       "target": round(float(d["target"][j]), 2), "entry": round(float(d["entry"][j]), 2)}
+        print(f"  {setup_name(kind)}: {len(idx):,} seen, {int(clean.sum()):,} clean winners, {int(trap.sum()):,} traps",
+              flush=True)
+    d = raw["out"].get("wait")
+    if d is not None and len(d["idx"]):
+        sel = np.flatnonzero(~d["clean_b"] & ~d["clean_s"])
+        pools[("wait", "wait", False)] = _year_balanced(d["idx"][sel], rng.random(len(sel)), years[d["idx"][sel]])
+        print(f"  {WAIT_NAME}: {len(d['idx']):,} seen, {len(sel):,} clean stay-out spots", flush=True)
     if not any(len(v) for k, v in pools.items() if k[0] != "wait"):
         raise SystemExit("No pro setups found. Download more history (Train tab) and try again.")
 
     # plan: 65% clean trades (round-robin over setups), 15% traps, 20% stay-out; spread through the plan
     trade_keys = [k for k in pools if not k[2] and k[0] != "wait" and len(pools[k])]
     trap_keys = [k for k in pools if k[2] and len(pools[k])]
-    pos = {k: 0 for k in pools}
+    at = {k: 0 for k in pools}
     occupied = np.zeros(len(df), bool)
     spacing_at = [0]                                      # which of SPACINGS is in use
 
@@ -354,9 +592,9 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
                 got = None
                 for k in [key] + [x for x in pools if x[1] == key[1] and x[2] == key[2] and x != key]:   # same answer
                     arr = pools.get(k, [])
-                    while pos[k] < len(arr):
-                        i = int(arr[pos[k]])
-                        pos[k] += 1
+                    while at[k] < len(arr):
+                        i = int(arr[at[k]])
+                        at[k] += 1
                         if not occupied[max(0, i - spacing + 1):i + spacing].any():
                             got = (i, k)
                             break
@@ -373,38 +611,42 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
             spacing_at[0] += 1
             print(f"  {len(missing):,} more needed: allowing questions {SPACINGS[spacing_at[0]]} minutes apart", flush=True)
             plan = missing
-            for k in pos:                                   # re-scan with the tighter spacing
-                pos[k] = 0
+            for k in at:                                    # re-scan with the tighter spacing
+                at[k] = 0
+
+    def rows_for(ps):
+        return Xall[np.searchsorted(pos, [p[0] for p in ps])]
 
     picks = select(make_plan(int(n_questions * 1.35) + 20))
     if len(picks) < 10:
         raise SystemExit(f"Only found {len(picks)} usable questions. Download more history and try again.")
 
     # remove contradictions and near-copies (topping up with fresh candidates when many get dropped), and grade the
-    # rest by how much their look-alikes agree
-    sample = f.dropna().sample(min(50_000, len(f.dropna())), random_state=seed)
-    mean, std = sample.mean().to_numpy(), sample.std().replace(0, 1).to_numpy()
+    # rest by how much their look-alikes agree; only new questions are compared on each top-up
+    nb = _Neighbours()
+    new = picks
     for attempt in range(4):
-        X = f.iloc[[p[0] for p in picks]].to_numpy(dtype=np.float32)
-        Xz = np.clip(np.nan_to_num((X - mean) / std), -5, 5)
-        answers = np.array([p[2] for p in picks])
-        print(f"  comparing {len(picks):,} questions with each other...", flush=True)
-        same_share, contra, dupe = _neighbours(Xz, answers)
+        prog.set(f"comparing {len(picks):,} questions with each other", 0.75 + 0.05 * attempt)
+        print(f"  comparing {len(new):,} new questions with {len(picks):,} in total...", flush=True)
+        Xn = rows_for(new)
+        nb.add(np.clip(np.nan_to_num((Xn - mean) / std), -5, 5), np.array([p[2] for p in new]))
+        same_share, contra, dupe = nb.result()
         bad = contra | dupe | (same_share <= 0.2)
         good = int((~bad).sum())
         if good >= n_questions or attempt == 3:
             break
         rate = good / len(picks)
-        more = select(make_plan(int((n_questions - good) / max(rate, 0.3) * 1.2) + 20))
-        if not more:
+        new = select(make_plan(int((n_questions - good) / max(rate, 0.3) * 1.2) + 20))
+        if not new:
             break
-        print(f"  {len(picks) - good:,} dropped so far: adding {len(more):,} fresh candidates to replace them", flush=True)
-        picks += more
+        print(f"  {len(picks) - good:,} dropped so far: adding {len(new):,} fresh candidates to replace them", flush=True)
+        picks = picks + new
     print(f"  dropped {int((contra | (same_share <= 0.2)).sum()):,} whose look-alikes have the other answer and "
           f"{int((dupe & ~contra).sum()):,} near-copies", flush=True)
     keep = [k for k in rng.permutation(len(picks)) if not bad[k]][:n_questions]
     difficulty = np.where(same_share >= 0.8, "easy", np.where(same_share >= 0.5, "medium", "hard"))
 
+    prog.set("saving the questions and their charts", 0.92)
     n = len(keep)
     n_exam = max(3, round(n * exam_share))
     if n - n_exam < 30 and n >= 33:
@@ -423,10 +665,11 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
                           "trade": trades.get(i) if kind != "wait" else None, "difficulty": str(difficulty[k]),
                           "set": "exam" if qid >= n - n_exam else "practice"})
     DATA.mkdir(exist_ok=True)
-    np.save(QX, X[keep])
+    np.save(QX, rows_for([picks[k] for k in keep]))
     np.save(QBARS, bars)
     np.save(QTIMES, times)
-    quiz = {"symbol": symbol, "built": datetime.now(timezone.utc).isoformat(timespec="seconds"), "features": list(f.columns),
+    np.save(QC, chart_features_batch(bars[:, :BEFORE]))    # the chart inputs, ready for training
+    quiz = {"symbol": symbol, "built": datetime.now(timezone.utc).isoformat(timespec="seconds"), "features": raw["columns"],
             "norm": {"mean": np.round(mean, 6).tolist(), "std": np.round(std, 6).tolist()}, "points": POINTS,
             "mastery": MASTERY, "practice": n - n_exam, "exam": n_exam, "questions": questions}
     _write(QUIZ, quiz)
@@ -435,8 +678,12 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
     traps = sum(q["trap"] for q in questions)
     if n < n_questions:
         print(f"  your history only had room for {n:,} clean questions; download more years (Train tab) for more", flush=True)
+    took = time.time() - t0
     print(f"saved {n:,} questions ({n - n_exam:,} practice, {n_exam:,} exam; answers {by}; {traps:,} traps; "
-          f"difficulty {lv}; {len({q['setup'] for q in questions} - {'wait'})} pro setup types)", flush=True)
+          f"difficulty {lv}; {len({q['setup'] for q in questions} - {'wait'})} pro setup types) in {took:.0f}s "
+          f"(finding {t_find - t0:.0f}s{' from cache' if prog.cached else ''}, picking and checking {took - (t_find - t0):.0f}s)",
+          flush=True)
+    prog.set(f"done: {n:,} questions in {took:.0f}s", 1.0, done=True)
     return quiz
 
 
@@ -486,6 +733,26 @@ def chart_features(ohlc) -> np.ndarray:
     outline = (a[::-1, 3][::5][:CHART_LONG][::-1] - ref) / atr
     outline = np.pad(outline, (CHART_LONG - len(outline), 0))
     return np.clip(np.concatenate([last.T.ravel(), outline]) / 5, -3, 3)
+
+
+def chart_features_batch(bars) -> np.ndarray:
+    """chart_features() for many questions at once: bars is (n, candles, 4) with at least 54 candles ending at the
+    question candle. Rows with gaps fall back to the one-chart version."""
+    A = np.asarray(bars, float)[:, -90:]
+    out = np.zeros((len(A), CHART_DIM))
+    ok = ~np.isnan(A).any((1, 2))
+    if ok.any() and A.shape[1] >= CHART_BARS + 14:
+        B = A[ok]
+        atr_ = np.maximum(np.mean(B[:, -14:, 1] - B[:, -14:, 2], 1), 1e-6)
+        ref = B[:, -1, 3]
+        last = (B[:, -CHART_BARS:] - ref[:, None, None]) / atr_[:, None, None]
+        outline = (B[:, ::-1, 3][:, ::5][:, :CHART_LONG][:, ::-1] - ref[:, None]) / atr_[:, None]
+        if outline.shape[1] < CHART_LONG:
+            outline = np.pad(outline, ((0, 0), (CHART_LONG - outline.shape[1], 0)))
+        out[ok] = np.clip(np.hstack([last.transpose(0, 2, 1).reshape(len(B), -1), outline]) / 5, -3, 3)
+    for r in np.flatnonzero(~ok):
+        out[r] = chart_features(A[r])
+    return out
 
 
 class QuizPolicy:
@@ -614,8 +881,9 @@ def quiz_inputs(quiz: dict, pol: QuizPolicy) -> np.ndarray:
     Z = np.clip(np.nan_to_num((np.load(QX).astype(float) - pol.mean) / pol.std), -5, 5)
     if not pol.chart:
         return Z
-    bars = np.load(QBARS, mmap_mode="r")
-    C = np.stack([chart_features(bars[k, :BEFORE]) for k in range(len(Z))])
+    C = np.load(QC) if QC.exists() else None               # saved by the build; older quizzes compute it here
+    if C is None or len(C) != len(Z):
+        C = chart_features_batch(np.load(QBARS, mmap_mode="r")[:, :BEFORE])
     return np.hstack([Z, C])
 
 
@@ -985,6 +1253,7 @@ def main():
     b.add_argument("--questions", type=int, default=40)
     b.add_argument("--point", type=float, default=0.01)
     b.add_argument("--seed", type=int, default=7)
+    b.add_argument("--workers", type=int, default=0, help="question finders at once (0 = one per core but one)")
     t = sub.add_parser("train")
     t.add_argument("--max-rounds", type=int, default=0, help="0 = loop until everything is finished or Stop")
     t.add_argument("--lr", type=float, default=0.01)
@@ -993,7 +1262,7 @@ def main():
     t.add_argument("--focus", default="", help="comma-separated question numbers to work on (finished ones are skipped)")
     a = ap.parse_args()
     if a.cmd == "build":
-        build(a.symbol, a.questions, point=a.point, seed=a.seed)
+        build(a.symbol, a.questions, point=a.point, seed=a.seed, workers=a.workers)
     else:
         focus = [int(v) for v in a.focus.replace(" ", "").split(",") if v] or None
         train(a.max_rounds, a.lr, resume=a.resume, focus=focus, refresh=not a.no_refresh)
