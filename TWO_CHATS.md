@@ -249,6 +249,17 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24, from the user ("perfect except please make the notifications fade away in .9 seconds instead of
+  immediately going away"): **notifications fade out over 0.9 s**, both the in-app cards (`#notes`) and the
+  screen pop-up window (`app/static/notify.html`). What I found:
+  - `app.css:856` `.note.out { animation: note-out .3s ... }` and `notify.html:27` `.note.out { animation: out .3s ... }`
+    both use 0.3 s, which looks instant. Make them 0.9 s (an ease-out opacity fade; keep the small slide if you like).
+  - `removeNote` in `app.js:53` gives up after `setTimeout(finish, 450)`, which would cut a 0.9 s fade short. Raise it
+    to ~1100 ms (and the same in notify.html's `out()` if it has a timer).
+  - Reduced motion (`.reduce-motion` / `prefers-reduced-motion`, `app.css:860-862`, and `motionOK()` in `removeNote`)
+    removes cards instantly. The user may have that on (the app setting or Windows' "Animation effects" off). An
+    opacity-only fade isn't motion, so please keep a 0.9 s opacity fade there too (just no slide or glide).
+  - The time a card stays up before fading (`noteSecs`, default 2 s) stays as it is.
 - 2026-09-24, FYI: there is now a test suite. Run `python -m pytest -q` before you push (routine step 5). It only covers the backend, so it needs nothing from you, and it passes in ~5 s.
 - 2026-09-24, from the user (recommendations, part 3): **honest backtest**. `POST /api/backtest/start {commission?,
   slippage?}` -> `{started, commission, slippage}` (409 while one runs); `POST /api/backtest/stop`; `GET /api/backtest`

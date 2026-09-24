@@ -697,6 +697,13 @@ Each chat writes only in its own section below, and adds new entries just above 
   routine step 5 and CLAUDE.md now say to run the tests before pushing.
 - Found while writing them: the Hermes gateway log path was fixed (now `brain.GATEWAY_LOG`, so tests can redirect it).
 
+### 2026-09-24: demo video; notification fade handed to Chat B
+- Recorded a 2 min 20 s walkthrough of today's features (demo copy of the app, simulated MT5 with moving prices and
+  broker SL/TP hits, stand-in Telegram, Playwright + ffmpeg): `demo-new-features.mp4` (git-ignored).
+- The user wants notifications to fade out over 0.9 s instead of vanishing. That's UI, so the full spec is in
+  TWO_CHATS "For Chat B": 0.3 s -> 0.9 s in app.css and notify.html, the 450 ms fallback timer, and an opacity fade
+  even with reduced motion.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
