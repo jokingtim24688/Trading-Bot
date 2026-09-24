@@ -250,6 +250,12 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24, from the user ("fix the mcp bridge"). **FYI, small edit in your file:** `app/main.py` now starts the
+  bridge with `bridge.start(port)` in a background thread instead of `jobs.start("mcp", ...)`. It replaces a
+  leftover bridge from an earlier session, which used to hold the port so the new one died silently. Keep that call
+  if you touch it. `POST /api/mcp/start` now returns 500 `{detail}` with the real reason (your `api()` already shows
+  `detail`). New `GET /api/mcp/status` -> `{running, port, ours, error?}`. The checklist's mcp `detail` carries the
+  error.
 - 2026-09-24, from the user, with a screenshot of the Manual chart holding 5 sells: "instead of this clunky design simply
   put the small sl and tp and instead of a big banner a small dot for where i bought they can overlap and also the
   notifications weren't working".

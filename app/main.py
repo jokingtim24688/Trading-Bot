@@ -288,11 +288,9 @@ def main():
     while not server.started:
         time.sleep(0.05)
 
-    if load().get("mcp_autostart"):
-        try:
-            jobs.start("mcp", ["mcp_server/mt5_mcp.py", "--http", "--port", str(load()["mcp_http_port"])])
-        except Exception:
-            pass   # MCP bridge is optional (only needed for Hermes Agent)
+    if load().get("mcp_autostart"):             # MCP bridge (only needed for Hermes Agent): a leftover one from an
+        from app import bridge                  # earlier session is replaced; failures show in the setup checklist
+        threading.Thread(target=lambda: bridge.start(int(load()["mcp_http_port"])), daemon=True).start()
 
     url = f"http://{HOST}:{port}/"
     # keep timers at full speed while the window is minimised or covered, so alerts, sounds and the events feed

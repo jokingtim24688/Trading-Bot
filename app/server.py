@@ -14,7 +14,7 @@ from agent import learn, ledger, progression, score as scoring
 from agent.pro import SETUP_NAMES
 
 from . import update as update_mod
-from . import backup, brain, manual, memory, mt5_service, review, settings, sounds, stats, telegram, watch, watchdog
+from . import backup, brain, bridge, manual, memory, mt5_service, review, settings, sounds, stats, telegram, watch, watchdog
 from .jobs import LOGS, jobs
 from .settings import ROOT
 
@@ -210,7 +210,8 @@ def setup_checklist():
         add("hermes", "Hermes ready", ready, st.get("next_step") or st.get("local") or "", "/api/assistant/setup")
     except Exception as e:                          # noqa: BLE001
         add("hermes", "Hermes ready", False, str(e), "/api/assistant/setup")
-    add("mcp", "MCP bridge running", jobs.jobs["mcp"].running, f"port {s['mcp_http_port']}", "/api/mcp/start")
+    br = bridge.status(int(s["mcp_http_port"]))           # asks the port: a bridge from an earlier session counts
+    add("mcp", "MCP bridge running", br["running"], br.get("error") or f"port {s['mcp_http_port']}", "/api/mcp/start")
     try:
         from agent import quiz as q
         good = int(q._load_json(q.BANK_META, {}).get("good") or 0)
@@ -923,12 +924,16 @@ def train():
 
 @app.post("/api/mcp/start")
 def mcp_start():
-    s = settings.load()
-    try:
-        jobs.start("mcp", ["mcp_server/mt5_mcp.py", "--http", "--port", str(s["mcp_http_port"])])
-    except RuntimeError as e:
-        raise HTTPException(409, str(e))
-    return jobs.status()["mcp"]
+    """Start the MT5 bridge for Hermes Agent (or reuse one that already answers). {running, port, error?, note?}."""
+    st = bridge.start(int(settings.load()["mcp_http_port"]))
+    if not st["running"]:
+        raise HTTPException(500, f"The MCP bridge didn't start: {st.get('error', 'unknown reason')}")
+    return {**jobs.status()["mcp"], **st}
+
+
+@app.get("/api/mcp/status")
+def mcp_status():
+    return bridge.status(int(settings.load()["mcp_http_port"]))
 
 
 @app.get("/api/jobs/{name}/log")

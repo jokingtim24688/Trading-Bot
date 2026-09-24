@@ -728,6 +728,25 @@ Each chat writes only in its own section below, and adds new entries just above 
 - `app/update.py` also renames an untracked local file that blocks a checkout to `<name>.local-<time>` and retries.
 - 34 tests pass (2 new: an untracked file in the way; an app-rewritten file).
 
+### 2026-09-24: MCP bridge fixed; quiz report (traps) analysed
+- **MCP bridge:** the user's setup checklist said "MCP bridge not running" and Start bridge did nothing.
+  - The bridge itself works (tested with mcp 1.30: it answers `initialize` on :8765/mcp).
+  - The checklist only looked at the app's own process. A bridge left over from an earlier session (after the
+    update) held port 8765, so every new bridge exited at once, silently.
+  - New `app/bridge.py`:
+    - asks the port itself (`probe`: our bridge / another program / nothing);
+    - `start()` replaces a leftover bridge (psutil; reuses it if that isn't allowed) or starts one, waits for it to
+      answer, and returns the reason from logs/mcp.log when it dies;
+    - another program on the port is named.
+  - `/api/mcp/start` returns 500 with the reason; there's a new `GET /api/mcp/status`; the checklist uses it.
+    `app/main.py` starts the bridge through `bridge.start` in the background (FYI to Chat B).
+  - 3 tests, 37 pass.
+- **Quiz report** (73,667 questions, exam 69.7%): real setups 66–98% on the exam, traps 5–36% with 9,986 stuck.
+  - Tried "keep a trap only if most look-alikes agree" on a 12k quiz, 400 rounds: exam 72.3% -> 71.0%, traps 13 -> 17%,
+    stay-out spots 65 -> 56%. Not kept.
+  - New page `quiz-weak-spots/references/claude-traps-look-like-winners.md`: traps look like winners, so don't press
+    Work on these for trap groups; do it for fair value gaps; judge the agent by its exam on real setups.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
