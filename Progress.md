@@ -685,6 +685,18 @@ Each chat writes only in its own section below, and adds new entries just above 
   - a full run over 29,430 test candles with a real trained model and separate files (the real ledger stayed
     empty). That model didn't trade: the sandbox's synthetic candles gave it no confidence.
 
+### 2026-09-24: recommendations, part 4: automated tests + CI
+- `tests/` with pytest (`python -m pytest -q`, ~5 s), 26 tests:
+  - `tests/fake_mt5/MetaTrader5.py` stands in for MT5;
+  - `conftest.py` redirects every file the app and agent write to a temp folder, so the tests never touch real data.
+- Covered: manual orders (anchoring with slippage, pending, bad input, real-account guard, spread limit), notes +
+  history, break-even/trailing + events, sync throttle, watchdog (crash restarts, clean exit, stuck, MT5 down/up),
+  settings backup/restore + migrations, sound files, data backup, you-vs-bot stats, quiz agreement, weekly review,
+  Telegram (fake API), news pause, backtest costs + report, Hermes Agent auto-start, the memory file.
+- `.github/workflows/tests.yml` runs them on GitHub for every push; `requirements-dev.txt` (pytest). TWO_CHATS
+  routine step 5 and CLAUDE.md now say to run the tests before pushing.
+- Found while writing them: the Hermes gateway log path was fixed (now `brain.GATEWAY_LOG`, so tests can redirect it).
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

@@ -65,6 +65,7 @@ def ollama_alive(s: dict) -> bool:
 # ---------- the Hermes Agent app: start its API server by itself (in WSL on Windows) ----------
 
 _agent = {"installed": None, "checked": 0.0, "starting": False, "error": "", "proc": None, "tried": 0.0}
+GATEWAY_LOG = Path(__file__).resolve().parent.parent / "logs" / "hermes_gateway.log"
 AGENT_RETRY_S = 600             # after a failed start, chats don't wait on it again for 10 min (Set up retries now)
 
 
@@ -112,7 +113,7 @@ def start_hermes_agent(s: dict | None = None, wait: float = 45, force: bool = Fa
     with _lock:
         running = _agent["proc"] is not None and _agent["proc"].poll() is None
         if not running:
-            log = Path(__file__).resolve().parent.parent / "logs" / "hermes_gateway.log"
+            log = GATEWAY_LOG
             log.parent.mkdir(exist_ok=True)
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             _agent.update(starting=True, error="")

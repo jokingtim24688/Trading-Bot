@@ -5,3 +5,4 @@ which chat owns which files, which branch to use (`claude/laughing-bell-3vt2c7`)
 
 - Map of the code: `graphify-out/wiki/index.md`
 - Work log: `Progress.md`, where each chat writes only in its own section
+- Tests: `python -m pytest -q` (fake MT5 in `tests/fake_mt5/`, every file redirected to a temp folder); must pass before a push

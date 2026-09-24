@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: the user's recommendations list, last item: automated tests + CI. Last: backtest report.
+Status: idle. Last: the user's recommendations (Telegram, news pause, spread limit, quiz stats, watchdog, data backup, trade notes, backtest, tests + CI) (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -67,6 +67,9 @@ font are deliberate choices: keep them unless the user asks for a change.
 3. Set your status line to what you're doing now.
 4. Work in your lane.
 5. Test what you changed: TestClient for the API, a script run for agent code, a screenshot with mocked data for UI.
+   Then run the whole suite: `python -m pytest -q` (fake MT5, throw-away data folder, ~5 s). It must pass before a
+   push. GitHub runs it on every push too (`.github/workflows/tests.yml`). Chat A adds tests for new backend code in
+   `tests/`.
 6. Log it: add a dated entry in your section of `Progress.md`, update your wiki pages, and add a line to your list at
    the bottom of `graphify-out/wiki/index.md`.
 7. Commit with your tag first: `[A] Quiz: ...` or `[B] UI: ...`
@@ -246,6 +249,7 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24, FYI: there is now a test suite. Run `python -m pytest -q` before you push (routine step 5). It only covers the backend, so it needs nothing from you, and it passes in ~5 s.
 - 2026-09-24, from the user (recommendations, part 3): **honest backtest**. `POST /api/backtest/start {commission?,
   slippage?}` -> `{started, commission, slippage}` (409 while one runs); `POST /api/backtest/stop`; `GET /api/backtest`
   -> `{running, progress: {index, total, bar_time_utc, opened} | null, report: null | {generated_utc, period: {from,

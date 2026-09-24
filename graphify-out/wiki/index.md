@@ -32,6 +32,13 @@
 - **Follow the bot**: `agent.run` → `ledger` (`data/trades.db`) ← `sync_ledger` (agent every 1s, app every refresh) → `/api/bot/trades` → Market *Bot trade* card, chart lines/markers, alerts; Agent *Bot trades* table; Hermes `get_bot_trades`.
 - **Kill**: hold button → `/api/kill` → STOP file → agent flattens → `close_all(magic 260923)`.
 
+## Tests
+`tests/` (pytest, `python -m pytest -q`): `conftest.py` puts `tests/fake_mt5/MetaTrader5.py` first on the path and
+redirects every data file (settings, ledger, memory, lessons, news, sounds, reviews, backups, job logs) to a temp folder
+per test. Files: test_manual, test_watch (BE/trail, events, sync throttle, watchdog), test_settings_files (backups,
+migrations, sounds, data backup), test_stats_alerts (stats, quiz agreement, review, Telegram, news, backtest), test_hermes.
+CI: `.github/workflows/tests.yml` on every push.
+
 ## Files on disk (not RAM)
 `data/` settings.json, hermes_memory.json, trades.db (bot ledger), notes/, SYMBOL_M1.parquet · `logs/` job logs + journals · `models/` XGBoost JSON + meta.
 
@@ -67,6 +74,7 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: news pause (`agent/news.py`, `/api/news`), Manual spread limit, quiz second opinion recorded per trade (`/api/stats/quiz`).
 - 2026-09-24: watchdog (`app/watchdog.py`), daily data backup (`app/backup.py`), trade notes + tags.
 - 2026-09-24: honest backtest (`agent/backtest.py`, `/api/backtest`): unseen months, costs, own ledger, vs the Paper gate.
+- 2026-09-24: automated tests (`tests/`, 26 tests, fake MT5) + GitHub Actions CI.
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)

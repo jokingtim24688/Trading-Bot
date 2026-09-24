@@ -10,3 +10,4 @@ STOP
 dist/
 build/
 *.skill
+.pytest_cache/
