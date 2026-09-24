@@ -35,6 +35,8 @@ ACT_NAME = {"buy": "BUY", "sell": "SELL", "wait": "STAY OUT"}
 HOUR_WINDOWS = [(0, 10, "before London (00:00-09:59 server)"), (10, 13, "London morning (10:00-12:59 server)"),
                 (13, 16, "London afternoon (13:00-15:59 server)"), (16, 19, "New York open (16:00-18:59 server)"),
                 (19, 24, "late New York (19:00-23:59 server)")]
+MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+          "November", "December"]
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 # derived, trader-readable measures: key -> (what it measures, text if the missed questions are higher, if lower)
@@ -56,7 +58,8 @@ TEXT_DIRECTIONAL = {     # comparative on purpose: the numbers beside each sente
     "round": ("distance to a $50 round number (ATRs)", "further from round numbers", "closer to a $50 round number"),
     "pd_level": ("distance to yesterday's high or low (ATRs)", "further from yesterday's high/low",
                  "closer to yesterday's high or low"),
-    "spread": ("spread vs candle size", "when the spread is wider for the candles", "when the spread is tighter"),
+    "spread": ("spread/ATR; the history's spread is estimated, so this mostly measures candle size",
+               "when candles are small (quiet, thin market)", "when candles are big (active market)"),
 }
 TEXT_NEUTRAL = dict(TEXT_DIRECTIONAL, **{
     "h1": ("H1 trend strength", "in a stronger H1 trend", "in a flatter H1"),
@@ -109,12 +112,20 @@ def _contrast(meas, hit, other, texts, label_hit="the ones it misses", label_oth
             found.append((abs(d), k, f"{hi if d > 0 else lo} ({what}: {ma:.2f} for {label_hit} vs {mb:.2f} for "
                                      f"{label_other})", d))
     found.sort(reverse=True)
-    return found[:3]
+    kept = []                     # one sentence per underlying effect: skip measures that move with one already kept
+    for f in found:
+        v = meas[f[1]]
+        both = np.concatenate([hit.nonzero()[0], other.nonzero()[0]])
+        if any(abs(np.corrcoef(v[both], meas[k][both])[0, 1]) >= 0.6 for _, k, _, _ in kept
+               if np.std(v[both]) > 0 and np.std(meas[k][both]) > 0):
+            continue
+        kept.append(f)
+    return kept[:3]
 
 
 def _share_pattern(values, hit, other, names, what):
     """A category (time window, weekday, year) where the missed questions bunch up."""
-    if hit.sum() < 8 or other.sum() < 8:
+    if hit.sum() < 20 or other.sum() < 20:       # fewer and the "bunching" is usually chance
         return None
     best = None
     for key in sorted(set(values[hit])):
@@ -154,6 +165,7 @@ def make_report(verbose=False):
     hours = np.array([int(q["time"][11:13]) for q in qs])
     years = np.array([int(q["time"][:4]) for q in qs])
     wday = np.array([datetime.strptime(q["time"][:10], "%Y-%m-%d").weekday() for q in qs])
+    month = np.array([int(q["time"][5:7]) - 1 for q in qs])
     names = np.array([Q.setup_name(q["setup"], q.get("trap")) for q in qs])
     setups = np.array([q["setup"] for q in qs])
     traps = np.array([bool(q.get("trap")) for q in qs])
@@ -199,13 +211,15 @@ def make_report(verbose=False):
         g["pattern_keys"] = [f"{k}:{'higher' if d > 0 else 'lower'}" for _, k, _, d in found]
         windows = np.array([next(k for k, (a, b, _) in enumerate(HOUR_WINDOWS) if a <= h < b) for h in hours[idx]])
         for vals, fn, what in ((windows, lambda k: HOUR_WINDOWS[k][2], "in the"),
-                               (wday[idx], lambda d: DAYS[d], "on a"), (years[idx], str, "from")):
+                               (wday[idx], lambda d: DAYS[d], "on a"), (month[idx], lambda m: MONTHS[m], "in"),
+                               (years[idx], str, "from")):
             s_ = _share_pattern(vals, hit, other, fn, what)
             if s_:
                 pats.append(s_)
-                g["pattern_keys"].append({"in the": "time", "on a": "weekday", "from": "year"}[what])
+                g["pattern_keys"].append({"in the": "time", "on a": "weekday", "in": "month", "from": "year"}[what])
         g["patterns"] = pats
         g["missed_n"], g["right_n"] = int(hit.sum()), int(other.sum())
+        g["small"] = g["practice"] < 30
         worst = idx[np.argsort(acc[idx])][:5]
         g["examples"] = [{"id": int(i) + 1, "time": qs[i]["time"], "right": int(right[i]), "asked": int(asked[i]),
                           "finished": bool(done[i])} for i in worst]
@@ -240,6 +254,19 @@ def make_report(verbose=False):
     summary = {"questions": n, "practice": int(is_prac.sum()), "finished": int(done[is_prac].sum()),
                "stuck": int((stuck & is_prac).sum()), "exam_pct": exam.get("pct"), "exam_right": exam.get("right"),
                "exam_total": exam.get("total"), "built": quiz["built"]}
+    hist = (pol.meta.get("exam_history") if pol else None) or []
+    warnings = []
+    if exam.get("pct") is not None and exam["pct"] < 33:
+        warnings.append(f"The exam ({exam['pct']}%) is below guessing (about 33%). That usually means forgetting after "
+                        "narrow training (Work on these / picked): press Continue so the memory check puts forgotten "
+                        "questions back and it retrains them.")
+    if len(hist) > 1 and hist[-1]["pct"] < hist[-2]["pct"] - 5:
+        warnings.append(f"The exam fell from {hist[-2]['pct']}% to {hist[-1]['pct']}% since the previous run.")
+    if exam.get("pct") is not None and s_fin(done, is_prac) > 0.95 and exam["pct"] < 50:
+        warnings.append("Practice is nearly all finished but the exam is low: it memorised the practice charts more "
+                        "than it learned the setups. A bigger quiz from more history helps more than more training.")
+    summary["warnings"] = warnings
+    summary["exam_history"] = hist[-10:]
     report = {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "summary": summary,
               "weak": weak, "groups": sorted(groups, key=lambda g: -g["practice"])}
     md = _markdown(report)
@@ -249,6 +276,10 @@ def make_report(verbose=False):
     if verbose:
         print(md)
     return report
+
+
+def s_fin(done, is_prac):
+    return float(done[is_prac].mean()) if is_prac.any() else 0.0
 
 
 def _fixes(g):
@@ -268,6 +299,9 @@ def _fixes(g):
         out.append("It struggles in quiet markets; the move may lack follow-through there.")
     if "time" in keys:
         out.append("Be careful in the time window named above; consider it a no-trade window for this setup.")
+    if "month" in keys:
+        out.append("The misses bunch up in one month; if it's around the holidays (late December / early January) the "
+                   "market is thin and setups fail more. Treat that period as no-trade.")
     if "year" in keys:
         out.append("The misses bunch up in one year: the market behaved differently then (a regime change); more "
                    "history from similar years would help.")
@@ -291,7 +325,8 @@ def _markdown(r):
              f"Quiz built {s['built'][:16].replace('T', ' ')}: {s['questions']:,} questions, {s['practice']:,} practice, "
              f"{s['finished']:,} finished, {s['stuck']:,} stuck. Exam: "
              + (f"{s['exam_right']:,}/{s['exam_total']:,} ({s['exam_pct']}%)" if s.get("exam_total") else "not taken yet") + ".",
-             "", "## All groups", "", "| Setup | Pro answer | Practice | Right | Finished | Stuck | Exam | Usual mistake |",
+             ""] + ([f"**Warning:** {w}" for w in s.get("warnings", [])] + [""] if s.get("warnings") else []) + [
+             "## All groups", "", "| Setup | Pro answer | Practice | Right | Finished | Stuck | Exam | Usual mistake |",
              "|---|---|---|---|---|---|---|---|"]
     for g in r["groups"]:
         mw = f"{ACT_NAME[g['main_wrong']]} ({round(100 * g['main_wrong_share'])}%)" if g["main_wrong"] else "–"
@@ -301,7 +336,8 @@ def _markdown(r):
     for k, g in enumerate(r["weak"], 1):
         lines += [f"### {k}. {g['name']} (pro answer {ACT_NAME[g['answer']]})",
                   f"Practice right {_pct(g['acc'])}, finished {_pct(g['finished'])}, stuck {g['stuck']}, exam "
-                  f"{_pct(g['exam'])} of {g['exam_n']}. Compared {g['missed_n']} it misses with {g['right_n']} it gets right.",
+                  f"{_pct(g['exam'])} of {g['exam_n']}. Compared {g['missed_n']} it misses with {g['right_n']} it gets right."
+                  + (" Small group: patterns may be chance." if g.get("small") else ""),
                   "", "What the misses have in common:"]
         lines += [f"- {p}" for p in g["patterns"]] or ["- nothing stands out yet"]
         if g.get("trap_check"):

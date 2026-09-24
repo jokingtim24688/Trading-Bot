@@ -803,7 +803,8 @@ function renderReport() {
   const r = report.data;
   if (!r || !r.weak) { $("#quiz-weak").innerHTML = `<p class="empty">Shows up after the quiz has run for a few minutes.</p>`; $("#quiz-report-meta").textContent = ""; return; }
   $("#quiz-report-meta").textContent = `updated ${r.generated.slice(11, 16)} UTC`;
-  $("#quiz-weak").innerHTML = r.weak.map((g, k) => `<div class="weak">
+  const warn = (r.summary?.warnings || []).map(w => `<div class="weak warn"><b>Warning:</b> ${w}</div>`).join("");
+  $("#quiz-weak").innerHTML = warn + r.weak.map((g, k) => `<div class="weak">
       <div class="weak-head"><b>${k + 1}. ${g.name}</b><span class="muted small num">pro answer ${ACT[g.answer]} · practice ${pct0(g.acc)} · exam ${pct0(g.exam)} (${g.exam_n}) · finished ${pct0(g.finished)}</span></div>
       ${g.main_wrong ? `<div class="muted small">Its usual mistake: ${ACT[g.main_wrong]} (${Math.round(g.main_wrong_share * 100)}%)</div>` : ""}
       <ul>${(g.patterns.length ? g.patterns : ["Nothing stands out yet."]).slice(0, 3).map(p => `<li>${p}</li>`).join("")}${g.trap_check ? `<li>${g.trap_check}</li>` : ""}</ul>

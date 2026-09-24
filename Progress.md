@@ -273,3 +273,31 @@
 - Wipe (next to Stop): two clicks (the first arms it for 4 s). Stops a running quiz, deletes every question and its
   progress (quiz.json, quiz_x/bars/times .npy, progress, live state, control, weak-spot report). The trained quiz
   agent (models/quiz_policy.json) is kept. POST /api/quiz/wipe. Tested: 100-question quiz wiped, all files gone.
+
+## 2026-09-24: Review of the first real report; never revisit; ~12x faster
+- Review of the user's report (14,908 questions):
+  - Exam 24% (below guessing) with sweeps at 0-1% on 1,100 unseen questions while practice was 88-89%. That is
+    forgetting: finished questions were never re-checked, so narrow training (Work on these on STAY OUT traps)
+    drifted the network.
+  - Traps are the real weak spot (exam 0-7%). The trap check agreed across setups: traps come in quiet, small-candle
+    markets. Spread/ATR and round-number distance were the same signal, because history spread is an estimate and
+    distances are in ATRs.
+  - The hardest questions cluster in early January (holiday-thin).
+  - Written up as claude-*.md pages in .claude/skills/quiz-weak-spots/references/.
+- Training:
+  - Never revisits finished questions.
+  - Finished now needs its best answer to be right too, not just 5 lucky picks.
+  - Silent refresher (Settings `quiz_refresh`, default on; CLI --no-refresh) rehearses finished questions in each
+    step.
+  - Memory check every 10 rounds and before the exam puts forgotten ones back on the board.
+  - Exam history with a drop warning; gentler last-resort tactic.
+- Speed: batched training (64 per matrix step) 10,066 -> 119,394 answers/s on the same 2,000-question quiz;
+  1,500 rounds in 13 s.
+- Tests (synthetic):
+  - Without the refresher, 250-600 "finished" were forgotten every 10 rounds; with it, ~100-150, leveling at
+    1,300-1,370 of 1,500 truly finished, exam ~73-75%.
+  - Damaged agent: memory check put back 584 and the exam-drop warning fired.
+  - Current square never on a finished one (60/60 samples).
+  - Start modes keep/clear progress correctly.
+- Report: merges measures that move together, candle-size wording for spread/ATR, month bunching, 20+ per side for
+  bunching, small-group flag, warnings (exam below guessing, exam fell, memorised).

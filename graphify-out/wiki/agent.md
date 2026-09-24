@@ -19,7 +19,8 @@ Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. R
   (`_candidates`), vectorised outcomes (`_outcomes`), clean winners / traps / stay-out spots, best-first across years
   (`_year_balanced`), adaptive spacing 60/30/15, contradictions + near-copies removed with top-up, easy/medium/hard
   (`_neighbours`); `train [--resume] [--focus ids]` -> (49 indicators + 178 chart inputs)-64..512-3 network,
-  REINFORCE with per-question baseline, adaptive exploration, sticky mastery, loops until done (stall tactics:
+  REINFORCE with per-question baseline, batched (64/step), never revisits finished (finish = 5 in a row + best answer
+  right), silent refresher + memory check every 10 rounds, adaptive exploration, loops until done (stall tactics:
   extra reps + bigger steps -> grow network -> reset stuck); writes .claude/skills/quiz-lessons; progress data/quiz_progress.npz,
   agent models/quiz_policy.json, live data/quiz_state.json. `--quiz-filter` in run/replay.
 - **quiz_report.py**: weak-spot report (every 5 min + end of run): groups by setup/trap, weak spots, missed-vs-right

@@ -314,3 +314,4 @@ label.inline select { width: auto; padding: 4px 8px; }
 .report-text { width: 100%; height: 180px; margin-top: 8px; font: 11px/1.4 var(--mono); }
 .btn.danger-outline { color: var(--down); border-color: rgba(224,87,79,.45); }
 .btn.danger-outline.armed { background: var(--down); color: var(--bg); border-color: var(--down); }
+.weak.warn { border-color: rgba(224,87,79,.5); color: var(--text); font-size: 13px; }

@@ -541,6 +541,30 @@ class QuizPolicy:
         self.p["W1"] += lr * np.outer(gh, x)
         self.p["b1"] += lr * gh
 
+    def probs_batch(self, Xb):
+        """Answer probabilities for many questions at once (rows), plus the hidden activations."""
+        if "W1" not in self.p:
+            S, H = Xb[:, : self.p["W"].shape[1]] @ self.p["W"].T + self.p["b"], None
+        else:
+            H = np.tanh(Xb @ self.p["W1"].T + self.p["b1"])
+            S = H @ self.p["W2"].T + self.p["b2"]
+        S = np.clip(S, -30, 30)
+        S = S - S.max(1, keepdims=True)
+        E = np.exp(S)
+        return E / E.sum(1, keepdims=True), H
+
+    def learn_batch(self, Xb, a, advantage, lr: float):
+        """REINFORCE for a batch: one matrix step equal to the per-question steps summed."""
+        P, H = self.probs_batch(Xb)
+        G = -P
+        G[np.arange(len(a)), a] += 1
+        G *= advantage[:, None]
+        GH = (G @ self.p["W2"]) * (1 - H * H)
+        self.p["W2"] += lr * G.T @ H
+        self.p["b2"] += lr * G.sum(0)
+        self.p["W1"] += lr * GH.T @ Xb
+        self.p["b1"] += lr * GH.sum(0)
+
     def grow(self) -> bool:
         """Double the hidden units (keeping everything learned) so there is room for the questions it can't fit."""
         H, d = self.p["W1"].shape
@@ -596,12 +620,19 @@ def quiz_inputs(quiz: dict, pol: QuizPolicy) -> np.ndarray:
 
 
 STALL_ROUNDS = 100                # rounds without a newly finished question before it changes tactics
+BATCH = 64                        # questions answered per step at full speed (one matrix step, much faster)
+MEMORY_EVERY = 10                 # rounds between silent memory checks of finished questions
+REFRESH_SHARE = 1.0              # silent refresher: finished questions mixed into each learning step (never asked,
+                                  # no points, not shown) so training on new ones doesn't overwrite them
+PTS = np.array([[POINTS["right"] if a == b else (POINTS["traded_should_wait"] if b == 2 else
+                 POINTS["missed_trade"] if a == 2 else POINTS["wrong_way"]) for b in range(3)] for a in range(3)])
 CURRICULUM_SHARE = 0.9            # hard questions join once this share of the easy and medium ones is finished...
 CURRICULUM_ROUNDS = 60            # ...or after this many rounds, whichever comes first
 STUCK_AFTER = 30                  # rounds since its last right answer before a question counts as stuck
 
 
-def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = False, focus: list[int] | None = None):
+def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = False, focus: list[int] | None = None,
+          refresh: bool = True):
     """Loops until every question in play is finished or you press Stop (max_rounds > 0 caps it, for tests)."""
     quiz = _load_json(QUIZ, None)
     if not quiz or not QX.exists():
@@ -661,11 +692,13 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
     note = f"easy and medium first; {len(held_back):,} hard questions join later" if len(held_back) else ""
     started, last_write, last_saved = time.time(), 0.0, time.time()
     ctl, ctl_read, due = read_control(), time.time(), time.time()
+    prev = load_policy()
+    exam_history = (prev.meta.get("exam_history", []) if prev and prev.meta.get("quiz_built") == quiz["built"] else [])
     print(f"quiz: {len(prac):,} practice questions, {len(exam):,} exam questions, {X.shape[1]} inputs each "
           f"(indicators + the chart). Points are the reward: right {POINTS['right']:+d}, wrong way "
           f"{POINTS['wrong_way']:+d}, traded when it should stay out {POINTS['traded_should_wait']:+d}, missed a good "
-          f"trade {POINTS['missed_trade']:+d}. It loops until every question is right {MASTERY} times in a row.",
-          flush=True)
+          f"trade {POINTS['missed_trade']:+d}. It loops until every question is right {MASTERY} times in a row; "
+          "finished questions are never asked again (a silent memory check puts back any it forgets).", flush=True)
 
     def stuck_mask(rnd):
         return ~done_q & (asked > 0) & (rnd - last_right >= STUCK_AFTER)
@@ -691,11 +724,11 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
             "points_by_round": per_round[-300:], "max_round_points": POINTS["right"] * len(pool),
             "speed": ctl.get("speed", 0), "elapsed": round(time.time() - started),
             "rate": round(n_asked / max(1e-6, time.time() - started)),
-            "mistake": mistake, "hardest": hardest(), "exam": exam_result,
+            "mistake": mistake, "hardest": hardest(), "exam": exam_result, "exam_history": exam_history[-20:],
             "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")})
 
     def save_all(meta):
-        pol.meta = meta
+        pol.meta = dict(meta, exam_history=exam_history[-50:])
         pol.save()
         _save_progress(quiz["built"], streak, right, asked, done_q, expect, last_right, wrong, exam_pick,
                        stuck_mask(rnd))
@@ -707,46 +740,80 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
         except Exception as e:                           # noqa: BLE001
             print(f"(weak-spot report skipped: {e})", flush=True)
 
+    def memory_check():
+        """Silent check of every finished practice question (no learning, no points): any it now gets wrong goes back
+        on the board as unfinished. This is how finished questions stay honest without being revisited."""
+        fin = prac[done_q[prac]]
+        if not len(fin):
+            return 0
+        best = np.concatenate([pol.probs_batch(X[fin[s:s + 4096]])[0].argmax(1) for s in range(0, len(fin), 4096)])
+        lost = fin[best != ans[fin]]
+        if len(lost):
+            done_q[lost] = False
+            streak[lost] = 0
+            misses[lost] = 0
+            last_right[lost] = rnd
+        return len(lost)
+
     rnd, stopped, reason = 0, False, ""
     last_report = time.time()
     while not max_rounds or rnd < max_rounds:
         rnd += 1
         round_points = 0
-        todo = pool[~done_q[pool]]
+        todo = pool[~done_q[pool]]                       # never revisit: only unfinished questions are asked
+        fin = prac[done_q[prac]]                         # finished ones, for the silent refresher
         stk = pool[stuck_mask(rnd)[pool]]
-        reps = [pool] + [todo] * EXTRA + ([stk] * 6 if level >= 1 else [])
-        for i in rng.permutation(np.concatenate(reps)):
+        order = rng.permutation(np.concatenate([todo] * (1 + EXTRA) + ([stk] * 6 if level >= 1 else [])))
+        s0 = 0
+        while s0 < len(order):
             if time.time() - ctl_read > 0.2:
                 ctl, ctl_read = read_control(), time.time()
                 if ctl.get("stop"):
                     stopped = True
                     break
-            x = X[i]
-            p = pol.probs(x)
-            explore = min(EXPLORE_MAX, EXPLORE + 0.01 * misses[i])   # stuck here -> try other answers more
-            a = int(rng.integers(3)) if rng.random() < explore else int(rng.choice(3, p=p))
-            act = ACTIONS[a]
-            pts, verdict = points_for(act, qs[i]["answer"])
-            boost = 3.0 if level >= 1 and not done_q[i] and rnd - last_right[i] >= STUCK_AFTER else 1.0
-            pol.learn(x, a, (pts - expect[i]) / 10.0, lr * boost)   # the reward: more points than usual here -> more of that
-            expect[i] += 0.3 * (pts - expect[i])
-            points += pts
-            round_points += pts
-            n_asked += 1
-            asked[i] += 1
-            recent.append(a == ans[i])
-            misses[i] = 0 if a == ans[i] else misses[i] + 1
-            if a == ans[i]:
-                streak[i] += 1
-                right[i] += 1
-                last_right[i] = rnd
-                if streak[i] >= MASTERY:
-                    done_q[i] = True
+            speed = float(ctl.get("speed", 0))
+            size = BATCH if speed <= 0 else max(1, min(BATCH, int(speed // 20)))
+            bi = order[s0:s0 + size]
+            s0 += size
+            bi = bi[~done_q[bi]]                         # finished earlier in this round: skip
+            if len(bi) > 1:
+                _, first = np.unique(bi, return_index=True)
+                bi = bi[np.sort(first)]
+            if not len(bi):
+                continue
+            Xb = X[bi]
+            P, _ = pol.probs_batch(Xb)
+            a = np.minimum((rng.random(len(bi))[:, None] > P.cumsum(1)).sum(1), 2)
+            explore = rng.random(len(bi)) < np.minimum(EXPLORE_MAX, EXPLORE + 0.01 * misses[bi])  # stuck: try more
+            a[explore] = rng.integers(3, size=int(explore.sum()))
+            pts = PTS[a, ans[bi]]
+            boost = np.where((level >= 1) & (rnd - last_right[bi] >= STUCK_AFTER), 3.0, 1.0)
+            adv = (pts - expect[bi]) / 10.0 * boost      # the reward: more points than usual -> more of that
+            if refresh and len(fin):                     # silent refresher: keep finished answers from being overwritten
+                r = fin[rng.integers(len(fin), size=max(1, int(len(bi) * REFRESH_SHARE)))]
+                pol.learn_batch(np.vstack([Xb, X[r]]), np.concatenate([a, ans[r]]),
+                                np.concatenate([adv, np.full(len(r), 1.0)]), lr)
             else:
-                streak[i] = 0
-                wrong[i, a] += 1
-                mistake = {"id": int(i) + 1, "action": act, "points": pts, "verdict": verdict,
-                           "probs": {k: round(float(v), 3) for k, v in zip(ACTIONS, p)}, "at": n_asked}
+                pol.learn_batch(Xb, a, adv, lr)
+            expect[bi] += 0.3 * (pts - expect[bi])
+            points += int(pts.sum())
+            round_points += int(pts.sum())
+            n_asked += len(bi)
+            asked[bi] += 1
+            ok = a == ans[bi]
+            recent.extend(ok.tolist())
+            misses[bi] = np.where(ok, 0, misses[bi] + 1)
+            streak[bi] = np.where(ok, streak[bi] + 1, 0)
+            right[bi] += ok
+            last_right[bi[ok]] = rnd
+            # finished = right 5 times in a row AND its best answer is right (not 5 lucky guesses)
+            done_q[bi[ok & (streak[bi] >= MASTERY) & (P.argmax(1) == ans[bi])]] = True
+            if (~ok).any():
+                wrong[bi[~ok], a[~ok]] += 1
+                j = int(np.flatnonzero(~ok)[-1])
+                mistake = {"id": int(bi[j]) + 1, "action": ACTIONS[a[j]], "points": int(pts[j]),
+                           "verdict": points_for(ACTIONS[a[j]], qs[bi[j]]["answer"])[1],
+                           "probs": {k: round(float(v), 3) for k, v in zip(ACTIONS, P[j])}, "at": n_asked}
             now = time.time()
             if now - last_write > 0.25:
                 if now - last_saved > 20:                # keep progress if the app is closed mid-quiz
@@ -757,17 +824,22 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
                         last_report = time.time()
                 if mistake and "bars" not in mistake:
                     mistake.update(question_view(mistake["id"], quiz))
-                state(rnd, current=int(i) + 1)          # the question it is on right now (baby blue on the board)
+                live = bi[~done_q[bi]]                   # the question it is on right now (baby blue on the board)
+                state(rnd, current=int(live[-1]) + 1 if len(live) else None)
                 last_write = now
-            speed = float(ctl.get("speed", 0))
             if speed > 0:
-                due = max(due, now - 0.5) + 1.0 / speed
+                due = max(due, now - 0.5) + len(bi) / speed
                 if due - now > 0.003:
                     time.sleep(due - now)
         if stopped:
             reason = "stopped from the app"
             break
         per_round.append(round_points)
+        if rnd % MEMORY_EVERY == 0:
+            lost = memory_check()
+            if lost:
+                note = f"memory check: {lost:,} finished question(s) forgotten, back on the board"
+                print(note, flush=True)
         mastered = int(done_q[pool].sum())
         if mastered > best_mastered:
             best_mastered, best_round = mastered, rnd
@@ -781,8 +853,13 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
             best_mastered, best_round = int(done_q[pool].sum()), rnd
             print(note, flush=True)
         if done_q[pool].all():
-            reason = "every chosen question finished" if focus else "every practice question finished"
-            break
+            lost = memory_check()                        # before calling it done, make sure nothing was forgotten
+            if not lost:
+                reason = "every chosen question finished" if focus else "every practice question finished"
+                break
+            note = f"memory check: {lost:,} finished question(s) forgotten, back on the board"
+            print(note, flush=True)
+            best_mastered = int(done_q[pool].sum())
         # stuck? change tactics and keep looping (it never gives up on its own)
         stall = rnd - best_round
         if stall >= STALL_ROUNDS and level == 0:
@@ -795,29 +872,35 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
                 note = f"still stuck: grew its brain to {pol.hidden} units (everything learned is kept)"
             else:
                 left = pool[~done_q[pool]]
-                expect[left] = POINTS["wrong_way"]          # a right answer there now counts as a huge surprise
-                misses[left] = 50                           # and it tries other answers half the time
-                note = f"still stuck at {pol.hidden} units: shaking up the {len(left)} stuck questions and looping again"
+                expect[left] = POINTS["wrong_way"]          # a right answer there now counts as a big surprise
+                note = (f"at full size ({pol.hidden} units): {len(left)} questions keep conflicting with others; "
+                        "looping on them with a fresh look")
             print(note, flush=True)
     else:
         reason = f"reached {max_rounds} rounds"
 
+    lost = memory_check()                                # the board shows what it really still knows
+    if lost:
+        print(f"memory check: {lost:,} finished question(s) forgotten; Continue will retrain them", flush=True)
     exam_result = None
     if len(exam):
-        pe = np.array([pol.probs(X[i]) for i in exam]).argmax(1)
+        pe = np.concatenate([pol.probs_batch(X[exam[s:s + 4096]])[0].argmax(1) for s in range(0, len(exam), 4096)])
         exam_pick[exam] = pe
         ok = pe == ans[exam]
-        pts = sum(points_for(ACTIONS[a], qs[i]["answer"])[0] for a, i in zip(pe, exam))
+        pts = int(PTS[pe, ans[exam]].sum())
         by = {}
         for i, good in zip(exam, ok):
             r_, t_ = by.get(group_name(qs[i]), (0, 0))
             by[group_name(qs[i])] = (r_ + int(good), t_ + 1)
-        exam_result = {"right": int(ok.sum()), "total": int(len(exam)), "pct": round(100 * ok.mean(), 1), "points": int(pts),
+        exam_result = {"right": int(ok.sum()), "total": int(len(exam)), "pct": round(100 * ok.mean(), 1), "points": pts,
                        "by_setup": {k: list(v) for k, v in sorted(by.items())}}
+        exam_history.append({"pct": exam_result["pct"], "time": datetime.now(timezone.utc).isoformat(timespec="minutes"),
+                             "focus": bool(focus), "rounds": rnd})
     mastered = int(done_q[prac].sum())
     save_all({"trained": datetime.now(timezone.utc).isoformat(timespec="seconds"), "rounds": rnd, "asked": n_asked,
               "points": points, "mastered": mastered, "practice": len(prac), "exam": exam_result,
-              "quiz_built": quiz["built"], "reason": reason, "hidden": pol.hidden, "inputs": int(X.shape[1])})
+              "quiz_built": quiz["built"], "reason": reason, "hidden": pol.hidden, "inputs": int(X.shape[1]),
+              "forgotten_at_end": int(lost)})
     state(rnd, done=True, stopped=stopped, exam_result=exam_result, reason=reason)
     report()
     try:
@@ -829,6 +912,9 @@ def train(max_rounds: int = 0, lr: float = 0.01, seed: int = 1, resume: bool = F
     if exam_result:
         print(f"exam (never-seen questions): {exam_result['right']:,}/{exam_result['total']:,} right "
               f"({exam_result['pct']}%, guessing would be ~33%), {exam_result['points']:+,d} points", flush=True)
+        if len(exam_history) > 1 and exam_result["pct"] < exam_history[-2]["pct"] - 5:
+            print(f"warning: the exam fell from {exam_history[-2]['pct']}% to {exam_result['pct']}%: likely forgetting "
+                  "after narrow training (Work on these / picked). Continue lets the memory check repair it.", flush=True)
     print("saved the quiz agent to models/quiz_policy.json, its lessons to .claude/skills/quiz-lessons/ and the "
           "weak-spot report to data/quiz_report.md (+ .claude/skills/quiz-weak-spots/)", flush=True)
 
@@ -903,13 +989,14 @@ def main():
     t.add_argument("--max-rounds", type=int, default=0, help="0 = loop until everything is finished or Stop")
     t.add_argument("--lr", type=float, default=0.01)
     t.add_argument("--resume", action="store_true", help="continue with the saved agent and progress")
+    t.add_argument("--no-refresh", action="store_true", help="don't silently refresh finished questions")
     t.add_argument("--focus", default="", help="comma-separated question numbers to work on (finished ones are skipped)")
     a = ap.parse_args()
     if a.cmd == "build":
         build(a.symbol, a.questions, point=a.point, seed=a.seed)
     else:
         focus = [int(v) for v in a.focus.replace(" ", "").split(",") if v] or None
-        train(a.max_rounds, a.lr, resume=a.resume, focus=focus)
+        train(a.max_rounds, a.lr, resume=a.resume, focus=focus, refresh=not a.no_refresh)
 
 
 if __name__ == "__main__":

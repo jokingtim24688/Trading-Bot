@@ -74,13 +74,24 @@ On the board, each square is one practice question:
 
 The chart panel holds the latest mistake with the pro answer.
 
-## It loops until done
-It never quits on its own. It stops only when every question in play is finished or the user presses Stop. When no
-new question is finished for 100 rounds, it escalates:
-1. Asks the stuck questions 7 extra times a round with 3x bigger learning steps.
-2. Doubles its network, up to 64 -> 128 -> 256 -> 512 units, keeping everything learned.
-3. Resets its expectations on the stuck questions, so a right answer there is a big reward, and tries other answers
-   half the time. Then it loops again.
+## It loops until done, never re-asks finished questions, and doesn't forget
+- A question is **finished** when it is right 5 times in a row **and** its best answer is right, so lucky streaks
+  don't count.
+- Finished questions are **never asked again**: no highlight, no points, no time spent on them.
+- A **silent refresher** (Settings, on by default) rehearses finished questions inside each learning step, so
+  training on new ones doesn't overwrite them. It's invisible and costs little.
+- A **memory check** every 10 rounds and before the exam silently re-checks finished questions. Any it now gets
+  wrong goes back on the board. Some gold squares turning back is normal and honest. It's how the exam collapse in
+  the first real run (24%) is prevented and repaired (see quiz-weak-spots/references/claude-exam-collapse-forgetting.md).
+- Answers are processed in batches of 64 as one matrix step: about 12x faster (roughly 120k answers/s on a
+  2,000-question quiz; the network slows down as it grows).
+- It never quits on its own. If nothing new finishes for 100 rounds, it escalates:
+  1. Stuck questions get 7 extra asks a round with 3x steps.
+  2. It doubles its network (64 -> 512 units).
+  3. At full size, it takes a fresh look at the stuck ones and keeps looping until everything is finished or you
+     press Stop.
+- On contradictory data it settles where a group of questions keep trading places; the exam tells you whether it
+  learned anything real.
 
 ## When questions stay stuck
 Work through these in order:

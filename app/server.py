@@ -430,8 +430,10 @@ def quiz_train(body: dict = Body(default={})):
         args += ["--focus", ",".join(map(str, focus))]
     elif body.get("resume"):
         args.append("--resume")
-    else:
+    else:                                              # Start over: fresh agent and fresh progress
         (QUIZ_DIR / "quiz_progress.npz").unlink(missing_ok=True)
+    if not s.get("quiz_refresh", True):
+        args.append("--no-refresh")
     (QUIZ_DIR / "quiz_state.json").unlink(missing_ok=True)
     try:
         jobs.start("quiz", args)
