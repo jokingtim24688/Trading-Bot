@@ -583,6 +583,15 @@ Each chat writes only in its own section below, and adds new entries just above 
   - "not installed" falls back to the local model;
   - a failing command shows the error at once, and the next chat skips waiting.
 
+### 2026-09-24: Windows pop-ups for TP / SL hits (Chat B handoff)
+- New `app/notify.py`: when the watcher records a take profit or stop loss hit (any owner), Windows shows a
+  notification, e.g. "✅ Your take profit hit +$40.00 - XAUUSD BUY 0.1 lot closed at 2654.25", so you see it with the
+  app minimised. Silent, since the app rings its own bell.
+- Setting `desktop_alerts` (default on). It uses `winotify` (added to requirements, Windows only), or PowerShell's
+  built-in toast API if that isn't installed; nothing happens off Windows.
+- Tested: the toast text for TP and SL, other events skipped, XML/quote escaping in the PowerShell fallback, the
+  setting off = no pop-up, and the feature tests (events feed) still pass.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

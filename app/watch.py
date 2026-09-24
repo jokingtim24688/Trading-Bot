@@ -16,6 +16,7 @@ import time
 from collections import deque
 
 from . import mt5_service as ms
+from . import notify
 from .settings import DATA, load
 
 RULES_FILE = DATA / "manual_auto.json"
@@ -73,7 +74,9 @@ def add_event(kind: str, **fields) -> dict:
               "volume": None, "price": None, "profit": None, "owner": None, **fields}
         _next_id += 1
         _events.append(ev)
-        return ev
+    if kind in ("tp", "sl"):
+        notify.for_event(ev)                           # Windows pop-up, so you see it with the app minimised
+    return ev
 
 
 def events(since: int | None = None) -> dict:

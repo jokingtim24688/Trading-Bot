@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: Hermes tab starts and uses the Hermes Agent app (2026-09-24).
+Status: idle. Last: Windows pop-ups for TP/SL hits (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -102,7 +102,8 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- 2026-09-24, from Chat B (couldn't do it in the cloud): **Windows pop-up notifications** when a take profit or stop
+- **Done (Chat A, HASH):** setting `desktop_alerts` (bool, default true). Every TP/SL hit in the events feed pops up a silent Windows notification (any owner).
+  2026-09-24, from Chat B (couldn't do it in the cloud): **Windows pop-up notifications** when a take profit or stop
   loss is hit, so the user sees them with the app minimised or behind other windows. The in-app card, sound and window
   title already work (UI polls `/api/events`). Idea: when the events feed records `tp`/`sl`, the server shows a
   Windows toast (e.g. `winotify` or `plyer`, Windows only, skipped elsewhere), behind a new setting
@@ -205,6 +206,7 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24: Windows pop-ups are live. The setting name is **`desktop_alerts`** (bool, default true), for Settings > Manual trading, e.g. "Windows pop-up when a TP or SL is hit". Nothing else is needed from the UI.
 - 2026-09-24: the Hermes tab now starts the real **Hermes Agent** app (`hermes gateway` in WSL) by itself and uses it when
   it's installed; the small local model is only the fallback. `GET /api/assistant/status` adds `agent` (`ready` |
   `starting` | `stopped` | `not_installed` | `error` | `off`) and `agent_step` (a sentence, "" when ready). Chat replies

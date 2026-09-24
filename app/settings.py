@@ -44,6 +44,7 @@ DEFAULTS = {
     # Manual tab: automatic stop moves for your own trades (points; 0 = off). Applied to new manual orders.
     "manual_be_points": 0,                 # once a trade is this many points up, move its stop to entry + 2 points
     "manual_trail_points": 0,              # the stop follows the price at this distance, only ever tightening
+    "desktop_alerts": True,                # Windows pop-up when a take profit or stop loss is hit (any owner)
     # Assistant
     "assistant_backend": "auto",           # auto | hermes_agent | local
     "hermes_url": "http://127.0.0.1:8642",

@@ -7,6 +7,9 @@
   tighten); `/api/manual/auto` GET/POST; `/api/manual/order` takes `be_points`/`trail_points` and replies `auto`.
   Event feed `/api/events?since=` (open / tp / sl / close / be / trail for every owner, last 500, from MT5 deal reasons);
   last SL/TP of closed positions in `data/closed_levels.json` for History replay.
+- **notify.py** (Chat A): Windows pop-ups for TP/SL hits from the events feed (`watch.add_event` -> `notify.for_event`),
+  setting `desktop_alerts` (default on); `winotify` (requirements, Windows only) or PowerShell's toast API; silent
+  (the app plays its own bell); no-op off Windows.
 - **stats.py** (Chat A): `/api/stats/compare?days=&mode=paper|live|all` -> `{you, bot}` (trades, win rate, net, avg
   win/loss, PF, expectancy, best/worst, avg hold, by_hour, by_weekday, curve; server time).
 - **review.py** (Chat A): weekly summary `/api/review/weekly` (GET, POST = rebuild in the background, `working` flag),
