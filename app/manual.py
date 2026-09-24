@@ -98,7 +98,11 @@ def quotes(symbols: list[str]) -> list[dict]:
 # ---------- orders ----------
 def order(symbol: str, side: str, type: str = "market", volume: float = 0.0, price: float | None = None,
           sl: float | None = None, tp: float | None = None, deviation: int = 20, expiration: str = "gtc",
-          confirm_real: bool = False) -> dict:
+          confirm_real: bool = False, sl_points: float | None = None, tp_points: float | None = None) -> dict:
+    """Place a market or pending order. With sl_points / tp_points (the tab's 80 / 160), SL and TP are that many
+    points from the real fill price of a market order (set right after the fill) or from a pending order's price, so
+    slippage can't shift them; the sl / tp prices are then only a first guess. Without points, sl / tp are used as
+    given."""
     if side not in ("buy", "sell"):
         raise ValueError("side must be buy or sell")
     if type not in ("market", "limit", "stop"):
@@ -114,8 +118,19 @@ def order(symbol: str, side: str, type: str = "market", volume: float = 0.0, pri
         buy = side == "buy"
         vol = _volume(volume or i.volume_min, i)
         gap = (i.trade_stops_level or 0) * i.point
+        sgn = 1 if buy else -1
+        slp, tpp = float(sl_points or 0), float(tp_points or 0)
+        if slp < 0 or tpp < 0:
+            raise ValueError("sl_points and tp_points can't be negative.")
+
+        def anchor(ref: float) -> tuple[float, float]:
+            """SL/TP that many points from ref (below/above for a buy); the given price where no points were sent."""
+            return (round(ref - sgn * slp * i.point, i.digits) if slp else sl,
+                    round(ref + sgn * tpp * i.point, i.digits) if tpp else tp)
+
         if type == "market":
             px = t.ask if buy else t.bid
+            sl, tp = anchor(px)                                       # first guess; re-anchored to the fill below
             _check_levels(buy, t.bid if buy else t.ask, sl, tp, i)   # MT5 checks a buy's SL/TP against the bid
             req = {"action": m.TRADE_ACTION_DEAL, "type": m.ORDER_TYPE_BUY if buy else m.ORDER_TYPE_SELL,
                    "price": px, "type_filling": _filling(i)}
@@ -130,6 +145,7 @@ def order(symbol: str, side: str, type: str = "market", volume: float = 0.0, pri
                 raise ValueError(f"A {side} stop must be {'above' if buy else 'below'} the current price {now}.")
             if abs(px - now) < gap:
                 raise ValueError(f"A pending order must be at least {gap:.{i.digits}f} from the current price.")
+            sl, tp = anchor(px)
             _check_levels(buy, px, sl, tp, i)
             otype = {("buy", "limit"): m.ORDER_TYPE_BUY_LIMIT, ("sell", "limit"): m.ORDER_TYPE_SELL_LIMIT,
                      ("buy", "stop"): m.ORDER_TYPE_BUY_STOP, ("sell", "stop"): m.ORDER_TYPE_SELL_STOP}[(side, type)]
@@ -139,8 +155,47 @@ def order(symbol: str, side: str, type: str = "market", volume: float = 0.0, pri
                    comment=COMMENT)
         res = m.order_send(req)
         out = _result(res)
-        out.update(ticket=getattr(res, "order", None) or None, price=getattr(res, "price", None) or px, volume=vol)
+        out.update(ticket=getattr(res, "order", None) or None, price=getattr(res, "price", None) or px, volume=vol,
+                   sl=sl, tp=tp, anchored=bool(slp or tpp))
+        if out["ok"] and type == "market" and (slp or tpp):
+            out.update(_anchor_to_fill(res, symbol, buy, anchor, i))
         return out
+
+
+def _anchor_to_fill(res, symbol: str, buy: bool, anchor, i) -> dict:
+    """After a market fill: move SL/TP to sl_points / tp_points from the position's real open price. The order
+    already went in with SL/TP from the quote, so the trade is never unprotected; if the move is refused (the price
+    ran past a level already), those stay and `note` says why."""
+    m = ms.mt5
+    pos = None
+    for _ in range(10):                                           # the position can show a moment after the deal
+        tk = getattr(res, "order", 0)
+        pos = (m.positions_get(ticket=tk) or [None])[0] if tk else None
+        if pos is None and getattr(res, "deal", 0):
+            d = m.history_deals_get(ticket=res.deal)
+            if d:
+                pos = (m.positions_get(ticket=d[0].position_id) or [None])[0]
+        if pos is not None:
+            break
+        time.sleep(0.05)
+    if pos is None:
+        return {"note": "Filled, but the position wasn't found to re-anchor SL/TP; they stay at the quote's levels."}
+    fill = pos.price_open
+    sl, tp = anchor(fill)
+    out = {"ticket": pos.ticket, "price": fill}
+    if sl == pos.sl and tp == pos.tp:
+        return {**out, "sl": sl, "tp": tp}
+    t = m.symbol_info_tick(symbol)
+    try:
+        _check_levels(buy, t.bid if buy else t.ask, sl, tp, i)
+    except ValueError as e:
+        return {**out, "sl": pos.sl, "tp": pos.tp, "note": f"SL/TP kept at the quote's levels: {e}"}
+    r = _result(m.order_send({"action": m.TRADE_ACTION_SLTP, "position": pos.ticket, "symbol": symbol,
+                              "sl": sl, "tp": tp, "magic": pos.magic}))
+    if not r["ok"]:
+        return {**out, "sl": pos.sl, "tp": pos.tp,
+                "note": f"SL/TP kept at the quote's levels: the broker refused the move ({r['comment']})."}
+    return {**out, "sl": sl, "tp": tp}
 
 
 def _close_one(p, volume: float | None = None) -> dict:

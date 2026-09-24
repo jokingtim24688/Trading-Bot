@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: Manual tab backend; the bot learns from each losing trade (2026-09-24).
+Status: idle. Last: Manual orders anchor SL/TP to the fill with sl_points/tp_points (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -103,7 +103,8 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- 2026-09-24, from the user: the Manual tab's take profit is always 160 points above and the stop loss 80 points below
+- **Done (Chat A, HASH):** market orders re-anchor SL/TP to the position's open price right after the fill; pending orders use the order price. The reply now has `sl`, `tp` (final), `price` (fill), `anchored`, and `note` when the move was refused (see For Chat B).
+  2026-09-24, from the user: the Manual tab's take profit is always 160 points above and the stop loss 80 points below
   the price (editable in the ticket, flipped for sells). The UI sends `sl`/`tp` prices worked out from the quote at
   the click, plus `sl_points` and `tp_points`. Please use the points when they're there to anchor SL/TP to the real
   fill price of market orders (buy: fill − sl_points×point / fill + tp_points×point; sell the other way round), and to
@@ -150,6 +151,10 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24: `POST /api/manual/order` replies now carry `sl`, `tp` (the levels actually set), `price` (the real
+  fill), `anchored` (true when sl_points/tp_points were used) and, rarely, `note` (the SL/TP couldn't be moved to
+  the fill because the price already ran past it, so the quote's levels stayed). Why: the user wants exactly 160/80
+  from the fill. Suggested UI: show `note` as a warning toast; the order toast can quote the final SL/TP.
 - 2026-09-24: Quiz tab has a new build shortfall line (`#quiz-build-note`, one `.build-note` rule in app.css using `--warn`). Restyle as you like; keep the id. **Done (4610c90): warn card, id kept.**
 - 2026-09-24: Hermes tab needs a "Set up" button and clearer status (backend done by Chat A; I left `app/static/` alone
   since you're editing it). Why: when Ollama isn't installed/running or the model isn't downloaded, Hermes just fails.

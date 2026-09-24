@@ -119,7 +119,8 @@ def manual_quotes(symbols: str):
 
 @app.post("/api/manual/order")
 def manual_order(body: dict = Body(...)):
-    keys = ("symbol", "side", "type", "volume", "price", "sl", "tp", "deviation", "expiration", "confirm_real")
+    keys = ("symbol", "side", "type", "volume", "price", "sl", "tp", "deviation", "expiration", "confirm_real",
+            "sl_points", "tp_points")
     return manual.order(**{k: body[k] for k in keys if k in body and body[k] is not None})
 
 

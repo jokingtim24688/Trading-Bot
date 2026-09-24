@@ -532,6 +532,17 @@ Each chat writes only in its own section below, and adds new entries just above 
   - 12 mistakes became 12 practice questions (one outside the history skipped);
   - training and the weak-spot report ran fine.
 
+### 2026-09-24: Manual tab SL/TP anchored to the fill (Chat B handoff)
+- `POST /api/manual/order` takes `sl_points` / `tp_points` (the tab's 80 / 160). When they're sent:
+  - market orders go in with SL/TP from the quote (so they're never unprotected), then `_anchor_to_fill` moves them
+    to exactly that many points from the position's real open price (buy: fill − 80 / fill + 160, sell the other way);
+  - pending orders get SL/TP from the order price; the `sl`/`tp` prices the UI sends are only used where no points
+    are given.
+  - If the move is refused (the price already ran past the new level, or the broker says no), the quote's levels stay
+    and the reply has a `note`. The reply also carries the final `sl`, `tp`, the fill `price` and `anchored`.
+- Tested on the fake MT5 with 30 points of slippage: buy fill 2650.55 → SL 2649.75 / TP 2652.15; sell, buy limit,
+  sell stop, no points (unchanged), only tp_points, the price crashing through the SL (note), negative points refused.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
