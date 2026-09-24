@@ -14,7 +14,7 @@ one branch without breaking each other's work. Read it at the start of every tas
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: working on the quiz question bank (one always-on creator, 10 on Build), then Hermes site limits and per-setup skills (2026-09-24).
+Status: idle. Last: quiz question bank (always-on creator, no max), Hermes web limited to trading sites, quiz-setups skill (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -148,6 +148,9 @@ with the commit hash.
   - Settings: `quiz_workers` label is now "question creators when Build quiz is pressed" (0 = up to 10; allow up to
     16). New boolean `quiz_bank_auto` ("keep making questions in the background", default on).
   - Build progress (`build`) works as before; the finder bars are now per half-year (e.g. "2016H2").
+- 2026-09-24: Hermes web access is limited to trading/market sites (backend done by Chat A). New setting `web_sites`
+  (a list of sites; "site/path" limits to a section, e.g. `reuters.com/markets`). If Settings shows Hermes options,
+  please add it as an editable list with a line like "Hermes may only open these trading and market sites".
 
 ## If only one chat is running
 

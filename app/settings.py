@@ -49,6 +49,12 @@ DEFAULTS = {
     "ollama_keep_alive": "0",              # unload the model right after each reply (0 = no lingering)
     "assistant_autosetup": True,           # start Ollama and download the model automatically when needed
     "allow_web": True,
+    # Hermes may only open pages on these trading/market sites (a site covers its subdomains; "site/path" limits it
+    # to that section). Anything else is refused.
+    "web_sites": ["federalreserve.gov", "bls.gov", "bea.gov", "treasury.gov", "ecb.europa.eu", "gold.org",
+                  "lbma.org.uk", "kitco.com", "cmegroup.com", "fxstreet.com", "forexfactory.com", "investing.com",
+                  "tradingeconomics.com", "marketwatch.com", "finance.yahoo.com", "investopedia.com", "babypips.com",
+                  "reuters.com/markets", "mql5.com", "metatrader5.com"],
     # MCP bridge for Hermes Agent
     "mcp_http_port": 8765,
     "mcp_autostart": True,
