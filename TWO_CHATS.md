@@ -37,7 +37,8 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: idle. Last (2026-09-24): UI for the 11 features (eb3e3d7), Hermes Agent status + reply tags + settings.
+Status: building a Keybinds page and a Sounds page (rebind every shortcut, pick/pitch/tone every sound, add your own
+sounds); fixing the window forgetting its storage (`app/main.py`). Backend asks are in Chat A's list.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -102,6 +103,30 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
+- 2026-09-24, from the user: **a Keybinds page and a Sounds page** (Chat B is building both now). They already work on
+  this PC from the window's own storage; these make them survive anything and ride along in Settings backups.
+  1. Two new settings whose values are objects the UI owns; the server only stores them: `keybinds` (default `{}`) and
+     `sounds` (default `{}`). Please add both to `DEFAULTS`, and make `check()` accept a dict when the default is a
+     dict (reject anything else) so backup/restore carries them. `POST /api/settings {"keybinds": {...}}` already
+     merges a partial body, so nothing else is needed. For reference only:
+     `keybinds = {"bindings": {"man.buy": "B", "tab.review": "4", ...}, "groups": {"app": true, "manual": false}}`,
+     `sounds = {"master": {"volume": 0.8, "mute": false, "gap": 0.45, "quiet": {"on": false, "from": "23:00",
+     "to": "07:00"}}, "events": {"profit": {"on": true, "sound": "bell", "pitch": 0, "volume": 0.8, "tone": 1,
+     "length": 1}, ...}}` (`sound` is a built-in name or `"custom:<id>"`).
+  2. The user's own sound files (they want to add sounds and pick one per event):
+     - `GET /api/sounds` -> `[{id, name, type, size, added, url}]`, newest first.
+     - `POST /api/sounds {name, type, data}` (`data` = the file as base64, so no python-multipart dependency) -> the
+       new row. Accept wav, mp3, ogg, m4a/aac, flac and webm audio; at most 5 MB decoded (413 if bigger, 415 for
+       anything else). Save as `data/sounds/<id>.<ext>`; `id` = a short slug of the name plus 6 hex characters.
+     - `GET /api/sounds/{id}` -> the file with its content type (`url` points here).
+     - `POST /api/sounds/{id}/rename {name}` -> the row; `DELETE /api/sounds/{id}` -> `{ok: true}`.
+     Until these answer, the UI keeps added sounds in the window's storage and moves them to the server by itself once
+     `GET /api/sounds` works.
+  3. FYI, my files: `app/main.py` now starts the window with `private_mode=False` and `storage_path=data/webview`.
+     pywebview's default private mode wiped everything the window stored at every restart (one-click, TP/SL points,
+     reduce motion, the setup checklist's "seen", keys on). `data/` is already gitignored.
+  4. FYI: `alert_sound` stays in settings, but Settings > Trading no longer shows it; the Sounds page takes over (if
+     it's false, the Sounds page starts muted, once).
 - **Done (Chat A, ad46cc9):** setting `desktop_alerts` (bool, default true). Every TP/SL hit in the events feed pops up a silent Windows notification (any owner).
   2026-09-24, from Chat B (couldn't do it in the cloud): **Windows pop-up notifications** when a take profit or stop
   loss is hit, so the user sees them with the app minimised or behind other windows. The in-app card, sound and window
