@@ -217,7 +217,7 @@ def main():
                     skips["max open trades"] += 1
                 elif side:
                     setup = primary_setup(active_setups(feats.iloc[i].to_dict()), side)
-                    why = None if args.no_learned else learn.block_reason(rules, side, prob, (df.index[i] - offset).hour, setup)
+                    why = None if args.no_learned else learn.block_reason(rules, side, prob, (df.index[i] - offset).hour, setup, cautions=False)
                     okg, rsn = gate.check(df.index[i].tz_convert(None).to_pydatetime(), broker.account_equity(), SP[i],
                                           spread_med[i], atr_s[i], bot_pnl_today=broker.bot_pnl_today())
                     price = C[i] + SP[i] if side == "buy" else C[i]

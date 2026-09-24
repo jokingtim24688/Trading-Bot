@@ -8,8 +8,17 @@ Groups closed trades from the ledger by UTC hour, direction, model confidence an
        - disabled_side: stop buying (or selling) if that side loses while the other side makes money
 Rules only form from groups with enough trades (MIN_GROUP), so a few unlucky trades don't block anything.
 Points = dollars (stop hits x1.5), same as the score.
+
+It also learns from each mistake as it happens (on_mistake, called by the ledger whenever a trade closes at a loss):
+  - the losing trade goes into data/mistakes.json with a one-line lesson, and the lessons skill is rewritten;
+  - a short-term caution forms for that setup + direction: the bot needs more confidence there than it had on the
+    trades that just lost, for 24 hours or until it wins there again. Floors keep it trading: a caution never asks for
+    more confidence than 80% of its recent entries had, and at most half of the setups it trades can be under caution;
+  - the next Quiz build turns the losing trade's chart into a practice question (answer: stay out), so the quiz agent
+    (the optional second opinion) practises exactly the spots where the bot was wrong.
 """
 import json
+import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +33,13 @@ MIN_TRADES = 50        # no rules until the bot has at least this many closed tr
 MIN_GROUP = 20         # a group needs this many trades before it can create a rule
 MAX_BLOCKED_HOURS = 8  # never block more than a third of the day
 CONF_BUCKETS = [0.0, 0.15, 0.2, 0.25, 0.3, 0.4, 1.01]
+MIN_PASS_SHARE = 0.5   # the confidence rule never blocks more than half of the confidence levels it has traded at
+MISTAKES_PATH = ROOT / "data" / "mistakes.json"
+MAX_MISTAKES = 2000
+CAUTION_HOURS = 24     # a caution lasts this long after its last loss (or until a win in that setup + direction)
+CAUTION_STEP = 0.02    # it asks for this much more confidence than the losing trades had
+CAUTION_CAP_PCT = 80   # ...but never more than 80% of the bot's recent entries had (so it keeps trading)
+RELEARN_EVERY_S = 20   # after a loss, rules and lessons are rewritten at most this often
 
 _cache = {"mtime": None, "rules": {}}
 
@@ -63,7 +79,15 @@ def analyze(modes=("replay", "paper", "demo", "real")) -> dict:
         "by_exit": _group(rows, lambda r: r["exit_reason"] or "unknown"),
         "by_mode": _group(rows, lambda r: r["mode"]),
         "by_setup": _group(rows, lambda r: r.get("setup") or "not recorded"),
+        "prob_median": _quantile([r["prob"] for r in rows if r["prob"] is not None], 50),
     }
+
+
+def _quantile(vals: list, pct: float):
+    if not vals:
+        return None
+    v = sorted(vals)
+    return float(v[min(len(v) - 1, int(len(v) * pct / 100))])
 
 
 def derive_rules(a: dict) -> dict:
@@ -76,12 +100,20 @@ def derive_rules(a: dict) -> dict:
     rules["blocked_hours"] = sorted(h for h, _ in bad)
     for h, s in bad:
         rules["reasons"].append(f"{h:02d}:00 UTC lost {s['score']} points over {s['trades']} trades.")
-    # lowest confidence buckets that lost points -> raise the bar above them
+    # lowest confidence buckets that lost points -> raise the bar above them, but never so high that it blocks more than
+    # half of the confidence levels the bot has traded at, and never from the top bucket (that would block everything)
+    cap = a.get("prob_median")
     for b, s in a["by_confidence"].items():
         if b == "unknown" or s["trades"] < MIN_GROUP:
             continue
-        if s["score"] < 0:
-            rules["min_confidence"] = float(b.split("-")[1])
+        hi = float(b.split("-")[1])
+        if s["score"] < 0 and hi < 1:
+            if cap is not None and hi > cap:
+                rules["min_confidence"] = round(cap, 3)
+                rules["reasons"].append(f"Confidence {b} lost {s['score']} points over {s['trades']} trades; the bar "
+                                        f"stops at {cap:.2f} so at least half of its usual entries still pass.")
+                break
+            rules["min_confidence"] = hi
             rules["reasons"].append(f"Confidence {b} lost {s['score']} points over {s['trades']} trades.")
         else:
             break
@@ -99,6 +131,130 @@ def derive_rules(a: dict) -> dict:
                 rules["disabled_side"] = bad_side
                 rules["reasons"].append(f"{bad_side.title()}s lost {b['score']} points while {good_side}s made {g['score']}.")
     return rules
+
+
+# ---------------------------------------------------------------- learning from each mistake
+_state = {"relearned": 0.0}
+
+
+def load_mistakes() -> list[dict]:
+    try:
+        return json.loads(MISTAKES_PATH.read_text())
+    except (OSError, ValueError):
+        return []
+
+
+def _setup_label(setup: str | None) -> str:
+    return SETUP_NAMES.get(setup, setup) if setup else "no named setup"
+
+
+def _live_closed(limit: int = 2000) -> list[dict]:
+    """Recent closed paper/demo/real trades, newest first (replays are simulations, not the bot's own mistakes)."""
+    return [r for r in ledger.recent(limit) if r["status"] == "closed" and r["mode"] != "replay"]
+
+
+def derive_cautions(now: float | None = None) -> list[dict]:
+    """Short-term cautions from recent losses: for each setup + direction whose latest trades lost, the bot needs more
+    confidence than it had on those trades, for CAUTION_HOURS after the last loss or until it wins there again."""
+    now = now or time.time()
+    rows = _live_closed()
+    probs = [r["prob"] for r in rows[:200] if r["prob"] is not None]
+    cap = _quantile(probs, CAUTION_CAP_PCT)
+    if cap is None:
+        return []
+    by_ctx: dict = defaultdict(list)
+    for r in rows:                                       # newest first
+        by_ctx[(r["side"], r.get("setup") or "")].append(r)
+    week = now - 7 * 86400
+    traded = [k for k, rs in by_ctx.items() if _ts(rs[0]["close_utc"]) >= week]
+    out = []
+    for (side, setup), rs in by_ctx.items():
+        streak = []
+        for r in rs:
+            if (r["pnl"] or 0) >= 0:
+                break
+            streak.append(r)
+        if not streak:
+            continue
+        last = _ts(streak[0]["close_utc"])
+        until = last + CAUTION_HOURS * 3600
+        seen = [r["prob"] for r in streak if r["prob"] is not None]
+        if until <= now or not seen:
+            continue
+        need = round(min(cap, max(seen) + CAUTION_STEP), 3)
+        if need <= max(seen):                            # the floor leaves no room above the losing trades: don't block
+            continue
+        out.append({"side": side, "setup": setup or None, "losses": len(streak), "min_prob": need,
+                    "until": round(until), "until_utc": datetime.fromtimestamp(until, timezone.utc).isoformat(timespec="minutes"),
+                    "why": f"{len(streak)} loss{'es' if len(streak) > 1 else ''} in a row on {side}s of "
+                           f"'{_setup_label(setup)}' (confidence {max(seen):.2f} at most)"})
+    out.sort(key=lambda c: (-c["losses"], -c["until"]))
+    return out[: max(1, len(traded) // 2)]              # never more than half of the setups it trades
+
+
+def _ts(iso: str | None) -> float:
+    try:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp() if iso else 0.0
+    except ValueError:
+        return 0.0
+
+
+def _lesson(t: dict, cautions: list[dict]) -> str:
+    how = {"sl": "hit its stop", "early": "was closed early at a loss", "kill": "was closed by the kill switch",
+           "stop_out": "was stopped out by the broker"}.get(t.get("exit_reason") or "",
+                                                            "was closed by you at a loss" if "manual" in (t.get("exit_reason") or "")
+                                                            else "closed at a loss")
+    if (t.get("exit_reason") == "sl") and (t.get("r_multiple") or 0) <= -0.9:
+        how = "went straight the wrong way and hit its stop"
+    same = [r for r in _live_closed(400) if r["side"] == t["side"] and (r.get("setup") or "") == (t.get("setup") or "")][:10]
+    lost = sum(1 for r in same if (r["pnl"] or 0) < 0)
+    hour = (t.get("open_utc") or "T00:00")[11:16]
+    conf = f", confidence {t['prob']:.2f}" if t.get("prob") is not None else ""
+    r_txt = f"{t['r_multiple']:+.2f}R, " if t.get("r_multiple") is not None else ""
+    text = (f"{t['side'].title()} on '{_setup_label(t.get('setup'))}' at {hour} UTC{conf} {how} ({r_txt}{t['pnl']:+.2f}). "
+            f"{lost} of the last {len(same)} {t['side']}s on this setup lost.")
+    c = next((c for c in cautions if c["side"] == t["side"] and (c["setup"] or "") == (t.get("setup") or "")), None)
+    if c:
+        text += f" It now needs confidence of at least {c['min_prob']:.2f} there until {c['until_utc'][5:16].replace('T', ' ')} UTC (or a win)."
+    return text
+
+
+def _write_rules_cautions(cautions: list[dict], lesson: str | None):
+    """Put fresh cautions and the latest lesson into the rules file straight away, without redoing the full analysis."""
+    rules = dict(load_rules()) if RULES_PATH.exists() else {"blocked_hours": [], "min_confidence": None,
+                                                              "disabled_side": None, "blocked_setups": [], "reasons": []}
+    rules["cautions"] = cautions
+    if lesson:
+        rules["latest_lesson"] = lesson
+        rules["latest_lesson_utc"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
+    rules["mistakes"] = len(load_mistakes())
+    RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = RULES_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(rules, indent=2))
+    tmp.replace(RULES_PATH)
+
+
+def on_mistake(trade_id: int) -> dict | None:
+    """A trade just closed at a loss: record it with a lesson, update the cautions the entry filter reads at once, and
+    rewrite the full rules and lessons skill (at most every RELEARN_EVERY_S seconds)."""
+    t = ledger.get(trade_id)
+    if not t or (t["pnl"] or 0) >= 0 or t["mode"] == "replay":
+        return None
+    cautions = derive_cautions()
+    lesson = _lesson(t, cautions)
+    m = {"id": t["id"], "mode": t["mode"], "symbol": t["symbol"], "side": t["side"], "setup": t.get("setup"),
+         "prob": t["prob"], "open_utc": t["open_utc"], "close_utc": t["close_utc"], "open_bar": t["open_bar"],
+         "exit_reason": t["exit_reason"], "pnl": t["pnl"], "r": t["r_multiple"], "lesson": lesson}
+    mistakes = [x for x in load_mistakes() if x.get("id") != t["id"]] + [m]
+    MISTAKES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = MISTAKES_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(mistakes[-MAX_MISTAKES:], indent=1))
+    tmp.replace(MISTAKES_PATH)
+    _write_rules_cautions(cautions, lesson)
+    if time.time() - _state["relearned"] >= RELEARN_EVERY_S:
+        _state["relearned"] = time.time()
+        learn()
+    return m
 
 
 def _table(groups: dict, label: str) -> str:
@@ -154,6 +310,17 @@ Why:
 ## By stage
 {_table(a['by_mode'], 'Mode')}
 
+## Learning from each mistake
+Every losing trade teaches it something straight away. It is recorded with a lesson (`data/mistakes.json`), a
+short-term caution forms for that setup + direction, and the next Quiz build turns its chart into a practice
+question (answer: stay out).
+
+Cautions now:
+{chr(10).join(f"- {_setup_label(c['setup'])}, {c['side']}s: needs confidence of at least {c['min_prob']:.2f} until {c['until_utc']} ({c['why']})" for c in rules.get("cautions", [])) or "- None."}
+
+Latest lessons (newest first):
+{chr(10).join(f"- {x['close_utc'][:16] if x.get('close_utc') else ''} {x['lesson']}" for x in reversed(load_mistakes()[-10:])) or "- No losing trades yet."}
+
 Earlier snapshots: `references/history.md`. Rules file the agent reads: `data/learned_rules.json`.
 """
     (SKILL_DIR / "SKILL.md").write_text(body, encoding="utf-8")
@@ -170,7 +337,10 @@ def learn(modes=("replay", "paper", "demo", "real")) -> dict:
     when = datetime.now(timezone.utc).isoformat(timespec="minutes")
     a = analyze(modes)
     rules = derive_rules(a)
-    rules.update(generated=when, trades_analyzed=a["trades"])
+    mistakes = load_mistakes()
+    rules.update(generated=when, trades_analyzed=a["trades"], cautions=derive_cautions(), mistakes=len(mistakes),
+                 latest_lesson=mistakes[-1]["lesson"] if mistakes else None,
+                 latest_lesson_utc=mistakes[-1].get("close_utc") if mistakes else None)
     RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
     RULES_PATH.write_text(json.dumps(rules, indent=2))
     write_skill(a, rules, when)
@@ -190,10 +360,18 @@ def load_rules() -> dict:
     return _cache["rules"]
 
 
-def block_reason(rules: dict, side: str, prob: float, utc_hour: int, setup: str | None = None) -> str | None:
-    """Why the learned rules skip this entry, or None to allow it."""
+def block_reason(rules: dict, side: str, prob: float, utc_hour: int, setup: str | None = None,
+                 cautions: bool = True) -> str | None:
+    """Why the learned rules skip this entry, or None to allow it. Cautions from recent losses apply only live
+    (replays pass cautions=False: their clock is history, not now)."""
     if not rules:
         return None
+    if cautions:
+        now = time.time()
+        for c in rules.get("cautions", []):
+            if c["side"] == side and (c["setup"] or None) == (setup or None) and c["until"] > now and prob < c["min_prob"]:
+                return (f"learned from a recent loss: {side}s on '{_setup_label(setup)}' need confidence "
+                        f"{c['min_prob']:.2f} until {c['until_utc'][5:16].replace('T', ' ')} UTC ({c['why']})")
     if utc_hour in rules.get("blocked_hours", []):
         return f"learned: {utc_hour:02d}:00 UTC has been losing"
     if rules.get("min_confidence") and prob < rules["min_confidence"]:

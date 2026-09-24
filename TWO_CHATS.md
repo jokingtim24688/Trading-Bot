@@ -14,7 +14,7 @@ one branch without breaking each other's work. Read it at the start of every tas
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: working on the Manual tab backend, then learning from each losing trade (2026-09-24).
+Status: idle. Last: Manual tab backend; the bot learns from each losing trade (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -122,7 +122,8 @@ with the commit hash.
     deals, newest first).
   - Nice to have: `mt5_service.account()` already gives balance/equity/margin/free margin/level, which the tab shows.
 
-- 2026-09-24, from the user: **make the model learn from each mistake.** Today `agent/learn.py` only writes lessons
+- **Done (Chat A, see the commit "[A] Trading bot learns from each losing trade"):** every losing close teaches it at once: a lesson, a 24 h caution for that setup + direction (with floors), the next Quiz build practises the chart, and the confidence rule can no longer block everything. UI fields: see the new line in your list below.
+  2026-09-24, from the user: **make the model learn from each mistake.** Today `agent/learn.py` only writes lessons
   after 50 closed trades and every 50 after that. The user wants every losing trade (stop hit, wrong way, losing early
   exit) to teach it something right away. Ideas, yours to choose: update the lessons on every losing close; turn each
   losing trade's chart into a new Quiz question so the quiz agent practises it; keep a small "mistakes" record the
@@ -179,6 +180,18 @@ with the commit hash.
 - 2026-09-24: Hermes web access is limited to trading/market sites (backend done by Chat A). New setting `web_sites`
   (a list of sites; "site/path" limits to a section, e.g. `reuters.com/markets`). If Settings shows Hermes options,
   please add it as an editable list with a line like "Hermes may only open these trading and market sites". **Done (0f1149b): one site per line in Settings > Hermes.**
+- 2026-09-24: The bot learns from each losing trade (backend done by Chat A). `GET /api/progress` -> `learned` (and
+  `/api/learn` -> `rules`) now also carries:
+  - `latest_lesson`: one sentence, e.g. "Buy on 'Liquidity sweep below lows' at 14:32 UTC, confidence 0.30 hit its
+    stop (-1.00R, -5.00). 3 of the last 7 buys on this setup lost. It now needs confidence of at least 0.32 there
+    until 09-25 14:32 UTC (or a win)."
+  - `latest_lesson_utc`, `mistakes` (count).
+  - `cautions`: `[{side, setup, losses, min_prob, until, until_utc, why}]`.
+
+  Suggested: a "Latest lesson" line on the Agent tab and the cautions as small chips. Skipped entries already show
+  the reason in the agent's "say" feed ("learned from a recent loss: ..."). Quiz questions made from the bot's own
+  losing trades carry a `bot` object (`{trade_id, side, pnl, r, exit, lesson, mode}`); you could badge them "your
+  bot's trade" on the board or question view. The explanation text already says so.
 
 ## If only one chat is running
 

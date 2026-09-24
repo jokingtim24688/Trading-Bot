@@ -504,6 +504,34 @@ Each chat writes only in its own section below, and adds new entries just above 
   - half-close, close losing, close profitable by owner, cancel all, history;
   - a bot trade closed in two halves was recorded as "manual (app)" with the P/L of both halves.
 
+### 2026-09-24: The trading bot learns from each losing trade
+- Request (via Chat B's handoff): every losing trade should teach it something straight away, with a floor so one
+  bad day can't switch the bot off.
+- `agent/ledger.py`: `close_trade` calls `learn.on_mistake` on every losing non-replay close (errors never block
+  recording the close); new `get()`.
+- `agent/learn.py`:
+  - `on_mistake` writes the trade plus a one-line lesson to `data/mistakes.json`.
+  - `derive_cautions` makes a setup + side whose latest trades lost need more confidence than those trades had
+    (+0.02). This lasts 24 h after the last loss or until a win there. It's capped at the 80th percentile of recent
+    entry confidence, and at most half of the setups traded can be under caution.
+  - Cautions and the latest lesson go into the rules file at once; the full `learn()` (rules + lessons skill) reruns
+    at most every 20 s.
+  - The skill has a new "Learning from each mistake" section.
+  - `block_reason` checks cautions; replay passes `cautions=False`.
+  - Over-blocking fix: `min_confidence` is capped at the median entry confidence and never set from the top bucket.
+    On 154 random, mostly losing trades it was 1.0 (block everything); now it's the median and half still pass.
+- `agent/quiz.py`: `_bot_mistakes` turns each losing trade's entry candle (from `open_bar`) into a practice-only quiz
+  question (answer: stay out; trap of its setup, or stay-out when the setup is unknown), with its own indicator inputs
+  and an explanation quoting the lesson. The next Build quiz includes them automatically.
+- Tested:
+  - a fresh loss created a lesson and a caution;
+  - lower confidence was blocked, higher allowed;
+  - a win cleared the caution;
+  - replay ignores cautions;
+  - the caps held;
+  - 12 mistakes became 12 practice questions (one outside the history skipped);
+  - training and the weak-spot report ran fine.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

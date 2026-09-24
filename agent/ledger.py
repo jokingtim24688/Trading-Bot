@@ -50,7 +50,7 @@ def open_trade(mode, symbol, side, lots, entry, sl, tp, prob=None, risk_money=No
 def close_trade(trade_id: int, exit_price: float, reason: str, pnl: float, close_bar: int | None = None,
                 close_utc: str | None = None):
     with _conn() as c:
-        t = c.execute("SELECT side, entry, sl0, stake FROM trades WHERE id = ?", (trade_id,)).fetchone()
+        t = c.execute("SELECT side, entry, sl0, stake, mode FROM trades WHERE id = ?", (trade_id,)).fetchone()
         # R from price distance vs the ORIGINAL stop (side-aware), so paper and live compare regardless of lot size
         risk_px = abs(t["entry"] - t["sl0"]) if t and t["sl0"] else 0
         r = None
@@ -61,6 +61,18 @@ def close_trade(trade_id: int, exit_price: float, reason: str, pnl: float, close
         c.execute("UPDATE trades SET status='closed', exit=?, exit_reason=?, pnl=?, r_multiple=?, close_utc=?, "
                   "close_bar=?, updated=?, score=? WHERE id=?",
                   (exit_price, reason, round(pnl, 2), r, close_utc or _now(), close_bar, time.time(), pts, trade_id))
+    if pnl < 0 and t and t["mode"] != "replay":          # a losing trade teaches the bot something right away
+        try:
+            from . import learn
+            learn.on_mistake(trade_id)
+        except Exception as e:                           # noqa: BLE001 - learning must never break recording a close
+            print(f"(learning from trade {trade_id} skipped: {e})", flush=True)
+
+
+def get(trade_id: int) -> dict | None:
+    with _conn() as c:
+        r = c.execute("SELECT * FROM trades WHERE id = ?", (trade_id,)).fetchone()
+    return dict(r) if r else None
 
 
 def set_close_hint(trade_id: int, reason: str):

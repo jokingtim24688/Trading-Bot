@@ -14,6 +14,7 @@
 Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. RTX 4060 8 GB: XGBoost CUDA training, optional small PyTorch nets (bf16), and a local Hermes 3 8B Q4 (~5 GB).
 - **progression.py**: stage ladder (paper → demo → real_1 (2 open) → real_2 (5) → real_3), gates, evaluate/promote/demote, data/progression.json.
 - **learn.py**: analyze ledger → learned_rules.json + `.claude/skills/m1-bot-lessons/`; `block_reason()` used by run.py.
+  Learns from each mistake: `ledger.close_trade` calls `learn.on_mistake` on every losing non-replay close -> `data/mistakes.json` (lesson per loss), `derive_cautions` (per setup + side: need more confidence than the losing trades, 24 h or until a win; capped at the 80th percentile of recent confidence; at most half the traded setups) written to the rules file at once, full `learn()` at most every 20 s; `min_confidence` capped at the median confidence (no more "block everything"); `block_reason(..., cautions=False)` in replay. `quiz._bot_mistakes` adds each loss's chart to the next quiz as a practice question (answer stay out, `bot` field).
 - **practice.py**: `Practice.decide()` top-10% of the last 1440 confidence readings (Paper/Replay).
 - **quiz.py**: quiz school. Question bank: `bank --watch` (app job, one creator always on, below-normal priority,
   child process per update, steps aside for builds via `build_request`) keeps `data/quiz_bank/` (bank.npz, meta.json,

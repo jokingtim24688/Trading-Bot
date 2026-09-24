@@ -147,6 +147,11 @@ def group_name(q: dict) -> str:
 
 
 def explain(q: dict) -> str:
+    if q.get("bot"):
+        b = q["bot"]
+        what = b.get("lesson") or "a {} here lost {:+.2f}.".format(b["side"], b["pnl"])
+        return (f"The bot's own trade: {what} The answer here is to stay out, so the quiz agent (the bot's second "
+                "opinion) learns to veto spots like this.")
     if q["setup"] == "wait":
         return WAIT_TEXT
     t = q.get("trade")
@@ -1051,29 +1056,44 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
     df_np = tuple(df[c].to_numpy() for c in ("open", "high", "low", "close"))
     ohlc = np.stack(df_np, axis=1).astype(np.float32)
     epoch = times_ns // 1_000_000_000
-    bars = np.full((n, BEFORE + AFTER, 4), np.nan, dtype=np.float32)
-    times = np.zeros((n, BEFORE + AFTER), dtype=np.int64)
+    mist = _bot_mistakes(df, symbol, point, meta["columns"])           # the bot's own losing trades: practice only
+    order = ([("bank", k) for k in range(n - n_exam)] + [("bot", j) for j in range(len(mist))]
+             + [("bank", k) for k in range(n - n_exam, n)])
+    total = len(order)
+    bars = np.full((total, BEFORE + AFTER, 4), np.nan, dtype=np.float32)
+    times = np.zeros((total, BEFORE + AFTER), dtype=np.int64)
+    X = np.zeros((total, len(meta["columns"])), np.float32)
     difficulty = np.where(bank["share"] >= 0.8, "easy", np.where(bank["share"] >= 0.5, "medium", "hard"))
     questions = []
-    for qid, (b, i) in enumerate(zip(keep, pos)):
-        lo, hi = int(i) - BEFORE + 1, min(len(df), int(i) + AFTER + 1)
+    for qid, (src, k) in enumerate(order):
+        if src == "bank":
+            b, i = keep[k], int(pos[k])
+            kind, trap = KINDS[int(bank["kind"][b])], bool(bank["trap"][b])
+            trade = None if kind == "wait" else {"minutes": int(bank["mins"][b]), "stop": round(float(bank["stop"][b]), 2),
+                                                 "target": round(float(bank["target"][b]), 2),
+                                                 "entry": round(float(bank["entry"][b]), 2)}
+            q = {"setup": kind, "answer": ACTIONS[int(bank["ans"][b])], "trap": trap, "trade": trade,
+                 "difficulty": str(difficulty[b]), "set": "exam" if k >= n - n_exam else "practice"}
+            X[qid] = bank["X"][b]
+        else:
+            mq = mist[k]
+            i = mq["pos"]
+            q = {"setup": mq["setup"], "answer": "wait", "trap": mq["setup"] != "wait", "trade": None,
+                 "difficulty": "hard", "set": "practice", "bot": mq["bot"]}
+            X[qid] = mq["X"]
+        lo, hi = i - BEFORE + 1, min(len(df), i + AFTER + 1)
         bars[qid, : hi - lo] = ohlc[lo:hi]
         times[qid, : hi - lo] = epoch[lo:hi]
-        kind, trap = KINDS[int(bank["kind"][b])], bool(bank["trap"][b])
-        trade = None if kind == "wait" else {"minutes": int(bank["mins"][b]), "stop": round(float(bank["stop"][b]), 2),
-                                             "target": round(float(bank["target"][b]), 2),
-                                             "entry": round(float(bank["entry"][b]), 2)}
-        questions.append({"id": qid + 1, "time": str(df.index[i])[:16], "setup": kind,
-                          "answer": ACTIONS[int(bank["ans"][b])], "trap": trap, "trade": trade,
-                          "difficulty": str(difficulty[b]), "set": "exam" if qid >= n - n_exam else "practice"})
+        questions.append({"id": qid + 1, "time": str(df.index[i])[:16], **q})
     DATA.mkdir(exist_ok=True)
-    np.save(QX, bank["X"][keep])
+    np.save(QX, X)
     np.save(QBARS, bars)
     np.save(QTIMES, times)
     np.save(QC, chart_features_batch(bars[:, :BEFORE]))    # the chart inputs, ready for training
     quiz = {"symbol": symbol, "built": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "features": meta["columns"], "norm": {"mean": meta["mean"], "std": meta["std"]}, "points": POINTS,
-            "mastery": MASTERY, "practice": n - n_exam, "exam": n_exam, "questions": questions}
+            "mastery": MASTERY, "practice": total - n_exam, "exam": n_exam, "bot_mistakes": len(mist),
+            "questions": questions}
     _write(QUIZ, quiz)
     by = pd.Series([q["answer"] for q in questions]).value_counts().to_dict()
     lv = pd.Series([q["difficulty"] for q in questions]).value_counts().to_dict()
@@ -1085,12 +1105,47 @@ def build(symbol: str = "XAUUSD", n_questions: int = 40, exam_share: float = 0.2
                       "background question creator adds new ones as new candles arrive.")
         print("  " + prog.short, flush=True)
     took = time.time() - t0
-    print(f"saved {n:,} questions ({n - n_exam:,} practice, {n_exam:,} exam; answers {by}; {traps:,} traps; "
+    if mist:
+        print(f"  + {len(mist):,} of the bot's own losing trades as practice questions (answer: stay out)", flush=True)
+    print(f"saved {total:,} questions ({total - n_exam:,} practice, {n_exam:,} exam; answers {by}; {traps:,} traps; "
           f"difficulty {lv}; {len({q['setup'] for q in questions} - {'wait'})} pro setup types) in {took:.0f}s "
           f"(bank {t_find - t0:.0f}s{' already up to date' if prog.cached else ''}, picking and saving "
           f"{took - (t_find - t0):.0f}s)", flush=True)
-    prog.set(f"done: {n:,} questions in {took:.0f}s", 1.0, done=True)
+    prog.set(f"done: {total:,} questions in {took:.0f}s", 1.0, done=True)
     return quiz
+
+
+def _bot_mistakes(df, symbol, point, columns) -> list[dict]:
+    """The bot's own losing trades (data/mistakes.json, written by agent/learn.py) as quiz questions: the chart at
+    the candle it entered on, answer "stay out". Only trades whose candles are in the history can be used."""
+    from .learn import load_mistakes
+    ms = [m for m in load_mistakes() if m.get("open_bar") and m.get("symbol") == symbol]
+    if not ms:
+        return []
+    secs = df.index.asi8 // 1_000_000_000
+    found = []
+    for m in ms:
+        t = int(m["open_bar"]) - 60                      # open_bar is when the entry candle closed
+        i = int(np.searchsorted(secs, t))
+        if i < len(secs) and secs[i] == t and i >= 3000:
+            found.append((i, m))
+    if not found:
+        return []
+    found = [f for f in found if f[0] >= found[-1][0] - 600_000]     # keep the feature window a sensible size
+    lo = max(0, min(f[0] for f in found) - WARMUP)
+    hi = max(f[0] for f in found) + 1
+    f = build_features(df.iloc[lo:hi], point)
+    F = f.reindex(columns=columns).to_numpy(np.float32)
+    out = []
+    for i, m in found:
+        row = F[i - lo]
+        if np.isnan(row).any():
+            continue
+        kind = m.get("setup") if m.get("setup") in PRO_SETUPS else "wait"
+        out.append({"pos": i, "setup": kind, "X": row,
+                    "bot": {"trade_id": m["id"], "side": m["side"], "pnl": m["pnl"], "r": m.get("r"),
+                            "exit": m.get("exit_reason"), "lesson": m.get("lesson"), "mode": m.get("mode")}})
+    return out
 
 
 def question_view(qid: int, quiz: dict | None = None) -> dict:

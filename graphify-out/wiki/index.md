@@ -56,6 +56,7 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: Hermes chat model -> `llama3.2:3b` on CPU only (`ollama_cpu_only`, `num_gpu` 0), no VRAM.
 - 2026-09-24: Quiz question bank (`data/quiz_bank/`, markdown per year): one always-on creator (`bank --watch`), 10 on Build, half-year slice cache, no maximum; learns from each miss + section swaps.
 - 2026-09-24: Hermes `web_fetch` limited to `web_sites` (trading/market sites, every redirect checked); new skill `quiz-setups` (20 pages) + Hermes tool `setup_guide`.
+- 2026-09-24: Manual tab backend (`app/manual.py`, `/api/manual/*`); the bot learns from each losing trade (lesson, 24 h caution with floors, quiz practice question; min_confidence capped at the median).
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)
