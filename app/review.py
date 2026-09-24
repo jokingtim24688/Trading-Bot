@@ -54,7 +54,11 @@ def _facts(start: datetime, end: datetime) -> dict:
     mistakes = [m for m in learn.load_mistakes()
                 if start.isoformat() <= (m.get("close_utc") or "") < end.isoformat()]
     rules = learn.load_rules() if hasattr(learn, "load_rules") else {}
-    return {"you": you, "bot": bot, "days": days, "mistakes": mistakes, "rules": rules or {}}
+    tags: dict[str, list] = {}
+    for t in you_rows:
+        for tag in t.get("tags") or []:
+            tags.setdefault(tag, []).append(t["profit"])
+    return {"you": you, "bot": bot, "days": days, "mistakes": mistakes, "rules": rules or {}, "tags": tags}
 
 
 def _hour_extremes(s: dict) -> tuple:
@@ -83,6 +87,14 @@ def rule_text(f: dict) -> tuple[list[str], list[str]]:
             good.append(f"{who}: best hour was {best['hour']:02d}:00 server time ({_money(best['net'])}).")
         if worst:
             fix.append(f"{who}: {worst['hour']:02d}:00 server time cost {_money(worst['net'])}; be pickier then.")
+    tagged = {k: v for k, v in f.get("tags", {}).items() if len(v) >= 2}
+    if tagged:                                       # your own notes: which kinds of trades worked
+        net = {k: sum(v) for k, v in tagged.items()}
+        best, worst = max(net, key=net.get), min(net, key=net.get)
+        if net[best] > 0:
+            good.append(f"Your \"{best}\" trades made {_money(net[best])} over {len(tagged[best])} trades.")
+        if net[worst] < 0 and worst != best:
+            fix.append(f"Your \"{worst}\" trades lost {_money(net[worst])} over {len(tagged[worst])} trades.")
     if f["days"]:
         bd = max(f["days"], key=f["days"].get)
         wd = min(f["days"], key=f["days"].get)

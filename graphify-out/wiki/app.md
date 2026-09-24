@@ -19,6 +19,15 @@
   also be/trail). `watch.add_event` -> `telegram.for_event` -> background queue (3 tries). Routes `GET /api/telegram/status`,
   `POST /api/telegram/detect` (chat id from the newest message to the bot, saves it, says hello), `POST /api/telegram/test`.
 - **Manual spread limit** (Chat A): setting `manual_max_spread` (points, default 80, 0 = off) refuses market orders when the spread is wider unless `ignore_spread: true`; quote adds `max_spread`, `spread_ok`.
+- **watchdog.py** (Chat A): 10 s thread. Restarts the agent after a crash (non-zero exit while `Job.wanted`; stop/kill
+  clear it; at most 3 an hour, then `agent_failed`), `agent_stuck` (no `agent_status.json` for 5 min while ticks are
+  fresh), `mt5_down` after 60 s / `mt5_up` (only once connected this session). Events carry `message`; Telegram category
+  "watchdog". `GET /api/watchdog`.
+- **backup.py** (Chat A): daily zip (`backup_daily`, `backup_dir` default data/backups/full, `backup_keep` 14) of
+  trades.db (sqlite backup API), settings, Hermes memory, rules/lessons/mistakes, progression, notes, stop rules,
+  reviews, sounds, settings backups, quiz report, models/*.json. `GET/POST /api/backup/data`. Restore = unzip over the folder.
+- **Trade notes** (Chat A, manual.py): `data/trade_notes.json`; `GET/POST /api/manual/notes`; orders take `note`/`tags`;
+  history rows carry `note`/`tags`; weekly review names your best/worst tag.
 - **stats.py** (Chat A): `/api/stats/compare?days=&mode=paper|live|all` -> `{you, bot}` (trades, win rate, net, avg
   win/loss, PF, expectancy, best/worst, avg hold, by_hour, by_weekday, curve; server time).
 - **review.py** (Chat A): weekly summary `/api/review/weekly` (GET, POST = rebuild in the background, `working` flag),

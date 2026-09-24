@@ -53,11 +53,15 @@ DEFAULTS = {
     "news_impact": ["High"],               # High / Medium / Low
     # Manual tab: refuse market orders when the spread is wider than this many points (0 = no limit)
     "manual_max_spread": 80,
+    # Daily backup of the app's data (app/backup.py)
+    "backup_daily": True,
+    "backup_dir": "",                      # "" = data/backups/full; a OneDrive/USB folder survives a dead disk
+    "backup_keep": 14,
     # Telegram alerts on your phone (your own bot from @BotFather; see app/telegram.py)
     "telegram_enabled": False,
     "telegram_token": "",
     "telegram_chat_id": "",                # filled in by "Find my chat" after you message your bot
-    "telegram_events": ["tp", "sl", "open", "close"],   # also possible: "be", "trail"
+    "telegram_events": ["tp", "sl", "open", "close", "watchdog"],   # also possible: "be", "trail"
     # Owned by the UI (Keybinds and Sounds pages); the server only stores them so they survive and ride in backups
     "keybinds": {},                        # {"bindings": {"man.buy": "B", ...}, "groups": {"app": true, ...}}
     "sounds": {},                          # {"master": {...}, "events": {"profit": {...}, ...}}
@@ -83,7 +87,7 @@ DEFAULTS = {
     # MCP bridge for Hermes Agent
     "mcp_http_port": 8765,
     "mcp_autostart": True,
-    "settings_version": 7,
+    "settings_version": 8,
 }
 
 
@@ -116,6 +120,11 @@ def load() -> dict:
             if s.get("settings_version", 1) < 7:          # v7: the app shows its own TP/SL pop-ups; Windows' are extra
                 s["desktop_alerts"] = False
                 s["settings_version"] = 7
+                PATH.write_text(json.dumps(s, indent=2))
+            if s.get("settings_version", 1) < 8:          # v8: watchdog alerts go to Telegram too
+                if "watchdog" not in (s.get("telegram_events") or []):
+                    s["telegram_events"] = list(s.get("telegram_events") or []) + ["watchdog"]
+                s["settings_version"] = 8
                 PATH.write_text(json.dumps(s, indent=2))
         except json.JSONDecodeError:
             pass

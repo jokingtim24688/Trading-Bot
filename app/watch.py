@@ -71,7 +71,7 @@ def add_event(kind: str, **fields) -> dict:
     global _next_id
     with _state_lock:
         ev = {"id": _next_id, "time": int(time.time()), "kind": kind, "ticket": None, "symbol": None, "side": None,
-              "volume": None, "price": None, "profit": None, "owner": None, **fields}
+              "volume": None, "price": None, "profit": None, "owner": None, "message": None, **fields}
         _next_id += 1
         _events.append(ev)
     if kind in ("tp", "sl"):

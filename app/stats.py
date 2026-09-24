@@ -62,8 +62,8 @@ def you_trades(start: datetime, end: datetime) -> list[dict]:
         rows = manual.history_range(start, end)
     except Exception:                                  # noqa: BLE001 - MT5 offline: no manual trades to show
         return []
-    return [{"time": r["time"], "open_time": r["open_time"], "profit": r["profit"], "symbol": r["symbol"]}
-            for r in rows if r["owner"] == "you"]
+    return [{"time": r["time"], "open_time": r["open_time"], "profit": r["profit"], "symbol": r["symbol"],
+             "tags": r.get("tags") or []} for r in rows if r["owner"] == "you"]
 
 
 def bot_modes(mode: str | None) -> tuple[str, ...]:

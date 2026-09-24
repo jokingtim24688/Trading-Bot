@@ -16,7 +16,8 @@ import httpx
 from .settings import load, save
 
 API = "https://api.telegram.org"
-EVENTS = ("open", "tp", "sl", "close", "be", "trail")
+EVENTS = ("open", "tp", "sl", "close", "be", "trail", "watchdog")
+WATCHDOG = ("agent_restart", "agent_failed", "agent_stuck", "mt5_down", "mt5_up")   # all under "watchdog"
 _q: "queue.Queue[str]" = queue.Queue(maxsize=200)
 _thread: threading.Thread | None = None
 _last = {"error": "", "sent": 0}
@@ -81,6 +82,9 @@ def status() -> dict:
 
 # ---------- event alerts ----------
 def _text(ev: dict) -> str:
+    if ev["kind"] in WATCHDOG:
+        icon = {"agent_restart": "🔁", "agent_failed": "⛔", "agent_stuck": "⏳", "mt5_down": "🔌", "mt5_up": "✅"}[ev["kind"]]
+        return f"{icon} {ev.get('message') or ev['kind']}"
     who = {"you": "You", "bot": "Bot", "hermes": "Hermes"}.get(ev.get("owner") or "", "")
     side = (ev.get("side") or "").upper()
     sym, vol = ev.get("symbol") or "", f"{ev['volume']:g} lot" if ev.get("volume") else ""
@@ -96,7 +100,8 @@ def _text(ev: dict) -> str:
 def for_event(ev: dict):
     """Queue an alert for an event from the watcher, if Telegram is on and this kind is wanted."""
     s = load()
-    if not s.get("telegram_enabled") or ev.get("kind") not in (s.get("telegram_events") or []):
+    kind = "watchdog" if ev.get("kind") in WATCHDOG else ev.get("kind")
+    if not s.get("telegram_enabled") or kind not in (s.get("telegram_events") or []):
         return
     try:
         _q.put_nowait(_text(ev))

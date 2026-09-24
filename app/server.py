@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from agent import learn, ledger, progression, score as scoring
 from agent.pro import SETUP_NAMES
 
-from . import brain, manual, memory, mt5_service, review, settings, sounds, stats, telegram, watch
+from . import backup, brain, manual, memory, mt5_service, review, settings, sounds, stats, telegram, watch, watchdog
 from .jobs import LOGS, jobs
 from .settings import ROOT
 
@@ -153,6 +153,18 @@ def telegram_test():
     return telegram.test()
 
 
+# ---------- full data backup ----------
+@app.get("/api/backup/data")
+def backup_status():
+    return backup.status()
+
+
+@app.post("/api/backup/data")
+def backup_make():
+    """Zip the trade ledger, memory, lessons, notes, reviews, sounds and models now."""
+    return backup.make()
+
+
 # ---------- first-run checklist ----------
 @app.get("/api/setup/checklist")
 def setup_checklist():
@@ -239,7 +251,8 @@ def manual_quotes(symbols: str):
 @app.post("/api/manual/order")
 def manual_order(body: dict = Body(...)):
     keys = ("symbol", "side", "type", "volume", "price", "sl", "tp", "deviation", "expiration", "confirm_real",
-            "sl_points", "tp_points", "be_points", "trail_points", "ignore_spread")
+            "sl_points", "tp_points", "be_points", "trail_points", "ignore_spread",
+            "note", "tags")
     return manual.order(**{k: body[k] for k in keys if k in body and body[k] is not None})
 
 
@@ -269,6 +282,19 @@ def manual_history(days: float = 1):
     return manual.history(min(max(days, 0.01), 90))
 
 
+@app.get("/api/manual/notes")
+def manual_notes():
+    """Your notes on trades: {"<ticket>": {note, tags, time}}."""
+    return manual.notes()
+
+
+@app.post("/api/manual/notes")
+def manual_note_set(body: dict = Body(...)):
+    if "ticket" not in body:
+        raise HTTPException(400, "ticket is required")
+    return manual.set_note(body["ticket"], body.get("note"), body.get("tags"))
+
+
 @app.get("/api/manual/auto")
 def manual_auto_get():
     """Trailing stop / auto break-even: the defaults and the rule on each open position or pending order."""
@@ -283,6 +309,11 @@ def manual_auto_set(body: dict = Body(...)):
 
 
 # ---------- alerts, stats, weekly review ----------
+@app.get("/api/watchdog")
+def watchdog_status():
+    return watchdog.status()
+
+
 @app.get("/api/events")
 def events(since: int | None = None):
     """Trades opened, TP/SL hits, closes and automatic stop moves, for every owner. Poll with the last id you saw."""
@@ -876,6 +907,8 @@ def _watchers():
     """The 1 s watcher (trailing stop, break-even, alerts) and the weekly review, both inside the app."""
     watch.start()
     review.start()
+    backup.start()
+    watchdog.start()
 
 
 @app.on_event("startup")

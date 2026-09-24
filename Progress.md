@@ -652,6 +652,25 @@ Each chat writes only in its own section below, and adds new entries just above 
   - quiz stats on 120 trades (verdict right; "not enough" for an empty mode);
   - `agent.run` / `agent.replay` start fine with the new flags.
 
+### 2026-09-24: recommendations, part 2: watchdog, daily data backup, trade notes
+- **Watchdog** (`app/watchdog.py`, every 10 s):
+  - if the bot's process dies with an error while you had it running, it's started again (3 times an hour at most,
+    then it stays stopped and tells you);
+  - "stuck" alert when it hasn't reported for 5 min while the market ticks;
+  - MT5 closed / disconnected for a minute, and back again.
+  All go to the app's pop-ups (events feed) and Telegram (category "watchdog", on by default; settings v8 adds it).
+  Stopping it yourself or the kill switch never triggers a restart.
+- **Daily backup of all data** (`app/backup.py`): one zip a day with a consistent copy of trades.db, settings, Hermes
+  memory, rules/lessons/mistakes, notes, reviews, sounds, models. Settings `backup_dir` (point it at OneDrive/USB),
+  `backup_keep` 14, `backup_daily`. `POST /api/backup/data` makes one now.
+- **Trade notes:** write why you took a trade and tag it (`/api/manual/notes`, or `note`/`tags` on the order); history
+  shows them and the weekly review says which tags made or lost money.
+- Tested:
+  - watchdog: a crashing bot was restarted 3 times, then gave up with the last log line; a clean exit and your own
+    stop didn't restart it; stuck was detected; MT5 down after 60 s, then up;
+  - backup: zip contents, keep-N pruning (same-second names and ordering fixed);
+  - notes: saved on the order, edited, shown in history, removed, used by the review.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

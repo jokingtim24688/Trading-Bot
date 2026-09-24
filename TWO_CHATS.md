@@ -246,6 +246,18 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24, from the user (recommendations, part 2):
+  - **Watchdog events:** the `/api/events` feed has new kinds `agent_restart`, `agent_failed`, `agent_stuck`,
+    `mt5_down`, `mt5_up`, and every event now has a `message` field (a ready sentence for these kinds, null for
+    trade events). Please show them as pop-ups (warning style for failed / stuck / down). `GET /api/watchdog` ->
+    `{restarts_last_hour, gave_up, stuck, mt5_down, error}`. Telegram events add `watchdog` (a checkbox in your
+    Telegram section).
+  - **Trade notes:** `GET /api/manual/notes` -> `{"<ticket>": {note, tags, time}}`; `POST /api/manual/notes {ticket,
+    note, tags}` (empty note and no tags removes it). `POST /api/manual/order` accepts `note` and `tags` (so the
+    ticket could have an optional "Why?" field), and `/api/manual/history` rows carry `note` and `tags`.
+  - **Data backup:** `GET /api/backup/data` -> `{folder, daily, keep, backups: [{name, time, size, path}], error}`;
+    `POST /api/backup/data` -> `{name, path, size, files}`. Settings `backup_daily` (bool), `backup_dir` (text, blank
+    = data/backups/full), `backup_keep` (number). Next to the settings backup would fit.
 - 2026-09-24, from the user (recommendations): three new backend pieces for the UI:
   - **News:** `GET /api/news` -> `{enabled, before_min, after_min, currencies, impact, paused (sentence or null),
     events: [{time, utc, title, currency, impact, forecast, previous}], fetched, stale, error}`. Suggested: a small

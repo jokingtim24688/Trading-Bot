@@ -5,6 +5,8 @@ Quotes, one-click market orders, pending orders (buy/sell limit and stop), SL/TP
 deals. Orders placed here use magic 0, so they show as "you" and the bot never touches or counts them. A real-money
 account is refused unless the request carries confirm_real (the tab sends it only after you confirm).
 """
+import json
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -15,6 +17,7 @@ from .settings import load as load_settings
 MANUAL_MAGIC = 0
 COMMENT = "manual (app)"
 OWNERS = {"bot": ms.BOT_MAGIC, "hermes": ms.HERMES_MAGIC}
+_notes_lock = threading.Lock()
 
 
 def _owner(magic: int) -> str:
@@ -133,7 +136,8 @@ def quotes(symbols: list[str]) -> list[dict]:
 def order(symbol: str, side: str, type: str = "market", volume: float = 0.0, price: float | None = None,
           sl: float | None = None, tp: float | None = None, deviation: int = 20, expiration: str = "gtc",
           confirm_real: bool = False, sl_points: float | None = None, tp_points: float | None = None,
-          be_points: float | None = None, trail_points: float | None = None, ignore_spread: bool = False) -> dict:
+          be_points: float | None = None, trail_points: float | None = None, ignore_spread: bool = False,
+          note: str | None = None, tags: list | None = None) -> dict:
     """Place a market or pending order. With sl_points / tp_points (the tab's 80 / 160), SL and TP are that many
     points from the real fill price of a market order (set right after the fill) or from a pending order's price, so
     slippage can't shift them; the sl / tp prices are then only a first guess. Without points, sl / tp are used as
@@ -202,6 +206,8 @@ def order(symbol: str, side: str, type: str = "market", volume: float = 0.0, pri
             out.update(_anchor_to_fill(res, symbol, buy, anchor, i))
     if out["ok"]:
         watch.on_new_order(out["ticket"], be_points, trail_points)
+        if note or tags:
+            set_note(out["ticket"], note, tags)
         out["auto"] = watch.rules_state()["tickets"].get(str(out["ticket"]))
     return out
 
@@ -351,6 +357,43 @@ def cancel(tickets: list[int] | None = None, all: bool = False) -> dict:
     return {"cancelled": cancelled, "failed": failed}
 
 
+# ---------- trade notes: why you took a trade ----------
+def _notes_path():
+    from .settings import DATA
+    return DATA / "trade_notes.json"
+
+
+def _notes() -> dict:
+    try:
+        return json.loads(_notes_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def notes() -> dict:
+    """All notes: {"<ticket>": {note, tags, time}}."""
+    return _notes()
+
+
+def set_note(ticket: int, note: str | None = None, tags: list | None = None) -> dict:
+    """Write why you took a trade (and tags like "breakout", "revenge", "news"). Empty note and no tags removes it."""
+    ticket = int(ticket)
+    note = str(note or "").strip()[:1000]
+    tags = sorted({str(t).strip().lower()[:30] for t in (tags or []) if str(t).strip()})[:10]
+    with _notes_lock:
+        data = _notes()
+        if note or tags:
+            data[str(ticket)] = {"note": note, "tags": tags, "time": int(time.time())}
+        else:
+            data.pop(str(ticket), None)
+        p = _notes_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        tmp.replace(p)
+    return {"ticket": ticket, "note": note, "tags": tags}
+
+
 # ---------- history ----------
 def _closed_levels(m, position_id: int) -> tuple:
     """SL/TP of a closed position: the last ones the watcher saw, else the ones it was opened with, else (0, 0)."""
@@ -378,7 +421,7 @@ def history_range(start: datetime, end: datetime) -> list[dict]:
         deals = m.history_deals_get(start, end) or []
         outs = [d for d in deals if d.entry in (m.DEAL_ENTRY_OUT, m.DEAL_ENTRY_OUT_BY)]
         reasons = {m.DEAL_REASON_TP: "tp", m.DEAL_REASON_SL: "sl", getattr(m, "DEAL_REASON_SO", -1): "so"}
-        rows = []
+        rows, tn = [], _notes()
         for d in outs:
             ins = [x for x in (m.history_deals_get(position=d.position_id) or []) if x.entry == m.DEAL_ENTRY_IN]
             first = ins[0] if ins else None
@@ -394,6 +437,8 @@ def history_range(start: datetime, end: datetime) -> list[dict]:
                          "profit": round(d.profit + d.commission + d.swap + getattr(d, "fee", 0.0), 2),
                          "owner": _owner(first.magic if first else d.magic),
                          "open_time": int(first.time) if first else None, "sl": sl, "tp": tp, "reason": reason,
-                         "duration_s": int(d.time - first.time) if first else None})
+                         "duration_s": int(d.time - first.time) if first else None,
+                         "note": tn.get(str(d.position_id), {}).get("note", ""),
+                         "tags": tn.get(str(d.position_id), {}).get("tags", [])})
     rows.sort(key=lambda r: r["time"], reverse=True)
     return rows

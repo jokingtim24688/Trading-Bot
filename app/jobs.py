@@ -22,6 +22,7 @@ class Job:
         self.started = None
         self.args: list[str] = []
         self.log_path = LOGS / f"{name}.log"
+        self.wanted = False            # you started it and haven't stopped it: the watchdog restarts it after a crash
 
     @property
     def running(self) -> bool:
@@ -38,8 +39,10 @@ class Job:
         self.proc = subprocess.Popen(args, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
                                      creationflags=FLAGS, env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
         self.started = time.time()
+        self.wanted = True
 
     def stop(self, timeout: float = 5):
+        self.wanted = False
         if not self.running:
             return
         self.proc.terminate()
