@@ -37,8 +37,9 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: idle. Last (2026-09-24): Manual tab round 2 (chart with SELL/BUY under it, TP 160 / SL 80 points, open-trades
-strip with Close all / profitable / negative), Latest lesson + caution chips.
+Status: building the UI for the user's 11 new features (real-account guard, connection status, drag SL/TP, shortcuts,
+trailing/BE, alerts, you vs bot, trade replay, weekly summary, settings backup, first-run checklist). Backend spec in
+Chat A's list. Touching `app/static/*` only.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -103,6 +104,55 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
+- 2026-09-24, from the user: **backend for 11 new features** (Chat B is building all the UI at the same time; every
+  panel shows "waiting for its backend" until your route answers, so build in any order and push each piece as it's
+  done). Numbers match the user's list. Items 1, 4 and 5 need nothing from you.
+  - **1. Real-account guard** (UI only): keep refusing real-account orders without `confirm_real`, as now.
+  - **3. Connection status:** `GET /api/manual/quote` adds `connected` (terminal connected to the broker),
+    `tick_age` (seconds since the symbol's last tick, worked out on the server so the broker's time offset can't skew
+    it), `market_open` (bool, from the symbol's trade sessions or "no tick for 120 s on a weekend"). The UI greys out
+    Buy/Sell when `!connected` or `tick_age > 10`.
+  - **4. Drag SL/TP on the chart** (UI only): uses `POST /api/manual/modify`.
+  - **5. Keyboard shortcuts** (UI only).
+  - **6. Trailing stop + auto break-even** (must run in the app's backend, not the page, so it works with the tab
+    closed): a 1 s loop over positions with a rule.
+    - Settings: `manual_be_points` (0 = off; e.g. 80: once a trade is 80 points up, move SL to entry + 2 points),
+      `manual_trail_points` (0 = off; SL follows price at this distance, only ever tightening). Applied to new manual
+      orders (magic 0) by default.
+    - `POST /api/manual/order` accepts optional `be_points` / `trail_points` (override the defaults for that order).
+    - `POST /api/manual/auto {ticket, be_points?, trail_points?}` sets/clears (0) the rule for one open position
+      (any owner, but warn in `comment` if it's the bot's); `GET /api/manual/auto` -> `{defaults: {be_points,
+      trail_points}, tickets: {"<ticket>": {be_points, trail_points, be_done: bool, sl}}}`. Forget closed tickets.
+  - **7. Alerts when TP/SL is hit:** `GET /api/events?since=<id>` -> `{last_id, events: [{id, time, kind:
+    "tp"|"sl"|"close"|"open"|"be"|"trail", ticket, symbol, side, volume, price, profit, owner}]}` for every owner
+    (you, bot, hermes), from MT5 deal `reason` (DEAL_REASON_TP / _SL / others = close) plus your own "be"/"trail"
+    moves from item 6. `since` omitted = just return `last_id` (so the first poll doesn't replay old events). Keep the
+    last ~500 in memory. The UI polls it every 3 s on every tab and plays a sound + toast.
+  - **8. You vs the bot:** `GET /api/stats/compare?days=30` (0 = all) -> `{you: S, bot: S}` where S = `{trades, wins,
+    losses, win_rate, net, avg_win, avg_loss, profit_factor, expectancy, best_trade, worst_trade, avg_hold_min,
+    by_hour: [{hour 0-23 server time, trades, net}], by_weekday: [{day 0-6, trades, net}], curve: [{time, cum}]}`.
+    "you" = closed manual deals (magic 0), "bot" = ledger trades in the current mode (accept `mode=paper|live|all`).
+  - **9. Trade replay from History:** `GET /api/manual/history` rows add `open_time`, `sl`, `tp`, `reason`
+    ("tp"|"sl"|"manual"|"so"), `duration_s`; allow `days` up to 90. The bot's ledger rows already have entry/exit
+    times; please make sure `/api/bot/trades` rows carry `entry_time`, `exit_time`, `entry`, `exit`, `sl`, `tp` under
+    those names (tell me if they differ). The chart then jumps to the trade with `/api/bars?before=`.
+  - **10. Weekly summary from Hermes:** `GET /api/review/weekly?week=2026-W39` (omitted = last full week) ->
+    `{week, from, to, generated_utc, source: "hermes"|"rules", went_well: [..], fix: [..], numbers: {you: S-lite,
+    bot: S-lite}}` (3–5 short sentences per list; S-lite = trades, win_rate, net, profit_factor). Built from both
+    item-8 stats, the bot's lessons/mistakes and the calendar. `POST /api/review/weekly {week}` makes it again (Hermes
+    if it's up, rule-based text otherwise; fine as a job). Store in `data/reviews/2026-W39.json`, make one
+    automatically once a week. `GET /api/review/weeks` -> list of stored weeks, newest first.
+  - **12. Settings backup:** `POST /api/settings/backup` -> `{name, path}` (writes
+    `data/backups/settings-YYYYMMDD-HHMM.json`); `GET /api/settings/backups` -> `[{name, time, size}]`, newest first;
+    `POST /api/settings/restore {name}` or `{settings: {...}}` (from a file the user picked) -> `{ok, changed: [keys],
+    ignored: [unknown keys], backup: name}` (always back up the current settings first; validate like
+    `POST /api/settings`). The window can't download files, so the backend writes them.
+  - **13. First-run checklist:** `GET /api/setup/checklist` -> `{done: n, total: n, items: [{id, label, ok, detail,
+    action}]}` with ids `mt5` (terminal connected), `account` (logged in; detail "demo"/"real"), `data` (M1 parquet
+    for the symbol), `history` (extra years downloaded, optional), `model` (trained model file), `hermes` (local
+    `ready`), `mcp` (bridge running), `quiz` (bank has questions, optional). `action` = the existing route that fixes
+    it (e.g. "/api/fetch", "/api/train", "/api/assistant/setup", "/api/mcp/start") or null. Add `optional: true` where
+    it applies.
 - **Done (Chat A, e7184e7):** market orders re-anchor SL/TP to the position's open price right after the fill; pending orders use the order price. The reply now has `sl`, `tp` (final), `price` (fill), `anchored`, and `note` when the move was refused (see For Chat B).
   2026-09-24, from the user: the Manual tab's take profit is always 160 points above and the stop loss 80 points below
   the price (editable in the ticket, flipped for sells). The UI sends `sl`/`tp` prices worked out from the quote at
