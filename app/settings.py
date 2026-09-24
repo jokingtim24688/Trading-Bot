@@ -1,11 +1,13 @@
 """App settings, stored on disk in data/settings.json (nothing important lives only in RAM)."""
 import json
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 DATA.mkdir(exist_ok=True)
 PATH = DATA / "settings.json"
+BACKUPS = DATA / "backups"
 
 DEFAULTS = {
     "symbol": "XAUUSD",
@@ -39,6 +41,9 @@ DEFAULTS = {
     "days_history": 365,
     "alert_sound": True,                   # beep when the bot opens or closes a trade
     "point": 0.01,
+    # Manual tab: automatic stop moves for your own trades (points; 0 = off). Applied to new manual orders.
+    "manual_be_points": 0,                 # once a trade is this many points up, move its stop to entry + 2 points
+    "manual_trail_points": 0,              # the stop follows the price at this distance, only ever tightening
     # Assistant
     "assistant_backend": "auto",           # auto | hermes_agent | local
     "hermes_url": "http://127.0.0.1:8642",
@@ -98,3 +103,60 @@ def save(updates: dict) -> dict:
     s.update({k: v for k, v in updates.items() if k in DEFAULTS})
     PATH.write_text(json.dumps(s, indent=2))
     return s
+
+
+def check(updates: dict) -> tuple[dict, list[str]]:
+    """Keep only known settings whose type matches the default (ints and floats mix). Returns (good, ignored keys)."""
+    good, ignored = {}, []
+    for k, v in updates.items():
+        d = DEFAULTS.get(k)
+        if k == "settings_version":                    # the file's own version: not a setting to restore
+            continue
+        if k not in DEFAULTS:
+            ignored.append(k)
+        elif isinstance(d, bool) != isinstance(v, bool) or (
+                not isinstance(d, bool) and isinstance(d, (int, float)) and not isinstance(v, (int, float))) or (
+                isinstance(d, (str, list)) and not isinstance(v, type(d))):
+            ignored.append(k)
+        else:
+            good[k] = v
+    return good, ignored
+
+
+def backup() -> dict:
+    """Copy the current settings to data/backups/settings-YYYYMMDD-HHMM.json (a -2, -3... suffix if taken)."""
+    BACKUPS.mkdir(parents=True, exist_ok=True)
+    stem = f"settings-{datetime.now():%Y%m%d-%H%M}"
+    name, n = f"{stem}.json", 2
+    while (BACKUPS / name).exists():
+        name, n = f"{stem}-{n}.json", n + 1
+    (BACKUPS / name).write_text(json.dumps(load(), indent=2))
+    return {"name": name, "path": str(BACKUPS / name)}
+
+
+def backups() -> list[dict]:
+    if not BACKUPS.exists():
+        return []
+    rows = [{"name": p.name, "time": int(p.stat().st_mtime), "size": p.stat().st_size}
+            for p in BACKUPS.glob("settings-*.json")]
+    return sorted(rows, key=lambda r: (r["time"], r["name"]), reverse=True)
+
+
+def restore(name: str | None = None, values: dict | None = None) -> dict:
+    """Restore a backup by name, or settings from a file the user picked. The current settings are backed up first."""
+    if name:
+        p = BACKUPS / Path(name).name                      # a bare file name only: no paths outside backups/
+        if not p.exists():
+            raise ValueError(f"No backup called {name}.")
+        try:
+            values = json.loads(p.read_text())
+        except ValueError:
+            raise ValueError(f"{name} isn't a valid settings file.")
+    if not isinstance(values, dict):
+        raise ValueError("Send a backup name or a settings object.")
+    before = load()
+    saved = backup()["name"]
+    good, ignored = check(values)
+    after = save(good)
+    return {"ok": True, "changed": sorted(k for k in good if before.get(k) != after.get(k)), "ignored": sorted(ignored),
+            "backup": saved}

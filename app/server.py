@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from agent import learn, ledger, progression, score as scoring
 from agent.pro import SETUP_NAMES
 
-from . import brain, manual, memory, mt5_service, settings
+from . import brain, manual, memory, mt5_service, review, settings, stats, watch
 from .jobs import LOGS, jobs
 from .settings import ROOT
 
@@ -77,6 +77,66 @@ def save_settings(body: dict = Body(...)):
     return settings.save(body)
 
 
+@app.post("/api/settings/backup")
+def settings_backup():
+    """Save a copy of the settings to data/backups/ (the window can't download files, so the app writes them)."""
+    return settings.backup()
+
+
+@app.get("/api/settings/backups")
+def settings_backups():
+    return settings.backups()
+
+
+@app.post("/api/settings/restore")
+def settings_restore(body: dict = Body(...)):
+    """{name} restores a backup; {settings: {...}} restores from a file you picked. Backs up the current ones first."""
+    return settings.restore(body.get("name"), body.get("settings"))
+
+
+# ---------- first-run checklist ----------
+@app.get("/api/setup/checklist")
+def setup_checklist():
+    s = settings.load()
+    sym = s["symbol"]
+    items = []
+
+    def add(id_, label, ok, detail="", action=None, optional=False):
+        items.append({"id": id_, "label": label, "ok": bool(ok), "detail": detail, "action": None if ok else action,
+                      **({"optional": True} if optional else {})})
+
+    try:
+        acct = mt5_service.account()
+        add("mt5", "MetaTrader 5 connected", acct["connected"],
+            f"{acct['server']}, ping {acct['ping_ms']} ms" if acct["connected"] else "terminal open but not connected to the broker")
+        add("account", "Logged in to an account", bool(acct["login"]), "demo" if acct["demo"] else "real")
+    except Exception as e:                          # noqa: BLE001 - MT5 missing or closed
+        add("mt5", "MetaTrader 5 connected", False, str(e))
+        add("account", "Logged in to an account", False, "open MetaTrader 5 and log in")
+    data = ROOT / "data" / f"{sym}_M1.parquet"
+    add("data", f"{sym} M1 candles downloaded", data.exists(),
+        time.strftime("%Y-%m-%d", time.localtime(data.stat().st_mtime)) if data.exists() else "", "/api/fetch")
+    hist = ROOT / "data" / f"{sym}_M1_history.parquet"
+    add("history", "Extra years of history", hist.exists(), "" if hist.exists() else "optional, gold only",
+        "/api/history/download", optional=True)
+    add("model", "Model trained", mt5_service.model_exists(sym), "", "/api/train")
+    try:
+        st = brain.status()
+        ready = st["hermes_agent"] if s["assistant_backend"] == "hermes_agent" else st.get("local") == "ready"
+        add("hermes", "Hermes ready", ready, st.get("next_step") or st.get("local") or "", "/api/assistant/setup")
+    except Exception as e:                          # noqa: BLE001
+        add("hermes", "Hermes ready", False, str(e), "/api/assistant/setup")
+    add("mcp", "MCP bridge running", jobs.jobs["mcp"].running, f"port {s['mcp_http_port']}", "/api/mcp/start")
+    try:
+        from agent import quiz as q
+        good = int(q._load_json(q.BANK_META, {}).get("good") or 0)
+    except Exception:                               # noqa: BLE001
+        good = 0
+    add("quiz", "Quiz question bank", good > 0, f"{good:,} questions" if good else "being made in the background",
+        None, optional=True)
+    return {"done": sum(i["ok"] for i in items), "total": len(items), "items": items}
+
+
 # ---------- MT5 ----------
 @app.get("/api/account")
 def account():
@@ -120,7 +180,7 @@ def manual_quotes(symbols: str):
 @app.post("/api/manual/order")
 def manual_order(body: dict = Body(...)):
     keys = ("symbol", "side", "type", "volume", "price", "sl", "tp", "deviation", "expiration", "confirm_real",
-            "sl_points", "tp_points")
+            "sl_points", "tp_points", "be_points", "trail_points")
     return manual.order(**{k: body[k] for k in keys if k in body and body[k] is not None})
 
 
@@ -148,6 +208,48 @@ def manual_cancel(body: dict = Body(default={})):
 @app.get("/api/manual/history")
 def manual_history(days: float = 1):
     return manual.history(min(max(days, 0.01), 90))
+
+
+@app.get("/api/manual/auto")
+def manual_auto_get():
+    """Trailing stop / auto break-even: the defaults and the rule on each open position or pending order."""
+    return watch.rules_state()
+
+
+@app.post("/api/manual/auto")
+def manual_auto_set(body: dict = Body(...)):
+    if "ticket" not in body:
+        raise HTTPException(400, "ticket is required")
+    return watch.set_rule(body["ticket"], body.get("be_points"), body.get("trail_points"))
+
+
+# ---------- alerts, stats, weekly review ----------
+@app.get("/api/events")
+def events(since: int | None = None):
+    """Trades opened, TP/SL hits, closes and automatic stop moves, for every owner. Poll with the last id you saw."""
+    return watch.events(since)
+
+
+@app.get("/api/stats/compare")
+def stats_compare(days: float = 30, mode: str | None = None):
+    if mode not in (None, "", "paper", "live", "all", "demo", "real", "replay"):
+        raise HTTPException(400, "mode must be paper, live or all")
+    return stats.compare(max(days, 0), mode or None)
+
+
+@app.get("/api/review/weekly")
+def review_weekly(week: str | None = None):
+    return review.get(week)
+
+
+@app.post("/api/review/weekly")
+def review_weekly_make(body: dict = Body(default={})):
+    return review.regenerate(body.get("week"))
+
+
+@app.get("/api/review/weeks")
+def review_weeks():
+    return review.weeks()
 
 
 @app.post("/api/kill")
@@ -188,13 +290,16 @@ def bot_trades_payload(limit: int = 100, symbol: str | None = None) -> dict:
         floating = {}
     for t in open_:
         t.update(floating.get(t["id"], {"pnl": None, "price": None}))
+    recent = ledger.recent(limit, symbol=symbol)
+    for t in open_ + recent:                    # the names the History replay uses; server-time epochs like /api/bars
+        t.update(entry_time=t["open_bar"], exit_time=t["close_bar"])
     status = None
     if jobs.jobs["agent"].running:
         try:
             status = json.loads((ROOT / "data" / "agent_status.json").read_text())
         except (OSError, ValueError):
             status = {"decision": "starting", "reason": "waiting for the next 1-minute candle to close"}
-    return {"open": open_, "recent": ledger.recent(limit, symbol=symbol),
+    return {"open": open_, "recent": recent,
             "stats": {m: ledger.stats(m) for m in ("replay", "paper", "demo", "real")}, "agent": status,
             "setup_names": SETUP_NAMES}
 
@@ -686,6 +791,13 @@ def assistant_sleep():
 def assistant_setup(body: dict = Body(default={})):
     """Set up the local model: install Ollama (winget) if missing, start it, download the model."""
     return brain.setup(install=bool(body.get("install", True)))
+
+
+@app.on_event("startup")
+def _watchers():
+    """The 1 s watcher (trailing stop, break-even, alerts) and the weekly review, both inside the app."""
+    watch.start()
+    review.start()
 
 
 @app.on_event("startup")

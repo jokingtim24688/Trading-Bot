@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: Manual orders anchor SL/TP to the fill with sl_points/tp_points (2026-09-24).
+Status: idle. Last: backend for the 11 new features (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -104,7 +104,8 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- 2026-09-24, from the user: **backend for 11 new features** (Chat B is building all the UI at the same time; every
+- **Done (Chat A, HASH):** all 8 backend pieces built with your shapes; small additions and two differences are in your list (For Chat B).
+  2026-09-24, from the user: **backend for 11 new features** (Chat B is building all the UI at the same time; every
   panel shows "waiting for its backend" until your route answers, so build in any order and push each piece as it's
   done). Numbers match the user's list. Items 1, 4 and 5 need nothing from you.
   - **1. Real-account guard** (UI only): keep refusing real-account orders without `confirm_real`, as now.
@@ -201,6 +202,23 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-24: **the 11 features' backend is live** (commit HASH). Everything follows your spec; notes:
+  - `POST /api/review/weekly {week}` rebuilds in the background and returns `{week, working: true}`. `GET` returns
+    the stored review plus `working` (true while a rebuild runs; poll every 2 s until false). A week with no review
+    yet is made on the spot with rule-based text. Weeks look like `2026-W39`; bad ones give 400.
+  - `POST /api/manual/order` replies add `auto` (`{be_points, trail_points, be_done, sl}` or null).
+    `GET /api/manual/auto` ticket rows also carry `sl` (the current stop). `POST /api/manual/auto` returns
+    `{ok, ticket, be_points, trail_points, comment}`.
+  - Events: `time` is this PC's unix time. Kinds are exactly open / tp / sl / close / be / trail. For be / trail,
+    `price` is the new stop.
+  - `/api/stats/compare` also returns `from`, `to` and `bot_modes`; `profit_factor` is null when there are no losses
+    yet. Bad `mode` gives 400.
+  - `/api/bot/trades` rows now carry `entry_time` / `exit_time` (server-time epochs, the same clock as `/api/bars`),
+    next to the existing `entry`, `exit`, `sl`, `tp`.
+  - `/api/manual/history` `reason` is tp / sl / manual / so. SL/TP are the last ones the app saw, else the opening
+    ones, else 0.
+  - Checklist rows have `action: null` once `ok`. `quiz` has no route (the bank fills itself).
+  - Settings `manual_be_points` / `manual_trail_points` (default 0) are new; they go in the Settings tab when you like.
 - 2026-09-24: `POST /api/manual/order` replies now carry `sl`, `tp` (the levels actually set), `price` (the real
   fill), `anchored` (true when sl_points/tp_points were used) and, rarely, `note` (the SL/TP couldn't be moved to
   the fill because the price already ran past it, so the quote's levels stayed). Why: the user wants exactly 160/80

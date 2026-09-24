@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from . import mt5_service as ms
+from . import watch
 
 MANUAL_MAGIC = 0
 COMMENT = "manual (app)"
@@ -66,6 +67,36 @@ def _check_levels(buy: bool, ref: float, sl: float, tp: float, i):
 
 
 # ---------- quotes ----------
+_seen: dict[str, tuple[int, float]] = {}      # symbol -> (tick time_msc, local time we first saw that tick)
+
+
+def _server_offset(tick_time: int) -> float:
+    """The broker's clock minus ours, rounded to the half hour (broker offsets are whole or half hours)."""
+    return round((tick_time - time.time()) / 1800) * 1800
+
+
+def tick_age(symbol: str, t) -> float:
+    """Seconds since the symbol's last tick, measured on this PC's clock so the broker's time zone can't skew it: from
+    the moment we first saw this tick. A tick seen for the first time is aged against the broker's clock."""
+    msc = int(getattr(t, "time_msc", 0) or t.time * 1000)
+    now = time.time()
+    prev = _seen.get(symbol)
+    if prev is None or prev[0] != msc:
+        first = now - max(0.0, now + _server_offset(t.time) - t.time) if prev is None else now
+        _seen[symbol] = prev = (msc, first)
+    return round(now - prev[1], 1)
+
+
+def _market_open(i, t, age: float) -> bool:
+    """Closed when the symbol can't be traded, or when there's been no tick for 120 s on a weekend (broker's clock),
+    or for 30 min at any time (holidays, maintenance)."""
+    m = ms.mt5
+    if i.trade_mode == m.SYMBOL_TRADE_MODE_DISABLED:
+        return False
+    weekend = datetime.fromtimestamp(t.time, timezone.utc).weekday() >= 5
+    return not ((weekend and age > 120) or age > 1800)
+
+
 def quote(symbol: str) -> dict:
     with ms._lock:
         ms._ensure()
@@ -78,7 +109,8 @@ def quote(symbol: str) -> dict:
                 "contract_size": i.trade_contract_size, "stops_level": i.trade_stops_level,
                 "trade_allowed": bool(term.trade_allowed) and i.trade_mode != m.SYMBOL_TRADE_MODE_DISABLED,
                 "day_high": getattr(i, "bidhigh", None) or None, "day_low": getattr(i, "bidlow", None) or None,
-                "spread": i.spread, "time": int(t.time)}
+                "spread": i.spread, "time": int(t.time), "connected": bool(term.connected),
+                "tick_age": (age := tick_age(symbol, t)), "market_open": _market_open(i, t, age)}
 
 
 def quotes(symbols: list[str]) -> list[dict]:
@@ -98,11 +130,12 @@ def quotes(symbols: list[str]) -> list[dict]:
 # ---------- orders ----------
 def order(symbol: str, side: str, type: str = "market", volume: float = 0.0, price: float | None = None,
           sl: float | None = None, tp: float | None = None, deviation: int = 20, expiration: str = "gtc",
-          confirm_real: bool = False, sl_points: float | None = None, tp_points: float | None = None) -> dict:
+          confirm_real: bool = False, sl_points: float | None = None, tp_points: float | None = None,
+          be_points: float | None = None, trail_points: float | None = None) -> dict:
     """Place a market or pending order. With sl_points / tp_points (the tab's 80 / 160), SL and TP are that many
     points from the real fill price of a market order (set right after the fill) or from a pending order's price, so
     slippage can't shift them; the sl / tp prices are then only a first guess. Without points, sl / tp are used as
-    given."""
+    given. be_points / trail_points override the settings' auto break-even / trailing stop for this order."""
     if side not in ("buy", "sell"):
         raise ValueError("side must be buy or sell")
     if type not in ("market", "limit", "stop"):
@@ -122,6 +155,8 @@ def order(symbol: str, side: str, type: str = "market", volume: float = 0.0, pri
         slp, tpp = float(sl_points or 0), float(tp_points or 0)
         if slp < 0 or tpp < 0:
             raise ValueError("sl_points and tp_points can't be negative.")
+        if any(v is not None and float(v) < 0 for v in (be_points, trail_points)):
+            raise ValueError("be_points and trail_points can't be negative.")
 
         def anchor(ref: float) -> tuple[float, float]:
             """SL/TP that many points from ref (below/above for a buy); the given price where no points were sent."""
@@ -159,7 +194,10 @@ def order(symbol: str, side: str, type: str = "market", volume: float = 0.0, pri
                    sl=sl, tp=tp, anchored=bool(slp or tpp))
         if out["ok"] and type == "market" and (slp or tpp):
             out.update(_anchor_to_fill(res, symbol, buy, anchor, i))
-        return out
+    if out["ok"]:
+        watch.on_new_order(out["ticket"], be_points, trail_points)
+        out["auto"] = watch.rules_state()["tickets"].get(str(out["ticket"]))
+    return out
 
 
 def _anchor_to_fill(res, symbol: str, buy: bool, anchor, i) -> dict:
@@ -308,22 +346,48 @@ def cancel(tickets: list[int] | None = None, all: bool = False) -> dict:
 
 
 # ---------- history ----------
+def _closed_levels(m, position_id: int) -> tuple:
+    """SL/TP of a closed position: the last ones the watcher saw, else the ones it was opened with, else (0, 0)."""
+    lv = watch.levels_for(position_id)
+    if lv:
+        return lv
+    get = getattr(m, "history_orders_get", None)
+    for o in (get(position=position_id) or []) if get else []:
+        if o.sl or o.tp:
+            return o.sl, o.tp
+    return 0.0, 0.0
+
+
 def history(days: float = 1) -> list[dict]:
     """Closed deals over the last `days` days, newest first, with the open price and who opened the trade."""
+    now = datetime.now(timezone.utc)
+    return history_range(now - timedelta(days=float(days)), now + timedelta(days=1))
+
+
+def history_range(start: datetime, end: datetime) -> list[dict]:
+    """Closed deals between start and end, newest first: open/close price and time, SL/TP, why it closed, owner."""
     with ms._lock:
         ms._ensure()
         m = ms.mt5
-        now = datetime.now(timezone.utc)
-        deals = m.history_deals_get(now - timedelta(days=float(days)), now + timedelta(days=1)) or []
+        deals = m.history_deals_get(start, end) or []
         outs = [d for d in deals if d.entry in (m.DEAL_ENTRY_OUT, m.DEAL_ENTRY_OUT_BY)]
+        reasons = {m.DEAL_REASON_TP: "tp", m.DEAL_REASON_SL: "sl", getattr(m, "DEAL_REASON_SO", -1): "so"}
         rows = []
         for d in outs:
             ins = [x for x in (m.history_deals_get(position=d.position_id) or []) if x.entry == m.DEAL_ENTRY_IN]
             first = ins[0] if ins else None
+            reason = reasons.get(d.reason, "manual")
+            sl, tp = _closed_levels(m, d.position_id)
+            if reason == "sl" and not sl:
+                sl = d.price
+            if reason == "tp" and not tp:
+                tp = d.price
             rows.append({"time": int(d.time), "symbol": d.symbol, "ticket": d.position_id,
                          "side": "buy" if d.type == m.DEAL_TYPE_SELL else "sell",    # a sell deal closes a buy
                          "volume": d.volume, "open": first.price if first else None, "close": d.price,
                          "profit": round(d.profit + d.commission + d.swap + getattr(d, "fee", 0.0), 2),
-                         "owner": _owner(first.magic if first else d.magic)})
+                         "owner": _owner(first.magic if first else d.magic),
+                         "open_time": int(first.time) if first else None, "sl": sl, "tp": tp, "reason": reason,
+                         "duration_s": int(d.time - first.time) if first else None})
     rows.sort(key=lambda r: r["time"], reverse=True)
     return rows

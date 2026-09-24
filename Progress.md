@@ -543,6 +543,31 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Tested on the fake MT5 with 30 points of slippage: buy fill 2650.55 → SL 2649.75 / TP 2652.15; sell, buy limit,
   sell stop, no points (unchanged), only tp_points, the price crashing through the SL (note), negative points refused.
 
+### 2026-09-24: backend for the user's 11 new features (Chat B handoff)
+- **3 Connection status:** `/api/manual/quote` adds `connected`, `tick_age` (seconds since the tick changed, timed on
+  this PC so the broker's time zone can't skew it) and `market_open` (tradable, and not "no tick for 120 s on a
+  weekend" or 30 min any time).
+- **6 Trailing stop + auto break-even:** new `app/watch.py`, a 1 s thread inside the app, so it works with the tab
+  closed. Settings `manual_be_points` / `manual_trail_points` (0 = off) apply to new manual orders; orders can override
+  with `be_points` / `trail_points`; `POST /api/manual/auto {ticket, ...}` sets or clears one (warns on the bot's
+  trades); `GET /api/manual/auto`. BE puts the stop at entry + 2 points; the stop only ever tightens. Rules are kept
+  in `data/manual_auto.json` and forgotten once the trade is closed.
+- **7 Alerts:** `GET /api/events?since=` gives opens, TP / SL hits, other closes (MT5 deal reasons, every owner) and the
+  watcher's be / trail moves; the last 500 in memory; no `since` = only `last_id`.
+- **8 You vs the bot:** new `app/stats.py`, `GET /api/stats/compare?days=30&mode=` (paper | live | all; default = the
+  bot's current stage).
+- **9 Trade replay:** history rows add `open_time`, `sl`, `tp`, `reason`, `duration_s` (the final SL/TP comes from
+  the watcher, since MT5 forgets them); `/api/bot/trades` rows add `entry_time` / `exit_time`.
+- **10 Weekly summary:** new `app/review.py`; Hermes writes it when its model is up, rule-based otherwise; stored in
+  `data/reviews/`, last week's is made automatically.
+- **12 Settings backup:** backup / list / restore (by name or from a picked file), current settings backed up first,
+  unknown or wrongly typed keys ignored.
+- **13 First-run checklist:** `GET /api/setup/checklist`.
+- Tested with the fake MT5 through the API: quote status; BE at +85 points (stop 2650.27), trail 50 (2651.50, doesn't
+  loosen); override orders; events open/be/trail/tp/sl; closed rules forgotten; history reason/SL/TP; stats on 5
+  ledger trades (PF 1.83, hold 10 min, curve); review text; backup / restore / bad names refused; checklist shape.
+  Test files removed afterwards.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
