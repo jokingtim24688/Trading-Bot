@@ -1,5 +1,6 @@
 """Thin MT5 layer for the app UI and the local assistant's tools. Falls back to 'offline' when MT5 is unavailable."""
 import threading
+import time
 from pathlib import Path
 
 try:
@@ -92,6 +93,7 @@ def close_position(ticket: int) -> dict:
         res = mt5.order_send({"action": mt5.TRADE_ACTION_DEAL, "position": p.ticket, "symbol": p.symbol,
                               "volume": p.volume, "type": mt5.ORDER_TYPE_SELL if buy else mt5.ORDER_TYPE_BUY,
                               "price": t.bid if buy else t.ask, "deviation": 30, "type_filling": filling})
+        mark_ledger_stale()
         return {"retcode": getattr(res, "retcode", None), "comment": getattr(res, "comment", str(mt5.last_error()))}
 
 
@@ -126,12 +128,27 @@ def model_exists(symbol: str) -> bool:
     return (Path(__file__).resolve().parent.parent / "models" / f"{symbol}_M1.json").exists()
 
 
-def sync_bot_ledger() -> list[dict]:
-    """Record exits of bot trades closed while the agent wasn't watching (kill switch, Close button, SL/TP)."""
+SYNC_EVERY_S = 2.0                          # the window polls every 2 s and the agent syncs every 1 s itself
+_sync = {"t": 0.0}
+
+
+def mark_ledger_stale():
+    """A trade was just closed (Close button, bulk close, SL/TP seen by the watcher): the next sync runs for sure."""
+    _sync["t"] = 0.0
+
+
+def sync_bot_ledger(force: bool = False) -> list[dict]:
+    """Record exits of bot trades closed while the agent wasn't watching (kill switch, Close button, SL/TP). Skipped
+    when the last sync was under SYNC_EVERY_S ago, unless forced or marked stale, so polling doesn't repeat the same
+    MT5 history lookups."""
     from agent.broker import sync_ledger
+    if not force and time.monotonic() - _sync["t"] < SYNC_EVERY_S:
+        return []
     with _lock:
         _ensure()
-        return sync_ledger()
+        out = sync_ledger()
+    _sync["t"] = time.monotonic()
+    return out
 
 
 def floating_for(trades: list[dict]) -> dict:

@@ -239,6 +239,8 @@ def tick():
                         _close_events(m, tk, info)
                         _levels_map()[str(tk)] = [info["sl"], info["tp"]]
                         gone = True
+                        if info["magic"] == ms.BOT_MAGIC:
+                            ms.mark_ledger_stale()            # the bot's trade closed: the next sync records it
                     elif now[tk].volume < info["volume"] - 1e-9:     # partial close
                         _close_events(m, tk, info)
                 if gone:

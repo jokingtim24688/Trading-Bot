@@ -312,7 +312,7 @@ def kill_switch():
     try:
         closed = mt5_service.close_all(AGENT_MAGIC)
         time.sleep(0.5)
-        mt5_service.sync_bot_ledger()
+        mt5_service.sync_bot_ledger(force=True)
     except mt5_service.MT5Unavailable:
         closed = []
     return {"stopped": True, "closed": closed}
@@ -322,7 +322,7 @@ def kill_switch():
 def bot_trades_payload(limit: int = 100, symbol: str | None = None) -> dict:
     scoring.SL_MULT = float(settings.load().get("sl_score_mult", 1.5))
     try:
-        mt5_service.sync_bot_ledger()
+        mt5_service.sync_bot_ledger()           # at most every 2 s; closes mark it stale so they show at once
     except Exception:
         pass                                    # MT5 offline: show the ledger as last recorded
     open_ = ledger.open_trades(symbol=symbol)

@@ -23,6 +23,7 @@
   `/api/manual/history` rows add `open_time`, `sl`, `tp`, `reason` (tp/sl/manual/so), `duration_s`; `/api/bot/trades`
   rows add `entry_time`/`exit_time` (server epochs); `/api/settings/backup`, `/backups`, `/restore` (`data/backups/`,
   typed check, backs up first); `/api/setup/checklist` (mt5, account, data, history, model, hermes, mcp, quiz).
+- **Ledger sync throttle (Chat A, 2026-09-24)**: `mt5_service.sync_bot_ledger(force=False)` runs at most every 2 s (`SYNC_EVERY_S`); `mark_ledger_stale()` (called by `close_position` and by the watcher when a bot position disappears) makes the next one run; the kill switch and `/api/manual/close` force it.
 - **mt5_service.py**: locked MetaTrader5 wrapper (margin_per_lot via order_calc_margin, trade_plan, model_meta, account, positions tagged owner bot/hermes/you by magic, sync_bot_ledger, floating_for, m1_bars, symbol_spec, close_position, close_all, lots_for_risk, model_exists).
 - **jobs.py**: `Job`/`JobManager` subprocesses (agent, train, fetch, mcp), logs to `logs/<job>.log`, tail reader.
 - **settings.py**: DEFAULTS + load/save to `data/settings.json`.

@@ -288,7 +288,7 @@ def close(tickets: list[int] | None = None, volume: float | None = None, filter:
     if closed and any(p.ticket in bot for p in chosen):
         time.sleep(0.3)
         try:
-            ms.sync_bot_ledger()
+            ms.sync_bot_ledger(force=True)
         except Exception:                                # noqa: BLE001 - the next refresh records it anyway
             pass
     return {"closed": closed, "failed": failed}

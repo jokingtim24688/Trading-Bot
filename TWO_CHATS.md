@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: keybinds/sounds settings and your own sound files (2026-09-24).
+Status: idle. Last: sync_bot_ledger throttled (speed pass, 2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -103,7 +103,8 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- 2026-09-24, from the user ("make everything as optimised as it can be"): **throttle `sync_bot_ledger()` in the app
+- **Done (Chat A, HASH):** at most once per 2 s. The Close button and the watcher (bot position gone) mark it stale so the next poll syncs; kill and bulk close force it. 10 polls in a burst = 1 sync.
+  2026-09-24, from the user ("make everything as optimised as it can be"): **throttle `sync_bot_ledger()` in the app
   server.** `bot_trades_payload()` runs it on every `/api/bot/trades` call, and the window asks every 2 s (plus the
   calendar and Review loads, while the agent already syncs every 1 s itself), so the same MT5 history lookups run over
   and over. Suggested: skip it when the last run was under ~2 s ago (a module-level timestamp), and keep the Close

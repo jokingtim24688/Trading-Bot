@@ -62,6 +62,7 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: the Hermes tab starts the real Hermes Agent app by itself (`hermes gateway` in WSL) and uses it when installed; the small local model is the fallback.
 - 2026-09-24: Windows pop-up notifications for TP/SL hits (`app/notify.py`, setting `desktop_alerts`).
 - 2026-09-24: `keybinds` / `sounds` settings and your own sound files (`app/sounds.py`, `/api/sounds`).
+- 2026-09-24: speed pass: `sync_bot_ledger` throttled to once per 2 s, forced/staled after closes.
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)

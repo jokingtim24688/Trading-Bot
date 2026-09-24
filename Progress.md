@@ -608,6 +608,16 @@ Each chat writes only in its own section below, and adds new entries just above 
     gives 400; unknown ids give 404;
   - keybinds survive backup and restore, and wrong types are ignored.
 
+### 2026-09-24: speed pass: bot ledger sync throttled (Chat B handoff)
+- `mt5_service.sync_bot_ledger()` now runs at most once every 2 s. The window polls `/api/bot/trades` every 2 s (plus
+  the calendar and Review), and the agent already syncs every second, so the same MT5 history lookups kept repeating.
+- Closes still show at once:
+  - the Close button (`close_position`) and the watcher (a bot position vanished) mark it stale, so the next poll
+    syncs;
+  - the kill switch and bulk closes force a sync.
+- Tested: a burst of 10 polls = 1 sync; after a Close the next poll syncs; after 2 s it syncs again; forcing always
+  syncs.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
