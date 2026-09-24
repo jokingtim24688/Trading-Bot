@@ -737,4 +737,9 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Bells queue 0.45 s apart, so two trades closing together ring one after the other. Recorded a 2-minute walkthrough
   video of every new feature (headless Chromium, captions, bells mixed in at the alert) and sent it with 11 stills.
 
+### 2026-09-24: Deeper loss bell
+- The user found the loss bell too high. It's now two octaves under the profit bell (E4, about 330 Hz, was E5), rings
+  about twice as long, has its tinny top rolled off (low-pass at 1.8 kHz) and is a little louder so it doesn't sound
+  weaker. A custom sound file plays at quarter speed for a loss. Re-rendered the WAV for the user.
+
 <!-- Chat B: add new entries above this line -->
