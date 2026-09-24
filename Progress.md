@@ -402,6 +402,22 @@ Each chat writes only in its own section below, and adds new entries just above 
   - after a full restart, the facts and the chat history were all still there.
 - Handoff to Chat B: call sleep when leaving the Hermes tab, and fix the memory file name in the Memory panel text.
 
+### 2026-09-24: Hermes chat on a small CPU-only model
+- Request: use Llama on the CPU so chat uses less VRAM.
+- `app/settings.py`:
+  - `ollama_model` default `llama3.2:3b` (about 2 GB).
+  - New `ollama_cpu_only` (default true).
+  - v6 migration: a saved `hermes3:8b` becomes `llama3.2:3b`.
+- `app/brain.py`:
+  - Sends `num_gpu: 0` when CPU-only, so no layers go to the RTX 4060.
+  - The download message shows the model's size.
+  - Status has `device`.
+- `hermes/SETUP.md` Option A rewritten: self-setup, CPU only, 0 lingering, one memory file, `ollama rm hermes3:8b`
+  to free disk.
+- Tested with the fake Ollama: the migration switched the model; it downloaded and answered; every chat request
+  carried `keep_alive: 0` and `num_gpu: 0`.
+- Handoff to Chat B: the Hermes pill should show `device` instead of "RTX 4060".
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

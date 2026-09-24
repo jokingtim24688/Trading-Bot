@@ -28,7 +28,7 @@
 - **Launch**: `Trading Bot.bat` (git pull, pip only if requirements changed, pythonw, window closes) → `.venv` → `app.main` → uvicorn (127.0.0.1:8420) + pywebview window → auto-start MCP bridge (:8765).
 - **Train**: Train tab → `/api/fetch` → `fetch_m1.py` → `data/SYMBOL_M1.parquet` → `/api/train` → `agent.train` → `models/SYMBOL_M1.json`.
 - **Trade**: Agent tab → `/api/agent/start` → `agent.run` → closed-bar poll → features → XGBoost proba → `RiskGate` → Paper/LiveBroker → `logs/journal_*.csv`.
-- **Chat**: Hermes tab → `/api/chat` → `brain.chat` → Hermes Agent (:8642) *or* Ollama `hermes3:8b` + `tools.py` → `data/hermes_memory.json`.
+- **Chat**: Hermes tab → `/api/chat` → `brain.chat` → Hermes Agent (:8642) *or* Ollama `llama3.2:3b` (CPU) + `tools.py` → `data/hermes_memory.json`.
 - **Follow the bot**: `agent.run` → `ledger` (`data/trades.db`) ← `sync_ledger` (agent every 1s, app every refresh) → `/api/bot/trades` → Market *Bot trade* card, chart lines/markers, alerts; Agent *Bot trades* table; Hermes `get_bot_trades`.
 - **Kill**: hold button → `/api/kill` → STOP file → agent flattens → `close_all(magic 260923)`.
 
@@ -53,6 +53,7 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: Quiz builds no longer cap near 18k (look-alike majority vote, top-ups until target, capped back-fill, shortfall note in Quiz tab).
 - 2026-09-24: Hermes sets itself up: auto-start Ollama, auto-download the model, `/api/assistant/setup`, status `local`/`next_step` (UI handed to Chat B).
 - 2026-09-24: Hermes memory -> `data/hermes_memory.json` (plain file); model unloads after each reply (keep_alive 0) and via `POST /api/assistant/sleep`.
+- 2026-09-24: Hermes chat model -> `llama3.2:3b` on CPU only (`ollama_cpu_only`, `num_gpu` 0), no VRAM.
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)

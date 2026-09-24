@@ -5,22 +5,23 @@ The app's **Hermes** tab can use one of two brains. Pick one, or set up both: wi
 
 | | Local Hermes model | Hermes Agent (recommended) |
 |---|---|---|
-| What it is | Nous Research's Hermes 3 (8B) running in Ollama on your RTX 4060 | Nous Research's open-source agent app, running in WSL |
-| Memory | App memory in `data/memory.db` (facts + chat history) | Hermes' own persistent memory + searchable past sessions, plus the app's chat log |
+| What it is | A small model (Llama 3.2 3B) running in Ollama on your CPU, so it uses no VRAM | Nous Research's open-source agent app, running in WSL |
+| Memory | App memory in one plain file, `data/hermes_memory.json` (facts + chat history) | Hermes' own persistent memory + searchable past sessions, plus the app's chat log |
 | Can do | MT5 account/positions/market summaries, position sizing, start/stop agent, notes, web pages, maths, memory | Everything on the left via the MT5 bridge, **plus placing trades**, web search, terminal, files, scheduled jobs, skills it writes itself, and Telegram/Discord messaging |
 | Cost | Free, offline | Free app; you pick the model (local Ollama or a paid API) |
 | Setup time | 5 minutes | 20–30 minutes |
 
 ---
 
-## Option A: Local Hermes model (5 minutes)
-1. Install **Ollama for Windows** from ollama.com.
-2. Open PowerShell: `ollama pull hermes3:8b` (≈ 4.7 GB download; runs in the 4060's VRAM).
-3. In the app go to **Settings → Hermes**. Backend: *Local Hermes model*, Model: `hermes3:8b`. Save.
-4. The Hermes tab shows `hermes3:8b on RTX 4060` when it's ready.
+## Option A: Local model (sets itself up)
+1. Install **Ollama for Windows** from ollama.com (or press **Set up** on the Hermes tab to install it with winget).
+2. That's it. When the app opens it starts Ollama and downloads `llama3.2:3b` (about 2 GB, once).
+3. The model runs on the **CPU only** (Settings: `ollama_cpu_only`), so it never uses the RTX 4060's VRAM.
+4. It loads when you send a message and unloads right after each reply (`ollama_keep_alive` = 0) and when you leave
+   the Hermes tab. Memory stays in `data/hermes_memory.json`, so it remembers everything next time.
 
-The model unloads from VRAM after 5 idle minutes ("Unload model from VRAM after idle"), so it doesn't hold memory
-while you're only trading. Unload it before GPU training if you changed that to `-1` (keep forever).
+Replies take a few seconds each, since the model loads from disk every time. If you used `hermes3:8b` before, you can
+free its 4.7 GB of disk with `ollama rm hermes3:8b`.
 
 ## Option B: Hermes Agent (full agent with memory)
 Hermes Agent runs on Linux, so on Windows it lives in **WSL2** (native Windows support is experimental).
@@ -62,6 +63,6 @@ MT5 stays on Windows, and the app runs a small bridge (MCP server) so Hermes can
 ## Does this run from disk instead of RAM?
 Programs have to be in memory while they run. What this setup keeps on disk:
 - Memory, chat history, notes, settings, trade journal, M1 history and trained models (`data/`, `logs/`, `models/`).
-- The Hermes model lives in the RTX 4060's own 8 GB of VRAM, not system RAM, and unloads when idle.
+- The chat model (about 2 GB) runs on the CPU, only while it's answering, then unloads. It never uses VRAM.
 - The app (~150–250 MB) and the agent (~300–500 MB with 5,000 M1 bars) are the only things in RAM.
   The top bar shows live RAM and VRAM use.
