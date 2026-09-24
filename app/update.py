@@ -6,6 +6,7 @@ Unlike a bare `git pull --ff-only` it copes with the things that silently kept o
 - the folder is on another branch, or its branch doesn't track GitHub's -> it switches to BRANCH;
 - local edits to tracked files -> saved with `git stash` (get them back with `git stash pop`);
 - local commits GitHub doesn't have -> kept on a `backup/local-<time>` branch, then updated anyway;
+- an untracked local file where GitHub now has a file -> renamed to `<name>.local-<time>`, then updated;
 - no internet, no git, not a git folder, or GitHub asking you to sign in -> says so and the app opens as it is.
 
 Your data never changes: data/, logs/, models/ and .venv are ignored by git.
@@ -44,6 +45,24 @@ def version() -> dict:
             "branch": _out("rev-parse", "--abbrev-ref", "HEAD") or None}
 
 
+def _move_blockers(err: str) -> list[str]:
+    """Files git names under "untracked working tree files would be overwritten": rename to <name>.local-<time>."""
+    moved, on = [], False
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    for line in (err or "").splitlines():
+        if "untracked working tree files would be" in line:
+            on = True
+            continue
+        if on:
+            if not line.startswith(("\t", " ")):
+                break
+            p = ROOT / line.strip()
+            if p.is_file():
+                p.rename(p.with_name(f"{p.name}.local-{stamp}"))
+                moved.append(line.strip())
+    return moved
+
+
 def update(branch: str = BRANCH) -> dict:
     notes: list[str] = []
     st = {"checked": datetime.now().isoformat(timespec="seconds"), "ok": False, "updated": False,
@@ -72,6 +91,10 @@ def update(branch: str = BRANCH) -> dict:
         _git("branch", keep, "HEAD")
         notes.append(f"This copy had commits GitHub doesn't; they're kept on branch {keep}.")
     c = _git("checkout", "-B", branch, target)
+    moved = _move_blockers(c.stderr) if c.returncode != 0 else []
+    if moved:                                   # untracked local files where GitHub now has files: set aside, retry
+        notes.append("Moved aside so the update could go in: " + ", ".join(moved))
+        c = _git("checkout", "-B", branch, target)
     if c.returncode != 0:
         st["message"] = f"Update failed: {c.stderr.strip() or c.stdout.strip()}"
         return st

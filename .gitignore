@@ -12,3 +12,9 @@ build/
 *.skill
 .pytest_cache/
 demo-new-features.mp4
+# Written by the app on your PC as it learns: never tracked, so they can't block an update
+.claude/skills/m1-bot-lessons/
+.claude/skills/quiz-lessons/
+.claude/skills/quiz-weak-spots/SKILL.md
+.claude/skills/quiz-weak-spots/references/*
+!.claude/skills/quiz-weak-spots/references/claude-*.md

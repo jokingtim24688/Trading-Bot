@@ -720,6 +720,14 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Tests: 6 new against real temporary git repos (old copy, other branch, local edits, local commits, offline, ZIP,
   status/log). 32 pass.
 
+### 2026-09-24: why updates never reached the user's PC
+- The quiz rewrote `.claude/skills/quiz-weak-spots/SKILL.md`, a tracked file, so every `git pull --ff-only` failed
+  silently. The user updated by hand (`git stash` + `git checkout -B ...`).
+- Now the app-written skill files are ignored and untracked: `m1-bot-lessons/`, `quiz-lessons/`,
+  `quiz-weak-spots/SKILL.md` and its generated references. Claude's `claude-*.md` pages stay tracked.
+- `app/update.py` also renames an untracked local file that blocks a checkout to `<name>.local-<time>` and retries.
+- 34 tests pass (2 new: an untracked file in the way; an app-rewritten file).
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

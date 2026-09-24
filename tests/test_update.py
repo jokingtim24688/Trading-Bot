@@ -84,3 +84,22 @@ def test_main_writes_status_and_log(repos, tmp_path, monkeypatch):
     monkeypatch.setattr(update, "BRANCH", B)
     assert update.main() == 0
     assert "Updated" in (tmp_path / "update.log").read_text() and (tmp_path / "status.json").exists()
+
+
+def test_untracked_file_in_the_way_is_moved_aside(repos):
+    work, pc = repos
+    (work / "new.txt").write_text("from github\n")
+    git(work, "add", ".")
+    git(work, "commit", "-qm", "v3")
+    git(work, "push", "-q", "origin", B)
+    (pc / "new.txt").write_text("app wrote this\n")         # untracked on the PC, tracked on GitHub
+    st = update.update(B)
+    assert st["ok"] and (pc / "new.txt").read_text() == "from github\n"
+    assert [p.name for p in pc.glob("new.txt.local-*")] and "Moved aside" in st["notes"][-1]
+
+
+def test_app_written_skill_file_does_not_block_update(repos):
+    """What happened on the user's PC: the quiz rewrote a tracked SKILL.md, and every update failed."""
+    work, pc = repos
+    (pc / "app.txt").write_text("rewritten by the app\n")
+    assert update.update(B)["ok"] and (pc / "app.txt").read_text() == "v2\n"

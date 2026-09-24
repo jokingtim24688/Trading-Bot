@@ -23,14 +23,15 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: the app really updates itself (app/update.py, 2026-09-24).
+Status: idle. Last: app-written skill files untracked so updates never block (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
 - `mcp_server/`, `hermes/`
 - `app/server.py` (the API), `app/jobs.py`, `app/mt5_service.py`, `app/settings.py`,
   `app/brain.py`, `app/memory.py`, `app/tools.py`
-- `.claude/skills/`, `.claude/agents/`: Chat A makes and edits skills. Some skill folders are written by the app on
+- `.claude/skills/`, `.claude/agents/`: Chat A makes and edits skills. The app-written skill files are git-ignored
+  (so they can't block updates). Some skill folders are written by the app on
   the user's PC (`m1-bot-lessons/` by `agent/learn.py`, `quiz-lessons/` by `agent/quiz.py`, `quiz-weak-spots/` by
   `agent/quiz_report.py`). Don't hand-edit those, except the `claude-*.md` pages in `quiz-weak-spots/`.
 - Wiki pages: `agent.md`, `hermes.md`, `mcp.md`, `skill.md`, and the server/jobs/settings bullets of `app.md`
