@@ -222,6 +222,18 @@ def setup(install: bool = True) -> dict:
     return {**status(), "note": note}
 
 
+def sleep() -> dict:
+    """Unload the model from memory now (leaving the Hermes tab). Its memory file stays; the next message reloads it."""
+    s = load()
+    if not ollama_alive(s):
+        return {"unloaded": False, "reason": "Ollama isn't running, so nothing is loaded"}
+    try:
+        httpx.post(f"{s['ollama_url']}/api/generate", json={"model": s["ollama_model"], "keep_alive": 0}, timeout=10)
+        return {"unloaded": True}
+    except httpx.HTTPError as e:
+        return {"unloaded": False, "reason": str(e)}
+
+
 def status() -> dict:
     s = load()
     agent = hermes_agent_alive(s)
@@ -241,11 +253,17 @@ def _ask_hermes_agent(s: dict, text: str) -> str:
     return r.json()["choices"][0]["message"]["content"]
 
 
+def _keep_alive(s: dict):
+    """Ollama takes 0 (unload right after the reply) as a number; other values as durations like "1m"."""
+    v = str(s.get("ollama_keep_alive", "0")).strip()
+    return 0 if v in ("0", "0s", "0m", "") else v
+
+
 def _ask_local(s: dict, text: str, trace: list) -> str:
     facts = memory.relevant_facts(text) or ["(nothing saved yet)"]
     system = SYSTEM.format(facts="\n".join(f"- {f}" for f in facts),
                            now=dt.datetime.now().strftime("%Y-%m-%d %H:%M (%A)"))
-    past = memory.recent_messages(13)[:-1]      # the newest row is this message; it's appended below
+    past = memory.recent_messages(21)[:-1]      # the newest row is this message; it's appended below
     history = [{"role": m["role"], "content": m["content"]} for m in past
                if m["role"] in ("user", "assistant") and not m["content"].startswith("⚠")]   # skip setup errors
     messages = [{"role": "system", "content": system}, *history, {"role": "user", "content": text}]
@@ -253,7 +271,7 @@ def _ask_local(s: dict, text: str, trace: list) -> str:
     use_tools = True
     for rnd in range(7):                         # tool-use loop; the last round must answer in words
         body = {"model": s["ollama_model"], "messages": messages, "stream": False,
-                "keep_alive": s["ollama_keep_alive"], "options": {"num_ctx": 8192, "temperature": 0.4}}
+                "keep_alive": _keep_alive(s), "options": {"num_ctx": 8192, "temperature": 0.4}}
         if use_tools and rnd < 6:
             body["tools"] = tools.schemas()
         try:

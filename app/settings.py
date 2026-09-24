@@ -44,13 +44,13 @@ DEFAULTS = {
     "hermes_key": "",
     "ollama_url": "http://127.0.0.1:11434",
     "ollama_model": "hermes3:8b",
-    "ollama_keep_alive": "5m",             # unload the model from VRAM after this idle time
+    "ollama_keep_alive": "0",              # unload the model right after each reply (0 = no lingering)
     "assistant_autosetup": True,           # start Ollama and download the model automatically when needed
     "allow_web": True,
     # MCP bridge for Hermes Agent
     "mcp_http_port": 8765,
     "mcp_autostart": True,
-    "settings_version": 4,
+    "settings_version": 5,
 }
 
 
@@ -68,6 +68,11 @@ def load() -> dict:
             if s.get("settings_version", 1) < 4:          # v4: quiz runs at max speed by default
                 s["quiz_speed"] = 0
                 s["settings_version"] = 4
+                PATH.write_text(json.dumps(s, indent=2))
+            if s.get("settings_version", 1) < 5:          # v5: Hermes's model doesn't linger in memory after a reply
+                if s.get("ollama_keep_alive") == "5m":
+                    s["ollama_keep_alive"] = "0"
+                s["settings_version"] = 5
                 PATH.write_text(json.dumps(s, indent=2))
         except json.JSONDecodeError:
             pass

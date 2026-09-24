@@ -378,6 +378,30 @@ Each chat writes only in its own section below, and adds new entries just above 
   - stopped: chat starts it and reports the download.
 - UI (Set up button, status line) handed to Chat B in TWO_CHATS.md, since Chat B is editing `app/static/`.
 
+### 2026-09-24: Hermes memory in one file, no lingering model
+- Request:
+  - Memory kept in a simple file, not lost when the app shuts down.
+  - Hermes shuts down when you leave the chat tab, until messaged again, with the same memory.
+  - 0 lingering time.
+- Found: nothing wiped memory on shutdown (it was in `data/memory.db`). The model only saw the last ~12 messages, so
+  older chat seemed forgotten.
+- `app/memory.py` rewritten over one plain JSON file, `data/hermes_memory.json`:
+  - Same functions as before; written atomically after every change.
+  - The old SQLite memory is imported once.
+  - A damaged file is set aside, not lost.
+  - Keeps up to 5,000 chat turns; facts are never dropped.
+- `app/brain.py`:
+  - The model sees the last 20 messages (was 12).
+  - `keep_alive` is sent as the number 0, so the model unloads right after each reply.
+  - `sleep()` unloads it now.
+- `app/server.py`: `POST /api/assistant/sleep`.
+- `app/settings.py`: `ollama_keep_alive` default "0"; v5 migration turns a saved "5m" into "0".
+- Tested with the fake Ollama:
+  - the old SQLite facts and messages imported;
+  - a new fact, a chat and a sleep (unloaded) all worked;
+  - after a full restart, the facts and the chat history were all still there.
+- Handoff to Chat B: call sleep when leaving the Hermes tab, and fix the memory file name in the Memory panel text.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

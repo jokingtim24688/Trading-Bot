@@ -629,6 +629,12 @@ def assistant_status():
     return brain.status()
 
 
+@app.post("/api/assistant/sleep")
+def assistant_sleep():
+    """Unload Hermes's model from RAM/VRAM now (called when you leave the Hermes tab). Memory stays on disk."""
+    return brain.sleep()
+
+
 @app.post("/api/assistant/setup")
 def assistant_setup(body: dict = Body(default={})):
     """Set up the local model: install Ollama (winget) if missing, start it, download the model."""

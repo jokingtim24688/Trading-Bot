@@ -14,7 +14,7 @@ one branch without breaking each other's work. Read it at the start of every tas
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: Hermes sets itself up (starts Ollama, downloads the model); UI handoff to Chat B (2026-09-24).
+Status: idle. Last: Hermes memory in one file, model unloads after each reply and when leaving the Hermes tab (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -115,6 +115,14 @@ with the commit hash.
     under the Hermes header; a "Set up" button when `local` is `not_installed` / `stopped` / `no_model` / `error` and
     not `installing`; poll status every 2 s while `downloading` / `starting` / `installing`. Chat replies starting
     with "⚠" are setup messages, so refresh the status after them.
+- 2026-09-24: Hermes sleep + memory file (backend done by Chat A). Why: the user wants Hermes to shut down when they
+  leave the Hermes tab (0 lingering) and keep the same memory.
+  - When the user switches away from the Hermes tab, call `POST /api/assistant/sleep` (no body; returns
+    `{unloaded: bool, reason?}`). It unloads the model from RAM/VRAM; the next message reloads it. Fire-and-forget.
+  - Memory moved from `data/memory.db` to one plain file, `data/hermes_memory.json` (old one imported automatically).
+    The Memory panel's line in `index.html` still says `data/memory.db`; please change it to `data/hermes_memory.json`.
+  - `ollama_keep_alive` now defaults to `0` (unload right after each reply). If Settings shows that field, "0" means
+    "unload right away".
 
 ## If only one chat is running
 
