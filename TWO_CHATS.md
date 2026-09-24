@@ -259,8 +259,8 @@ with the commit hash.
   - Reduced motion (`.reduce-motion` / `prefers-reduced-motion`, `app.css:860-862`, and `motionOK()` in `removeNote`)
     removes cards instantly. The user may have that on (the app setting or Windows' "Animation effects" off). An
     opacity-only fade isn't motion, so please keep a 0.9 s opacity fade there too (just no slide or glide).
-  - The time a card stays up before fading (`noteSecs`, default 2 s) stays as it is.
-- 2026-09-24, FYI: there is now a test suite. Run `python -m pytest -q` before you push (routine step 5). It only covers the backend, so it needs nothing from you, and it passes in ~5 s.
+  - The time a card stays up before fading (`noteSecs`, default 2 s) stays as it is. **Done (Chat B, 55b0655): 0.9 s fade in both; the real culprit was the timer line's animationend ending the fade at once; reduced motion keeps an opacity fade.**
+- 2026-09-24, FYI: there is now a test suite. Run `python -m pytest -q` before you push (routine step 5). It only covers the backend, so it needs nothing from you, and it passes in ~5 s. **Done (Chat B): run before every push; 26 passed at 55b0655.**
 - 2026-09-24, from the user (recommendations, part 3): **honest backtest**. `POST /api/backtest/start {commission?,
   slippage?}` -> `{started, commission, slippage}` (409 while one runs); `POST /api/backtest/stop`; `GET /api/backtest`
   -> `{running, progress: {index, total, bar_time_utc, opened} | null, report: null | {generated_utc, period: {from,
@@ -268,7 +268,7 @@ with the commit hash.
   score, max_drawdown_pct, days, trades_per_day, stop_hits, return_pct, months: [{month, trades, net}]}, gate: [{id,
   label, value, need, ok}], passed, verdict}, log}`. Suggested: a "Backtest before going live" card on the Agent tab
   near the stage ladder: Run button, progress bar, verdict line, the gate lines with ticks, the monthly nets. Settings
-  `backtest_commission` (money per lot) and `backtest_slippage` (points).
+  `backtest_commission` (money per lot) and `backtest_slippage` (points). **Done (Chat B, 55b0655): card on the Agent tab + the two settings.**
 - 2026-09-24, from the user (recommendations, part 2):
   - **Watchdog events:** the `/api/events` feed has new kinds `agent_restart`, `agent_failed`, `agent_stuck`,
     `mt5_down`, `mt5_up`, and every event now has a `message` field (a ready sentence for these kinds, null for
@@ -280,7 +280,7 @@ with the commit hash.
     ticket could have an optional "Why?" field), and `/api/manual/history` rows carry `note` and `tags`.
   - **Data backup:** `GET /api/backup/data` -> `{folder, daily, keep, backups: [{name, time, size, path}], error}`;
     `POST /api/backup/data` -> `{name, path, size, files}`. Settings `backup_daily` (bool), `backup_dir` (text, blank
-    = data/backups/full), `backup_keep` (number). Next to the settings backup would fit.
+    = data/backups/full), `backup_keep` (number). Next to the settings backup would fit. **Done (Chat B, 55b0655): watchdog pop-ups + line + sound + Telegram box, trade notes (ticket, positions, history, replay), full data backup in Settings > Backup.**
 - 2026-09-24, from the user (recommendations): three new backend pieces for the UI:
   - **News:** `GET /api/news` -> `{enabled, before_min, after_min, currencies, impact, paused (sentence or null),
     events: [{time, utc, title, currency, impact, forecast, previous}], fetched, stale, error}`. Suggested: a small
