@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from agent import learn, ledger, progression, score as scoring
 from agent.pro import SETUP_NAMES
 
-from . import brain, memory, mt5_service, settings
+from . import brain, manual, memory, mt5_service, settings
 from .jobs import LOGS, jobs
 from .settings import ROOT
 
@@ -104,6 +104,49 @@ def close(ticket: int):
         if t["ticket"] == ticket:
             ledger.set_close_hint(t["id"], "manual (app)")
     return mt5_service.close_position(ticket)
+
+
+# ---------- manual trading (Manual tab): what the MT5 mobile app does ----------
+@app.get("/api/manual/quote")
+def manual_quote(symbol: str):
+    return manual.quote(symbol)
+
+
+@app.get("/api/manual/quotes")
+def manual_quotes(symbols: str):
+    return manual.quotes([x.strip() for x in symbols.split(",") if x.strip()][:50])
+
+
+@app.post("/api/manual/order")
+def manual_order(body: dict = Body(...)):
+    keys = ("symbol", "side", "type", "volume", "price", "sl", "tp", "deviation", "expiration", "confirm_real")
+    return manual.order(**{k: body[k] for k in keys if k in body and body[k] is not None})
+
+
+@app.post("/api/manual/close")
+def manual_close(body: dict = Body(default={})):
+    return manual.close(body.get("tickets"), body.get("volume"), body.get("filter") or "all",
+                        body.get("owner") or "any", body.get("symbol"))
+
+
+@app.post("/api/manual/modify")
+def manual_modify(body: dict = Body(...)):
+    return manual.modify(int(body["ticket"]), body.get("sl"), body.get("tp"))
+
+
+@app.get("/api/manual/orders")
+def manual_orders():
+    return manual.orders()
+
+
+@app.post("/api/manual/orders/cancel")
+def manual_cancel(body: dict = Body(default={})):
+    return manual.cancel(body.get("tickets"), bool(body.get("all")))
+
+
+@app.get("/api/manual/history")
+def manual_history(days: float = 1):
+    return manual.history(min(max(days, 0.01), 90))
 
 
 @app.post("/api/kill")

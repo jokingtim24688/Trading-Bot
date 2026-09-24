@@ -485,6 +485,25 @@ Each chat writes only in its own section below, and adds new entries just above 
   image, but can't learn from the quiz without GPU fine-tuning and read exact levels poorly. So: keep the program
   plus llama for chat.
 
+### 2026-09-24: Manual tab backend (from Chat B's spec)
+- `app/manual.py` + routes in `app/server.py`, following Chat B's suggested shapes exactly:
+  - quote and quotes;
+  - order: market, buy/sell limit and stop, GTC or today;
+  - close: tickets, partial volume, all / profit / loss / buys / sells by owner and symbol;
+  - modify: SL/TP, 0 removes, BE;
+  - pending orders list and cancel (some or all);
+  - history.
+- Orders use magic 0, so they show as "you" and the bot ignores them.
+- A real account is refused unless `confirm_real` is set.
+- SL/TP must be on the right side and at least the broker's stop level away (a buy's are checked against the bid, as
+  MT5 does).
+- Pending prices must be on the right side of the market; volume is rounded to the lot step and clamped.
+- Bot trades closed here get the ledger hint "manual (app)" and the ledger is synced.
+- Tested with a stand-in MetaTrader5 module:
+  - every route, the refusals (wrong-side SL, too close, a wrong-side limit, a real account without confirmation);
+  - half-close, close losing, close profitable by owner, cancel all, history;
+  - a bot trade closed in two halves was recorded as "manual (app)" with the P/L of both halves.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

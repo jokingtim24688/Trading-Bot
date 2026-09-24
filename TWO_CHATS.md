@@ -14,7 +14,7 @@ one branch without breaking each other's work. Read it at the start of every tas
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: quiz question bank (always-on creator, no max), Hermes web limited to trading sites, quiz-setups skill (2026-09-24).
+Status: working on the Manual tab backend, then learning from each losing trade (2026-09-24).
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
