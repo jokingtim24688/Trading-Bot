@@ -320,7 +320,7 @@ def load_policy():
 
 
 def read_control() -> dict:
-    return _load_json(CONTROL, {"speed": 20, "stop": False})
+    return _load_json(CONTROL, {"speed": 100, "stop": False})
 
 
 def train(max_rounds: int = 3000, lr: float = 0.02, seed: int = 1):
@@ -354,7 +354,7 @@ def train(max_rounds: int = 3000, lr: float = 0.02, seed: int = 1):
              "mastered": mastered, "practice": len(practice), "exam_size": len(exam), "mastery": MASTERY,
              "streaks": [{"id": k, "streak": streak[k], "best": best[k], "right": right_total[k], "asked": asked_total[k]}
                          for k in streak],
-             "points_by_round": points_by_round[-200:], "speed": ctl.get("speed", 20),
+             "points_by_round": points_by_round[-200:], "speed": ctl.get("speed", 100),
              "elapsed": round(time.time() - started), "exam": exam_result,
              "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}
         if q is not None:
@@ -392,7 +392,7 @@ def train(max_rounds: int = 3000, lr: float = 0.02, seed: int = 1):
                 best[q["id"]] = max(best[q["id"]], streak[q["id"]])
             else:
                 streak[q["id"]] = 0
-            speed = float(ctl.get("speed", 20))
+            speed = float(ctl.get("speed", 100))
             now = time.time()
             if speed and speed <= 30 or now - last_write > 0.25:
                 state(q, act, p, pts, verdict, rnd=rnd)

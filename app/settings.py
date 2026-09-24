@@ -26,7 +26,7 @@ DEFAULTS = {
     "auto_promote_demo": True,             # move Paper -> Demo by itself once the Paper gate is passed
     "use_learned": True,                   # apply the rules the bot learned from its own trades
     "quiz_filter": False,                  # only enter when the quiz agent (Quiz tab) picks the same side
-    "quiz_speed": 20,                      # quiz questions per second while watching (0 = max)
+    "quiz_speed": 100,                     # quiz questions per second (0 = max)
     "learn_every": 50,                     # re-learn after this many new closed trades                    # bot may close a trade before its stop when the model turns against it
     "sl_score_mult": 1.5,                  # score: a stop-loss hit counts this many times worse than an early close
     "paper_balance": 10000.0,
@@ -47,7 +47,7 @@ DEFAULTS = {
     # MCP bridge for Hermes Agent
     "mcp_http_port": 8765,
     "mcp_autostart": True,
-    "settings_version": 2,
+    "settings_version": 3,
 }
 
 
@@ -61,6 +61,10 @@ def load() -> dict:
                 if s.get("label_horizon") == 240:
                     s["label_horizon"] = 1440
                 s["settings_version"] = 2
+                PATH.write_text(json.dumps(s, indent=2))
+            if s.get("settings_version", 1) < 3:          # v3: quiz runs at 100 questions/s by default
+                s["quiz_speed"] = 100
+                s["settings_version"] = 3
                 PATH.write_text(json.dumps(s, indent=2))
         except json.JSONDecodeError:
             pass

@@ -186,3 +186,10 @@
   result, question table), "What would you do now?" on the live MT5 chart, Settings: quiz agent second opinion
   (`--quiz-filter` in agent and replay: only enter when the quiz agent picks the same side).
 - Note: the policy gets very confident (e.g. 99%) after mastering; the exam score is the honest measure.
+
+## 2026-09-24: Quiz at 100/s + layout options
+- Quiz runs at 100 questions/s by default (settings v3 migration sets quiz_speed 100 for existing installs).
+- Three live layout mockups for the Quiz tab at that pace, for the user to pick: A Scoreboard (big points, mastery
+  board, latest mistake held on the chart, points-per-round curve), B Answer tape (streaming answers, accuracy by
+  setup, total points), C Question board (30 chart cards flashing right/wrong, streak dots, click for detail).
+  https://claude.ai/artifact/UhJQwNYDN4XuaAdfvH8Les (simulated data). Waiting on the user's pick.

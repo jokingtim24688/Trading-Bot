@@ -422,7 +422,7 @@ def quiz_train(body: dict = Body(default={})):
     s = settings.load()
     if not (QUIZ_DIR / "quiz.json").exists():
         raise HTTPException(400, "Build the quiz first.")
-    speed = body.get("speed", s.get("quiz_speed", 20))
+    speed = body.get("speed", s.get("quiz_speed", 100))
     (QUIZ_DIR / "quiz_control.json").write_text(json.dumps({"speed": speed, "stop": False}))
     (QUIZ_DIR / "quiz_state.json").unlink(missing_ok=True)
     try:
@@ -438,7 +438,7 @@ def quiz_control(body: dict = Body(default={})):
     try:
         ctl = json.loads(p.read_text())
     except (OSError, ValueError):
-        ctl = {"speed": 20, "stop": False}
+        ctl = {"speed": 100, "stop": False}
     ctl.update({k: v for k, v in body.items() if k in ("speed", "stop")})
     p.parent.mkdir(exist_ok=True)
     p.write_text(json.dumps(ctl))
