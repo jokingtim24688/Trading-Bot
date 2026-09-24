@@ -5,7 +5,7 @@
 > Start here for any question about this repo, and open the linked page for detail.
 
 **Two chats work on this repo at once.** Read [TWO_CHATS.md](../../TWO_CHATS.md) before changing anything: lanes
-(A = backend & skills, B = UI & polish), the shared branch `claude/laughing-bell-3vt2c7`, and the git routine.
+(A / chat 1 = backend & skills, B / chat 2 = UI & polish), the shared branch `claude/laughing-bell-3vt2c7`, and the git routine.
 
 ## Communities (subsystems)
 | Community | Page | Core nodes | Lane |
@@ -54,4 +54,5 @@ Each chat adds lines only to its own list, just above its marker line.
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)
+- 2026-09-24: design review of all six tabs (screenshots + findings), see app.md "Design review".
 <!-- Chat B: add new lines above this marker -->

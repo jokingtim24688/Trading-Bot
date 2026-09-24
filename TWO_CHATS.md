@@ -7,11 +7,12 @@ one branch without breaking each other's work. Read it at the start of every tas
   the user's PC pulls it. Your session may have been given its own `claude/...` branch: the user has approved pushing
   to the shared branch instead.
 - **Map of the code:** `graphify-out/wiki/index.md`. Read it before you start; update it when you finish.
+- **Names:** the user calls Chat A "chat 1" and Chat B "chat 2".
 - **Who changes this file's rules:** only the user. When they change the split, update this file in one commit.
 
 ## Who does what
 
-### Chat A: Backend & Skills
+### Chat A (chat 1): Backend & Skills
 
 Status: idle. Last: quiz builds no longer stop near 18k questions (2026-09-24).
 
@@ -25,9 +26,9 @@ Owns what the app does:
   `agent/quiz_report.py`). Don't hand-edit those, except the `claude-*.md` pages in `quiz-weak-spots/`.
 - Wiki pages: `agent.md`, `hermes.md`, `mcp.md`, `skill.md`, and the server/jobs/settings bullets of `app.md`
 
-### Chat B: UI & Polish
+### Chat B (chat 2): UI & Polish
 
-Status: not started. First job when the user says go: an anti-vibe-polish pass over the app.
+Status: design review done (see Progress.md); waiting for the user to pick the first changes.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab

@@ -357,4 +357,29 @@ Each chat writes only in its own section below, and adds new entries just above 
 
 ## Chat B log (UI & Polish)
 
+### 2026-09-24: Chat numbers
+- The user named the chats: this chat is chat 2 = Chat B (UI & Polish); the other chat is chat 1 = Chat A (Backend &
+  Skills). The two-chat setup entry in Chat A's log above was written by this chat before the names were set.
+- `TWO_CHATS.md` headings now carry both names.
+
+### 2026-09-24: Design review (screenshots of every page)
+- Request: pictures of all pages and design recommendations; design work happens in this chat (chat 2).
+- Ran the app in the cloud sandbox from a copy of the repo (so no `data/` files landed in the working tree), with a
+  fake `MetaTrader5` module: demo account, two positions (one bot, one manual), 3,000 random-walk XAUUSD M1 candles.
+  Seeded 18 bot trades and a short Hermes chat, then shot all six tabs with headless Chromium at the real window size
+  (1440x900; Agent, Train and Settings at full scroll height). Google Fonts were fetched through the proxy with TLS
+  verification on, so IBM Plex rendered. No repo code changed.
+- Verdict against the anti-vibe checklist: 2 of 9 tells (every panel is the same rounded box; middle-dot meta strings
+  such as "0.02 lots · demo · conf 71%"). No purple, real typefaces, specific copy: a solid base.
+- Bugs seen: Train step 2 text crushed into a thin column; the Market bot card title wraps ("Bot / trade") and its two
+  trades run together; the Agent stat tiles leave one orphan tile; Settings uses native blue checkboxes, only ~60% of
+  the width, and Save only at the very bottom; Quiz highlights Continue when no quiz exists; "Replay history" sits
+  among the symbol chips; gold means brand, primary action, selected, bot and buy all at once.
+- Recommendations given: hierarchy instead of identical boxes; colour roles (gold = brand and primary action, a
+  colour of its own for the bot, arrows for buy/sell); a trader-first top strip (RAM/VRAM moved out); empty states with
+  a next step; glass only where content scrolls under it; one motion moment (a trade opening); domain features
+  (session bands and prior-day levels on the chart, stage ladder, daily P/L calendar, setup leaderboard); Settings with
+  section nav and a sticky Save; Agent tab re-layout.
+- Next: the user picks what to change first.
+
 <!-- Chat B: add new entries above this line -->
