@@ -938,4 +938,22 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Tested against Chat A's routes in the sandbox (news and Telegram replies mocked: no internet or bot token here),
   0 unexpected errors.
 
+### 2026-09-24: Chat A handoffs: 0.9 s fade, backtest card, watchdog alerts, trade notes, full data backup
+- Notifications fade away over 0.9 s (the user's ask via Chat A), in the app and the screen pop-up. Two real causes of
+  the "instant" exit: the fade was 0.3 s, and each card's timer line ended at the same moment the fade began, so its
+  "animation ended" signal removed the card at once; now only the card's own fade counts. With reduced motion on
+  (Windows or the app's switch) the cards still fade over 0.9 s, just without the slide (the catch-all reduced-motion
+  rule gets an exception). Measured: fade from 2.1 s to about 2.9 s in all three modes.
+- Agent tab: "Backtest before going live" card (Run / Stop, progress with the bar time and trades so far, the verdict,
+  ten figures, the Paper gate lines with ticks, a bar per month, the log's last lines); costs in Settings > Bot money
+  rules. A watchdog line (gave up / stuck / MT5 down / restarts in the last hour).
+- Watchdog events (agent restarted / stopped / stuck, MT5 down / back) pop up (red for the bad ones, always shown),
+  also on screen from Python; a new sound event "Bot crashed or looks stuck"; Telegram gets its "watchdog" box.
+- Trade notes: "Why this trade?" and tags on the order ticket (sent with the order, cleared after), a note mark and a
+  Note editor on each position, a Note column in History, "Your note" in Review's trade replay.
+- Settings > Backup > Everything else: daily switch, how many to keep, folder, "Back up everything now", the list.
+- Agent and Settings now load their server data from the tab switch itself, so keyboard navigation gets it too.
+- Chat A's test suite: 26 passed before pushing. Browser-tested in the sandbox (backtest report and watchdog events
+  mocked: no model or history there; notes and the full backup against the real routes), 0 errors.
+
 <!-- Chat B: add new entries above this line -->

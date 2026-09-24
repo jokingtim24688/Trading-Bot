@@ -92,4 +92,5 @@ Each chat adds lines only to its own list, just above its marker line.
   custom top-right notifications (in app + on screen), speed pass; see app.md "Keys, Sounds, notifications, speed".
 - 2026-09-24: screen pop-ups above full-screen apps and while minimised (Win32 tool window, Python reads the events feed), screen picker.
 - 2026-09-24: news chip + pause settings, Manual spread limit with send-anyway, quiz second-opinion panel, Telegram phone-alert settings.
+- 2026-09-24: 0.9 s notification fade (also with reduced motion), backtest card + watchdog line on Agent, watchdog pop-ups, trade notes, full data backup.
 <!-- Chat B: add new lines above this marker -->

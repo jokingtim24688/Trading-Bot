@@ -24,9 +24,11 @@
   i { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--gold); opacity: .35; transform-origin: left; animation: life linear forwards; }
   .tp i { background: var(--up); } .sl i, .err i { background: var(--down); }
   .note.hold i { animation-play-state: paused; }
-  .note.out { animation: out .3s ease-out forwards; }
+  .note.out { animation: out .9s cubic-bezier(.4, 0, .2, 1) forwards; }   /* fades away over 0.9 s */
   @keyframes in { from { opacity: 0; transform: translate3d(28px, 0, 0) scale(.97); } }
-  @keyframes out { to { opacity: 0; transform: translate3d(18px, 0, 0) scale(.98); } }
+  @keyframes out { to { opacity: 0; transform: translate3d(14px, 0, 0); } }
+  @keyframes fade { to { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .note { animation: none; } .note.out { animation: fade .9s ease forwards; } }
   @keyframes life { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 </style>
 </head>
@@ -50,7 +52,7 @@
   }
   function out(el) {
     if (el._gone) return; el._gone = true; el.classList.add("out");
-    setTimeout(() => { el.remove(); fit(); }, 300);
+    setTimeout(() => { el.remove(); fit(); }, 950);
   }
   // tell the app this page is up, so notifications sent while it loaded are shown now
   window.addEventListener("pywebviewready", () => { const a = api(); if (a && a.ready) a.ready(); });

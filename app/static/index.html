@@ -159,6 +159,10 @@
           </div>
           <small id="man-auto-note" class="muted small auto-note"></small>
           <table class="levels" id="man-levels" aria-label="Where the take profit and stop loss land"><thead><tr><th></th><th>Entry</th><th>Take profit</th><th>Stop loss</th></tr></thead><tbody></tbody></table>
+          <div class="form-row man-why">
+            <label>Why this trade? <small class="muted">optional</small><input id="man-note" maxlength="300" placeholder="London breakout above the Asia high" autocomplete="off"></label>
+            <label>Tags<input id="man-tags" placeholder="breakout, london" autocomplete="off" spellcheck="false"></label>
+          </div>
           <div class="man-risk"><span id="man-risk-txt" class="muted small"></span>
             <span class="row gap"><input id="man-risk" type="number" step="0.1" min="0.1" max="5" value="0.5" title="% of equity"><span class="muted small">%</span><button class="btn xs" id="man-size" type="button" title="Set the lots so the stop loss risks this % of equity">Size from stop</button></span></div>
           <details class="man-more"><summary>More options<span class="chev"></span></summary>
@@ -208,7 +212,7 @@
         </div>
         <div class="panel">
           <div class="panel-head"><h3>History today</h3><span id="man-hist-meta" class="muted small"></span><span class="muted small">click a trade to replay it</span></div>
-          <div class="table-wrap"><table id="man-hist"><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Lots</th><th>Open</th><th>Close</th><th>P/L</th><th>Who</th></tr></thead><tbody></tbody></table></div>
+          <div class="table-wrap"><table id="man-hist"><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Lots</th><th>Open</th><th>Close</th><th>P/L</th><th>Who</th><th>Note</th></tr></thead><tbody></tbody></table></div>
         </div>
       </div>
     </div>
@@ -228,12 +232,19 @@
       <div class="ctl-sliders">
         <label class="slider-label">Confidence threshold <span id="thr-txt" class="num"></span><input id="thr" type="range" min="0.05" max="0.8" step="0.01"></label>
         <label class="slider-label">Stake per trade <span id="stake-txt" class="num"></span><input id="stake" type="range" min="0.01" max="1" step="0.01"></label>
-        <div class="ctl-hint"><p class="muted small">Waits for each M1 candle to close and trades only when every risk check passes.</p><p id="thr-hint" class="muted small"></p><p id="news-line" class="news-line small" hidden></p><p id="agent-msg" class="note"></p></div>
+        <div class="ctl-hint"><p class="muted small">Waits for each M1 candle to close and trades only when every risk check passes.</p><p id="thr-hint" class="muted small"></p><p id="news-line" class="news-line small" hidden></p><p id="wd-line" class="wd-line small" hidden></p><p id="agent-msg" class="note"></p></div>
       </div>
     </div>
     <div class="two-even">
       <div class="panel"><div class="gate" id="gate"><p class="empty">Loading the bot's stage…</p></div></div>
       <div class="panel"><div class="plan" id="plan"><p class="empty">Open MT5 to see the per-trade plan.</p></div></div>
+    </div>
+    <div class="panel btx-card" id="btx-card">
+      <div class="panel-head"><h3>Backtest before going live</h3>
+        <div class="row gap"><span id="btx-costs" class="muted small"></span><button class="btn primary xs" id="btx-run" type="button">Run the backtest</button><button class="btn xs" id="btx-stop" type="button" hidden>Stop</button></div></div>
+      <p class="muted small btx-what">Replays the model on the stretch of history it never trained on, at full speed, with commission and slippage, and checks the result against the Paper gate. Your trade ledger isn't touched.</p>
+      <div class="btx-prog" id="btx-prog" hidden><div class="bar"><i id="btx-bar"></i></div><span id="btx-prog-txt" class="muted small"></span></div>
+      <div id="btx-report"></div>
     </div>
     <div class="two-even">
       <div class="panel">
@@ -548,6 +559,8 @@
           <label>Paper account balance<span class="u" data-u="USD"><input name="paper_balance" type="number" step="100"></span></label>
           <label>Training look-ahead<span class="u" data-u="M1 bars"><input name="label_horizon" type="number" step="30" min="30"></span></label>
           <label>Score penalty when a stop loss hits<span class="u" data-u="×"><input name="sl_score_mult" type="number" step="0.1" min="1"></span></label>
+          <label>Backtest commission, round trip<span class="u" data-u="per lot"><input name="backtest_commission" type="number" min="0" step="0.5"></span></label>
+          <label>Backtest slippage on every fill<span class="u" data-u="points"><input name="backtest_slippage" type="number" min="0" step="1"></span></label>
           <label class="check"><input type="checkbox" name="early_exit"> Let the bot close a trade before its stop when the model turns against it</label>
           <span class="help">Closing early only costs what it actually lost; a stop-loss hit costs the penalty × the loss.</span>
           <p class="muted small span-all">Score: 1 point = $1. Each trade earns or loses its dollar result (a +$100 trade = +100 points). A stop-loss hit costs the penalty × its loss (−$20 × 1.5 = −30). A trade the bot closes early only costs what it actually lost (−$20 = −20).</p>
@@ -613,7 +626,8 @@
             <label class="check"><input type="checkbox" name="telegram_events" value="open"> Trade opened</label>
             <label class="check"><input type="checkbox" name="telegram_events" value="close"> Trade closed</label>
             <label class="check"><input type="checkbox" name="telegram_events" value="be"> Stop to break-even</label>
-            <label class="check"><input type="checkbox" name="telegram_events" value="trail"> Trailing stop moved</label></div>
+            <label class="check"><input type="checkbox" name="telegram_events" value="trail"> Trailing stop moved</label>
+            <label class="check"><input type="checkbox" name="telegram_events" value="watchdog"> Bot restarted, stuck, or MT5 down</label></div>
         </fieldset>
         <fieldset class="panel" id="set-display"><legend>Display<small>this PC only</small></legend>
           <label class="check"><input type="checkbox" id="pref-motion"> Reduce animations</label>
@@ -625,6 +639,12 @@
           <div class="span-all bk-preview" id="bk-preview" hidden></div>
           <div class="span-all bk-list" id="bk-list"></div>
           <span class="help span-all">Backups go to data/backups/ on this PC. Restoring backs up your current settings first, so you can always go back. The Hermes API key is left out of copied text.</span>
+          <h4 class="span-all set-sub">Everything else: trades, memory, lessons, notes, reviews, sounds and models</h4>
+          <label class="check"><input type="checkbox" name="backup_daily"> Back it all up once a day</label>
+          <label>Keep the newest<span class="u" data-u="backups"><input name="backup_keep" type="number" min="1" max="365"></span></label>
+          <label class="span-all">Backup folder (blank = data/backups/full; a OneDrive or USB folder survives a dead disk)<input name="backup_dir" spellcheck="false"></label>
+          <div class="span-all bk-actions"><button class="btn" type="button" id="dbk-now">Back up everything now</button><span id="dbk-status" class="muted small"></span></div>
+          <div class="span-all bk-list" id="dbk-list"></div>
         </fieldset>
         <div class="savebar glass" id="savebar">
           <span class="dirty" id="set-dirty"><i></i><span id="set-dirty-txt">All changes saved</span></span>

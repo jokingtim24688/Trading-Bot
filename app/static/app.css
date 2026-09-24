@@ -853,13 +853,18 @@ label.waiting { opacity: .5; }
 .note.tp .note-life { color: var(--up); } .note.sl .note-life, .note.err .note-life { color: var(--down); } .note.info .note-life { color: var(--gold); }
 .note.hold .note-life { animation-play-state: paused; }
 .note.hold { border-color: rgba(201,162,74,.35); }
-.note.out { animation: note-out .3s var(--ease-out) forwards; pointer-events: none; }
+.note.out { animation: note-out .9s cubic-bezier(.4, 0, .2, 1) forwards; pointer-events: none; }   /* fades away over 0.9 s */
 @keyframes note-in { from { opacity: 0; transform: translate3d(28px, 0, 0) scale(.97); } }
-@keyframes note-out { to { opacity: 0; transform: translate3d(18px, 0, 0) scale(.98); } }
+@keyframes note-out { to { opacity: 0; transform: translate3d(14px, 0, 0); } }
+@keyframes note-fade { to { opacity: 0; } }
 @keyframes note-life { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-.reduce-motion .note, .reduce-motion .note.out { animation: none; }
-.reduce-motion .note.out { opacity: 0; }
-@media (prefers-reduced-motion: reduce) { .note, .note.out { animation: none; } }
+/* reduced motion: no slide or glide, but still the 0.9 s fade (a fade isn't motion) */
+.reduce-motion .note { animation: none; }
+.reduce-motion .note.out { animation: note-fade .9s ease forwards; }
+@media (prefers-reduced-motion: reduce) { .note { animation: none; } .note.out { animation: note-fade .9s ease forwards; } }
+/* the catch-all reduced-motion rules above cut every animation to nothing; the fade keeps its 0.9 s */
+@media (prefers-reduced-motion: reduce) { .note.out { animation-duration: .9s !important; } }
+html.reduce-motion .note.out { animation-duration: .9s !important; }
 
 /* ---------- keybinds page ---------- */
 .keys-intro { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
@@ -1012,3 +1017,44 @@ label.waiting { opacity: .5; }
 .qz-nums span { display: flex; flex-direction: column; font-size: 10.5px; color: var(--muted); }
 .qz-nums em { font: 500 14px var(--mono); font-style: normal; color: var(--text); }
 .qz-verdict { margin: 12px 0 0; font-size: 13px; line-height: 1.5; }
+
+/* watchdog line (Agent tab) */
+.wd-line { margin: 4px 0 0; color: var(--muted); } .wd-line[hidden] { display: none; }
+.wd-line.bad { color: var(--down); } .wd-line b { font-weight: 600; }
+/* backtest card (Agent tab) */
+.btx-what { margin: -4px 0 10px; }
+.btx-prog { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+.btx-prog[hidden] { display: none; }
+.btx-prog .bar { flex: 1; height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.btx-prog .bar i { display: block; height: 100%; width: 0; background: var(--gold); transition: width .6s var(--ease-out); }
+.btx-verdict { display: flex; gap: 12px; align-items: baseline; padding: 10px 14px; border-radius: var(--r-sm); background: var(--bg-2); border-left: 3px solid var(--warn); font-size: 13px; line-height: 1.5; }
+.btx-verdict.ok { border-left-color: var(--up); } .btx-verdict.ok b { color: var(--up); }
+.btx-verdict.no b { color: var(--warn); } .btx-verdict b { white-space: nowrap; }
+.btx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; margin: 10px 0; }
+.btx-grid > div { background: var(--bg-2); border-radius: var(--r-sm); padding: 6px 10px; }
+.btx-grid span { display: block; font-size: 10.5px; color: var(--muted); } .btx-grid b { font-weight: 500; font-size: 14px; }
+.btx-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 1100px) { .btx-cols { grid-template-columns: minmax(0, 1fr); } }
+.btx-cols h4 { margin: 4px 0 6px; font-size: 12.5px; }
+.btx-gate { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.btx-gate li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto auto; gap: 8px; align-items: baseline; font-size: 12.5px; padding: 3px 0; border-bottom: 1px solid var(--line-soft); }
+.btx-gate i { font-style: normal; font-weight: 700; } .btx-gate .ok i { color: var(--up); } .btx-gate .no i { color: var(--down); }
+.btx-gate small { color: var(--muted); }
+.btx-months { display: flex; gap: 4px; align-items: flex-end; height: 84px; padding-top: 4px; overflow-x: auto; }
+.btx-months .mo { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; min-width: 22px; height: 100%; }
+.btx-months i { width: 14px; border-radius: 3px 3px 0 0; } .btx-months i.pos { background: var(--up); } .btx-months i.neg { background: var(--down); border-radius: 0 0 3px 3px; }
+.btx-months small { font: 9.5px var(--mono); color: var(--muted); }
+.btx-log { margin-top: 10px; } .btx-log summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.btx-log pre { margin: 6px 0 0; font: 11.5px/1.5 var(--mono); color: var(--muted); white-space: pre-wrap; background: var(--bg-2); padding: 8px 10px; border-radius: var(--r-sm); }
+/* trade notes */
+.man-why { margin-top: 2px; }
+.man-why small { font-size: 10.5px; }
+.note-cell { max-width: 260px; }
+.note-cell .nc { display: inline-block; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; margin-right: 4px; }
+.note-cell .tag, .rv-note .tag { margin-left: 2px; color: var(--muted); border: 1px solid var(--line); }
+.note-mark { font: 600 9.5px var(--sans); color: var(--gold); border: 1px solid rgba(201,162,74,.45); border-radius: 4px; padding: 0 4px; margin-left: 4px; cursor: help; }
+.edit-row input.wide { width: 320px; }
+.rv-note { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; background: var(--bg-2); border-radius: var(--r-sm); padding: 6px 10px; }
+.rv-note > span { font-size: 10.5px; color: var(--muted); } .rv-note b { font-weight: 500; font-size: 12.5px; }
+/* settings sub-heading */
+.set-sub { margin: 10px 0 0; font-size: 12.5px; font-weight: 600; color: var(--text); }

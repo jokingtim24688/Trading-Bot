@@ -199,8 +199,14 @@ class Popups:
         self._main = self._main or self._w32.find(MAIN_TITLE)
         return self._w32.in_front(self._main)
 
+    _WATCHDOG = {"agent_restart": ("Bot restarted", "info"), "agent_failed": ("Bot stopped", "err"),
+                "agent_stuck": ("Bot looks stuck", "err"), "mt5_down": ("MT5 is down", "err"), "mt5_up": ("MT5 is back", "ok")}
+
     def _payload(self, ev: dict):
         kind, profit = ev.get("kind"), ev.get("profit")
+        if kind in self._WATCHDOG:                  # about the bot itself: a ready sentence from the watchdog
+            title, k = self._WATCHDOG[kind]
+            return {"title": title, "body": ev.get("message") or "", "kind": k, "amount": None, "secs": self._cfg.get("secs", 2)}
         who = {"bot": "Bot", "hermes": "Hermes"}.get(ev.get("owner"), "You")
         body = " ".join(str(x) for x in (ev.get("side"), ev.get("volume"), ev.get("symbol")) if x not in (None, ""))
         body += (f" at {ev['price']}" if ev.get("price") else "") + f" ({who})"
@@ -229,10 +235,10 @@ class Popups:
                 url = f"http://{HOST}:{self._port}/api/events" + (f"?since={since}" if since is not None else "")
                 with urllib.request.urlopen(url, timeout=5) as r:
                     d = json.loads(r.read().decode())
-                if since is not None and self._cfg.get("screen", True) and self._cfg.get("tpsl", True) and not self._in_front():
+                if since is not None and self._cfg.get("screen", True) and not self._in_front():
                     for ev in d.get("events") or []:
-                        p = self._payload(ev)
-                        if p:
+                        p = self._payload(ev)       # trade alerts follow the TP/SL switch; watchdog alerts always show
+                        if p and (ev.get("kind") in self._WATCHDOG or self._cfg.get("tpsl", True)):
                             self.notify(p)
                 since = d.get("last_id", since)
             except Exception:

@@ -50,8 +50,10 @@ function removeNote(el, instant = false) {       // fade out, then the ones belo
     if (!motionOK()) return;
     sibs.forEach(x => { const dy = before.get(x) - x.getBoundingClientRect().top; if (dy) x.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 280, easing: "cubic-bezier(.22,1,.36,1)" }); });
   };
-  if (instant || !motionOK()) return finish();
-  el.classList.add("out"); el.addEventListener("animationend", finish, { once: true }); setTimeout(finish, 450);
+  if (instant) return finish();
+  el.classList.add("out");                       // a 0.9 s fade (opacity only when motion is reduced)
+  el.addEventListener("animationend", e => { if (e.target === el) finish(); });   // the card's own fade, not its timer line
+  setTimeout(finish, 1100);
 }
 function toast(msg, err = false) { notify({ body: msg, kind: err ? "err" : "info" }); }
 /* one positions request shared by the Market and Manual tabs (and the alerts): in flight once, reused for 0.8 s */
@@ -114,7 +116,8 @@ function showTab(name) {
   if (name === "review") openReview();
   if (name === "keys") renderKeys();
   if (name === "sounds") openSounds();
-  if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); loadProgress(); loadCalendar(); }
+  if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); loadProgress(); loadCalendar(); loadBacktest(); loadWatchdog(); }
+  if (name === "settings") onSettingsOpen();
   if (name === "train") pollTrainLog();
   if (name === "quiz") { loadQuiz(); loadReport(false); }
 }
@@ -1314,6 +1317,8 @@ async function manTrade(side) {
   const body = { symbol: man.symbol, side, type: man.type, volume: +$("#man-vol").value, deviation: +$("#man-dev").value || 20 };
   if (man.auto) Object.assign(body, { be_points: +$("#man-be-pts").value || 0, trail_points: +$("#man-trail-pts").value || 0 });
   if (anyway) body.ignore_spread = true;
+  const why = $("#man-note").value.trim(), tags = splitTags($("#man-tags").value);
+  if (why) body.note = why; if (tags.length) body.tags = tags;
   if (man.type !== "market" && !parseFloat($("#man-price").value)) { toast("Set the price for the pending order.", true); return; }
   const L = levelsFor(side); if (!L) return;
   Object.assign(body, { sl: L.sl, tp: L.tp, sl_points: +$("#man-sl-pts").value, tp_points: +$("#man-tp-pts").value });
@@ -1328,6 +1333,7 @@ async function manTrade(side) {
     const d = man.q?.digits ?? 2, lv = r.ok && (r.sl || r.tp) ? `, TP ${fmt(r.tp, d)}, SL ${fmt(r.sl, d)}` : "";
     toast(r.ok ? `${orderText(side)} ${man.symbol} ${man.type === "market" ? `filled at ${fmt(r.price, d)}` : "placed"}${lv} · #${r.ticket}${r.note ? `. ${r.note}` : ""}` : `Order refused: ${r.comment}`, !r.ok || !!r.note);
     playEvent(r.ok ? "orderOk" : "orderFail");
+    if (r.ok && (why || tags.length)) { $("#man-note").value = ""; $("#man-tags").value = ""; loadManNotes(); }
   } catch (e) {
     toast(e.message, true); playEvent("orderFail");
     if (e.status === 400 && /spread/i.test(e.message) && body.type === "market") {   // too wide: one more click sends it anyway
@@ -1405,9 +1411,9 @@ async function loadManPositions() {
   if (man.editing != null) return;               // don't wipe the SL/TP editor while you type
   const off = man.backend ? "" : " disabled title=\"Needs the manual-trading backend\"", seen = man.posSeen;
   man.posSeen = new Set(ps.map(p => p.ticket));
-  setHTML(tb, sel.map(p => `<tr data-t="${p.ticket}"${seen && !seen.has(p.ticket) ? ` class="enter"` : ""}><td>${p.symbol}</td><td><span class="tag ${p.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[p.owner] || "You"}</span></td>
+  setHTML(tb, sel.map(p => `<tr data-t="${p.ticket}"${seen && !seen.has(p.ticket) ? ` class="enter"` : ""}><td>${p.symbol}${man.notes?.[p.ticket] ? ` <span class="note-mark" title="${esc(man.notes[p.ticket].note || "")}${man.notes[p.ticket].tags?.length ? ` [${esc(man.notes[p.ticket].tags.join(", "))}]` : ""}">note</span>` : ""}</td><td><span class="tag ${p.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[p.owner] || "You"}</span></td>
       <td class="${p.side === "buy" ? "up" : "down"}">${p.side === "buy" ? "▲" : "▼"} ${p.side}</td><td>${p.volume}</td><td>${p.open}</td><td>${p.current}</td><td>${p.sl || "–"}</td><td>${p.tp || "–"}</td><td>${autoCell(p.ticket)}</td>
-      <td class="${cls(p.profit)}">${signed(p.profit)}</td><td><span class="acts"><button data-act="be" title="Move the stop loss to the entry price"${off}>BE</button><button data-act="edit" title="Change stop loss / take profit"${off}>SL/TP</button><button data-act="auto" title="Break-even and trailing stop for this trade"${man.auto ? "" : ` disabled title="Waits for its backend"`}>Auto</button><button data-act="half" title="Close half"${off}>½</button><button class="x" data-act="close">Close</button></span></td></tr>`).join("")
+      <td class="${cls(p.profit)}">${signed(p.profit)}</td><td><span class="acts"><button data-act="be" title="Move the stop loss to the entry price"${off}>BE</button><button data-act="edit" title="Change stop loss / take profit"${off}>SL/TP</button><button data-act="auto" title="Break-even and trailing stop for this trade"${man.auto ? "" : ` disabled title="Waits for its backend"`}>Auto</button><button data-act="note" title="Why you took it, and tags">Note</button><button data-act="half" title="Close half"${off}>½</button><button class="x" data-act="close">Close</button></span></td></tr>`).join("")
     || `<tr><td colspan="11" class="muted">No positions${man.owner === "any" ? "" : " for this filter"}.</td></tr>`);
 }
 $("#man-owner").addEventListener("click", e => {
@@ -1432,6 +1438,13 @@ $("#man-pos").addEventListener("click", async e => {
       <button class="btn xs primary" data-act="save-auto">Save</button><button class="btn xs" data-act="cancel">Cancel</button>${p.owner === "bot" ? `<span class="muted small">This is the bot's trade; it manages its own exits too.</span>` : ""}</div></td></tr>`);
     $("#ed-be").focus(); return;
   }
+  if (act === "note") {
+    const n = man.notes?.[tk] || {};
+    man.editing = tk; tr.nextElementSibling?.classList.contains("edit") && tr.nextElementSibling.remove();
+    tr.insertAdjacentHTML("afterend", `<tr class="edit"><td colspan="11"><div class="edit-row">Why <input id="ed-note" class="wide" maxlength="300" value="${esc(n.note || "")}" placeholder="why you took it">
+      Tags <input id="ed-tags" value="${esc((n.tags || []).join(", "))}" placeholder="breakout, london"><button class="btn xs primary" data-act="save-note">Save</button><button class="btn xs" data-act="cancel">Cancel</button></div></td></tr>`);
+    $("#ed-note").focus(); return;
+  }
   if (act === "cancel") { man.editing = null; loadManPositions(); return; }
   b.disabled = true;
   try {
@@ -1443,6 +1456,11 @@ $("#man-pos").addEventListener("click", async e => {
       const tr0 = tr.previousElementSibling, t0 = +tr0.dataset.t;
       r = await api("/api/manual/modify", { method: "POST", body: { ticket: t0, sl: parseFloat($("#ed-sl").value) || 0, tp: parseFloat($("#ed-tp").value) || 0 } });
       toast(r.ok ? `#${t0}: stop loss and take profit updated.` : r.comment, !r.ok); man.editing = null;
+    }
+    if (act === "save-note") {
+      const t0 = +tr.previousElementSibling.dataset.t;
+      await api("/api/manual/notes", { method: "POST", body: { ticket: t0, note: $("#ed-note").value.trim(), tags: splitTags($("#ed-tags").value) } });
+      toast(`#${t0}: note saved.`); man.editing = null; await loadManNotes();
     }
     if (act === "save-auto") {
       const t0 = +tr.previousElementSibling.dataset.t, be = +$("#ed-be").value || 0, trail = +$("#ed-trail").value || 0;
@@ -1505,14 +1523,14 @@ $("#man-cancel-all").onclick = async () => {
 };
 async function loadManHistory() {
   const tb = $("#man-hist tbody");
-  if (!man.backend) { setHTML(tb, `<tr><td colspan="8" class="muted">Today's closed deals show up here once the manual-trading backend is in.</td></tr>`); return; }
-  let hs; try { hs = await api("/api/manual/history?days=1"); } catch (e) { setHTML(tb, `<tr><td colspan="8" class="muted">${e.message}</td></tr>`); return; }
+  if (!man.backend) { setHTML(tb, `<tr><td colspan="9" class="muted">Today's closed deals show up here once the manual-trading backend is in.</td></tr>`); return; }
+  let hs; try { hs = await api("/api/manual/history?days=1"); } catch (e) { setHTML(tb, `<tr><td colspan="9" class="muted">${e.message}</td></tr>`); return; }
   const net = hs.reduce((s, h) => s + (h.profit || 0), 0);
   setHTML($("#man-hist-meta"), hs.length ? `${hs.length} closed · net <b class="num ${cls(net)}">${signed(net)}</b>` : "");
   man.hist = hs;
   setHTML(tb, hs.map((h, i) => `<tr class="click" data-h="${i}" title="Replay this trade"><td>${srvHM(h.time)}</td><td>${h.symbol}</td><td class="${h.side === "buy" ? "up" : "down"}">${h.side === "buy" ? "▲" : "▼"} ${h.side}</td><td>${h.volume}</td><td>${h.open}</td><td>${h.close}</td>
-      <td class="${cls(h.profit)}">${signed(h.profit)}</td><td><span class="tag ${h.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[h.owner] || "You"}</span></td></tr>`).join("")
-    || `<tr><td colspan="8" class="muted">Nothing closed today yet.</td></tr>`);
+      <td class="${cls(h.profit)}">${signed(h.profit)}</td><td><span class="tag ${h.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[h.owner] || "You"}</span></td><td class="note-cell">${noteCell(h.note, h.tags)}</td></tr>`).join("")
+    || `<tr><td colspan="9" class="muted">Nothing closed today yet.</td></tr>`);
 }
 async function loadManQuotes() {
   const syms = state.settings?.symbols_watch || []; if (!syms.length) return;
@@ -1527,14 +1545,14 @@ $("#man-quotes").addEventListener("click", e => { const r = e.target.closest("[d
 async function openManual() {
   manSymbols(); await probeManual();
   loadManBars(); loadManQuote(); loadManPositions(); loadManQuotes(); loadManOrders(); loadManHistory();
-  realBanner(); renderKeysHint(); renderConn();
+  realBanner(); renderKeysHint(); renderConn(); loadManNotes();
 }
 setInterval(() => {                               // only while the Manual tab is open: quote 1 s, positions 2 s, lists 3 s, history 15 s
   if (state.tab !== "manual" || document.hidden) return;
   man.tick++; loadManBars(); if (man.backend) loadManQuote(); else renderConn();
   if (man.tick % 2 === 0) { loadManPositions(); realBanner(); }
   if (man.tick % 3 === 0) { loadManQuotes(); loadManOrders(); if (man.auto) loadManAuto(); }
-  if (man.tick % 15 === 0) loadManHistory();
+  if (man.tick % 15 === 0) { loadManHistory(); loadManNotes(); }
 }, 1000);
 
 /* real-account guard: a red banner on the Manual tab, "type REAL" once per app session before the first real order
@@ -1709,12 +1727,24 @@ function showAlert(ev) {
     document.addEventListener("visibilitychange", back);
   }
 }
+const WATCHDOG = {
+  agent_restart: { title: "Bot restarted", kind: "info" }, agent_failed: { title: "Bot stopped", kind: "err", sound: "watchdog" },
+  agent_stuck: { title: "Bot looks stuck", kind: "err", sound: "watchdog" }, mt5_down: { title: "MT5 is down", kind: "err", sound: "feedLost" },
+  mt5_up: { title: "MT5 is back", kind: "ok" },
+};
 async function pollEvents() {
   if (alertsState.ok === false) return;
   try {
     const r = await api(`/api/events${alertsState.since != null ? `?since=${alertsState.since}` : ""}`);
     alertsState.ok = true;
     if (alertsState.since != null) (r.events || []).forEach(ev => {
+      const w = WATCHDOG[ev.kind];
+      if (w) {
+        notify({ screen: !pop.feed, kind: w.kind, title: w.title, body: ev.message || "", onClick: () => showTab("agent") });
+        if (w.sound) ev.kind === "mt5_down" ? feedLost() : playEvent(w.sound);
+        if (state.tab === "agent") loadWatchdog();
+        return;
+      }
       if (ev.kind === "close" && ev.profit != null) {           // closed early or by hand
         playEvent(ev.profit >= 0 ? "profit" : "loss");
         if (selfClosed.delete(ev.ticket) || !pref("tpslAlerts", true)) return;   // closed from this app: its own message already said so
@@ -1758,7 +1788,7 @@ function normBot(t) {
 }
 function normYou(h) {
   return { src: "you", key: `you-${h.ticket}`, id: h.ticket, owner: h.owner || "you", symbol: h.symbol, side: h.side, volume: h.volume, open: h.open, close: h.close,
-    sl: h.sl, tp: h.tp, profit: h.profit ?? 0, reason: h.reason, openT: epoch(h.open_time), closeT: epoch(h.time) };
+    sl: h.sl, tp: h.tp, profit: h.profit ?? 0, reason: h.reason, openT: epoch(h.open_time), closeT: epoch(h.time), note: h.note, tags: h.tags };
 }
 function statsOf(ts) {
   const n = ts.length, wins = ts.filter(t => t.profit > 0), losses = ts.filter(t => t.profit < 0);
@@ -1860,7 +1890,8 @@ async function showReplay(t) {
   setHTML($("#rv-facts"), fact("Opened", t.openT ? srvDate(t.openT) : "not recorded") + fact("Closed", srvDate(t.closeT)) + fact("Held", held(mins))
     + fact("Entry", t.open) + fact("Exit", t.close) + fact("Stop loss", t.sl || "none") + fact("Take profit", t.tp || "none")
     + fact("How it ended", REASON[t.reason] || t.reason || null) + fact("Result in R", t.r != null ? `${t.r >= 0 ? "+" : ""}${t.r}R` : null)
-    + fact("Setup", t.setup ? (state.bot.data?.setup_names?.[t.setup] || t.setup) : null) + fact("Mode", t.mode || null));
+    + fact("Setup", t.setup ? (state.bot.data?.setup_names?.[t.setup] || t.setup) : null) + fact("Mode", t.mode || null)
+    + (t.note || t.tags?.length ? `<div class="span-all rv-note"><span>Your note</span><b>${esc(t.note || "")}</b>${(t.tags || []).map(x => `<span class="tag">${esc(x)}</span>`).join("")}</div>` : ""));
   rvChart(); if (!rv.series) return;
   const end = (t.closeT || t.openT) + 30 * 60, count = Math.min(1500, Math.max(150, Math.ceil((mins || 0) + 90)));
   let d; try { d = await api(`/api/bars?symbol=${encodeURIComponent(t.symbol)}&count=${count}&before=${end}`); }
@@ -1996,7 +2027,6 @@ $("#bk-copy").onclick = async () => {
   const t = $("#pref-tpsl");
   t.checked = pref("tpslAlerts", true); t.onchange = () => setPref("tpslAlerts", t.checked);
   $('#set-nav a[href="#set-backup"]').addEventListener("click", loadBackups);
-  $$(".rail-btn").forEach(b => b.addEventListener("click", () => b.dataset.tab === "settings" && loadBackups()));
 })();
 
 /* ---------- first-run checklist: a Setup pill in the top bar while anything required is missing; the list opens
@@ -2335,6 +2365,7 @@ const SOUND_EVENTS = [
   { id: "demoted", label: "Bot moved back a stage", short: "stage down", desc: "Its drawdown limit was hit.", def: { sound: "gong", volume: .8, tone: .6 } },
   { id: "feedLost", label: "MT5 or the price feed went quiet", short: "feed lost", desc: "MT5 closed or lost its connection, or prices stopped while the market is open.", def: { sound: "alarm", volume: .5, tone: .7 } },
   { id: "hermes", label: "Hermes replied", short: "Hermes", desc: "Only when you're not looking at the Hermes tab.", def: { sound: "pop", volume: .6 } },
+  { id: "watchdog", label: "Bot crashed or looks stuck", short: "watchdog", desc: "The watchdog restarts it; this rings when it gives up or the bot stops reporting.", def: { sound: "alarm", volume: .6, tone: .7 } },
 ];
 const SND_MASTER = { volume: .8, mute: false, gap: .45, quiet: { on: false, from: "23:00", to: "07:00" } };
 const evDef = id => ({ ...SOUND_BASE, ...SOUND_EVENTS.find(e => e.id === id).def });
@@ -2711,7 +2742,82 @@ $("#tg-test").onclick = async () => {
   catch (e) { toast(e.message, true); }
   b.disabled = false; setTimeout(loadTelegram, 400);
 };
-$$(".rail-btn").forEach(b => b.addEventListener("click", () => { if (b.dataset.tab === "settings") { loadTelegram(); renderNews(); if (!$("#quiz-verdict").textContent) api("/api/stats/quiz?days=0&mode=all").then(q => { $("#quiz-verdict").textContent = q.verdict ? `So far: ${q.verdict}` : ""; }).catch(() => {}); } }));
+function onSettingsOpen() {                        // everything on the Settings page that comes from the server
+  loadBackups(); loadDataBackups(); loadTelegram(); renderNews();
+  if (!$("#quiz-verdict").textContent) api("/api/stats/quiz?days=0&mode=all").then(q => { $("#quiz-verdict").textContent = q.verdict ? `So far: ${q.verdict}` : ""; }).catch(() => {});
+}
+
+/* ---------- trade notes: why you took a trade, and tags (backend: /api/manual/notes; order and history carry them) ---------- */
+const splitTags = v => String(v || "").split(/[,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean).slice(0, 10);
+const noteCell = (note, tags) => (note || tags?.length) ? `<span class="nc" title="${esc(note || "")}">${esc(note || "")}</span>${(tags || []).map(x => `<span class="tag">${esc(x)}</span>`).join("")}` : `<span class="muted">–</span>`;
+async function loadManNotes() {
+  try { man.notes = await api("/api/manual/notes"); } catch (e) { man.notes = man.notes || {}; return; }
+  if (state.tab === "manual" && man.editing == null) loadManPositions();
+}
+
+/* ---------- watchdog status on the Agent tab (backend: /api/watchdog; its alerts arrive through /api/events) ---------- */
+async function loadWatchdog() {
+  const el = $("#wd-line"); if (!el) return;
+  let w; try { w = await api("/api/watchdog"); } catch (e) { el.hidden = true; return; }
+  const msg = w.gave_up ? `<b>Watchdog gave up</b> after the bot stopped with an error ${w.restarts_last_hour} times in an hour. Check the live log, then press Start agent.`
+    : w.stuck ? `<b>The bot looks stuck:</b> it hasn't reported for a while. The watchdog is restarting it.`
+    : w.mt5_down ? `<b>MT5 is down.</b> Trades keep their stop loss and take profit on the broker's side.`
+    : w.restarts_last_hour ? `The watchdog restarted the bot ${w.restarts_last_hour} time${w.restarts_last_hour === 1 ? "" : "s"} in the last hour.`
+    : w.error ? `Watchdog: ${esc(w.error)}` : "";
+  el.hidden = !msg; setHTML(el, msg); el.classList.toggle("bad", !!(w.gave_up || w.stuck || w.mt5_down));
+}
+
+/* ---------- honest backtest on the Agent tab (backend: /api/backtest, /start, /stop) ---------- */
+const btx = { t: null };
+async function loadBacktest() {
+  let d; try { d = await api("/api/backtest"); } catch (e) { setHTML($("#btx-report"), `<p class="muted small">${e.status === 404 ? "Waits for its backend." : esc(e.message)}</p>`); return; }
+  const s = state.settings || {};
+  $("#btx-costs").textContent = `${fmt(s.backtest_commission ?? 7)} commission per lot, ${s.backtest_slippage ?? 10} points slippage`;
+  $("#btx-run").hidden = d.running; $("#btx-stop").hidden = !d.running;
+  const pr = $("#btx-prog"); pr.hidden = !d.running;
+  if (d.running) {
+    const p = d.progress || {}, pct = p.total ? Math.min(100, 100 * (p.index || 0) / p.total) : 0;
+    $("#btx-bar").style.width = `${pct}%`;
+    $("#btx-prog-txt").textContent = p.total ? `${Math.round(pct)}%${p.bar_time_utc ? `, at ${String(p.bar_time_utc).replace("T", " ").slice(0, 16)} UTC` : ""}, ${p.opened ?? 0} trades so far` : "Starting…";
+    clearTimeout(btx.t); btx.t = setTimeout(() => state.tab === "agent" && loadBacktest(), 2000);
+  }
+  const r = d.report;
+  if (!r) { setHTML($("#btx-report"), d.running ? "" : `<p class="muted small">No backtest yet. It takes a few minutes; you can keep using the app.</p>`); return; }
+  const m = r.metrics || {}, months = m.months || [], top = Math.max(1e-9, ...months.map(x => Math.abs(x.net || 0)));
+  const stat = (k, v, c = "") => `<div><span>${k}</span><b class="num ${c}">${v ?? "—"}</b></div>`;
+  setHTML($("#btx-report"), `<div class="btx-verdict ${r.passed ? "ok" : "no"}"><b>${r.passed ? "Passed the Paper gate" : "Not ready yet"}</b><span>${esc(r.verdict || "")}</span></div>
+    <p class="muted small">Tested ${esc(r.period?.from || "?")} to ${esc(r.period?.to || "?")}, history the model never saw, with ${fmt(r.costs?.commission_per_lot ?? 0)} commission per lot and ${r.costs?.slippage_points ?? 0} points slippage. Run ${esc(String(r.generated_utc || "").replace("T", " ").slice(0, 16))} UTC.</p>
+    <div class="btx-grid">${stat("Trades", m.trades)}${stat("Won", m.win_rate != null ? `${Math.round(m.win_rate)}%` : null)}${stat("Net", signed(m.net), cls(m.net))}${stat("Profit factor", m.profit_factor != null ? (+m.profit_factor).toFixed(2) : null)}
+      ${stat("Per trade", m.expectancy != null ? signed(m.expectancy) : null, cls(m.expectancy))}${stat("Worst drawdown", m.max_drawdown_pct != null ? `${(+m.max_drawdown_pct).toFixed(1)}%` : null)}${stat("Return", m.return_pct != null ? `${(+m.return_pct).toFixed(1)}%` : null, cls(m.return_pct))}
+      ${stat("Trades a day", m.trades_per_day != null ? (+m.trades_per_day).toFixed(1) : null)}${stat("Stops hit", m.stop_hits)}${stat("Days", m.days)}</div>
+    <div class="btx-cols"><div><h4>Against the Paper gate</h4><ul class="btx-gate">${(r.gate || []).map(g => `<li class="${g.ok ? "ok" : "no"}"><i>${g.ok ? "✓" : "✗"}</i><span>${esc(g.label)}</span><b class="num">${esc(String(g.value ?? "—"))}</b><small>need ${esc(String(g.need ?? ""))}</small></li>`).join("")}</ul></div>
+      <div><h4>Each month</h4><div class="btx-months">${months.map(x => `<div class="mo" title="${esc(x.month)}: ${x.trades} trades, ${signed(x.net)}"><i class="${x.net >= 0 ? "pos" : "neg"}" style="height:${Math.max(3, 60 * Math.abs(x.net || 0) / top)}px"></i><small>${esc(String(x.month).slice(2))}</small></div>`).join("") || `<p class="muted small">No months.</p>`}</div></div></div>
+    ${d.log ? `<details class="btx-log"><summary>Last lines of its log</summary><pre>${esc(Array.isArray(d.log) ? d.log.join("\n") : d.log)}</pre></details>` : ""}`);
+}
+$("#btx-run").onclick = async () => {
+  const b = $("#btx-run"); b.disabled = true;
+  try { await api("/api/backtest/start", { method: "POST", body: {} }); toast("Backtest started. It runs in the background."); } catch (e) { toast(e.message, true); }
+  b.disabled = false; loadBacktest();
+};
+$("#btx-stop").onclick = async () => { try { await api("/api/backtest/stop", { method: "POST" }); toast("Backtest stopped."); } catch (e) { toast(e.message, true); } loadBacktest(); };
+
+/* ---------- Settings > Backup > everything else (backend: /api/backup/data) ---------- */
+async function loadDataBackups() {
+  const box = $("#dbk-list"); if (!box) return;
+  let d; try { d = await api("/api/backup/data"); } catch (e) { setHTML(box, `<p class="muted small">${e.status === 404 ? "Waits for its backend." : esc(e.message)}</p>`); return; }
+  $("#dbk-status").className = `small ${d.error ? "tg-err" : "muted"}`;
+  $("#dbk-status").textContent = d.error ? `Last backup failed: ${d.error}` : `Saved in ${d.folder}`;
+  const when = t => typeof t === "number" ? new Date(t * 1000).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : String(t || "").replace("T", " ").slice(0, 16);
+  setHTML(box, (d.backups || []).length ? `<table class="bk-table"><thead><tr><th>Backup</th><th>Saved</th><th>Size</th></tr></thead><tbody>${d.backups.slice(0, 8).map(b => `<tr title="${esc(b.path || "")}"><td class="num">${esc(b.name)}</td><td>${when(b.time)}</td><td class="num">${fmtSize(b.size)}</td></tr>`).join("")}</tbody></table>`
+    : `<p class="muted small">No full backups yet.</p>`);
+}
+$("#dbk-now").onclick = async () => {
+  const b = $("#dbk-now"); b.disabled = true; b.textContent = "Backing up…";
+  try { const r = await api("/api/backup/data", { method: "POST" }); toast(`Saved ${r.name}: ${r.files} files, ${fmtSize(r.size)}.`); } catch (e) { toast(e.message, true); }
+  b.disabled = false; b.textContent = "Back up everything now"; loadDataBackups();
+};
+$('#set-nav a[href="#set-backup"]').addEventListener("click", loadDataBackups);
+setInterval(() => { if (seen() && state.tab === "agent") loadWatchdog(); }, 10000);
 
 /* ---------- boot ---------- */
 initChart();

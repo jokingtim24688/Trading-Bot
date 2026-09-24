@@ -161,4 +161,10 @@
   `#news-list`), spread: `.trade-bar .spread.wide` + `man.spreadArm` resend with `ignore_spread`; `loadQuizSplit`
   (`#rv-quiz`, `#quiz-verdict`); Telegram `loadTelegram`, `#tg-detect`, `#tg-test`, `saveSettingsNow()`; settings
   checkbox groups (`news_impact`, `telegram_events`) are lists in `fillSettings`/`formValues`/`updateDirty`.
+- Backtest / watchdog / notes / full backup (Chat A's routes): `loadBacktest` (`#btx-card`, polls while running),
+  `loadWatchdog` (`#wd-line`), `WATCHDOG` event kinds in `pollEvents` (+ `_WATCHDOG` in `app/main.py`), sound event
+  `watchdog`; notes `man.notes`/`loadManNotes`, `#man-note`/`#man-tags` (order `note`/`tags`), `noteCell`, Positions
+  "Note" editor, `rv-note` in replay; `loadDataBackups`/`#dbk-now`; `onSettingsOpen()` from `showTab`. Notification
+  exit: `.note.out` 0.9 s fade (`note-out`, `note-fade` under reduced motion), `removeNote` listens for the card's own
+  animationend only.
 
