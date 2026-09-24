@@ -598,7 +598,8 @@ setInterval(() => state.tab === "quiz" && loadQuiz(), 400);
 setInterval(brainStatus, 15000);
 
 /* ---------- quiz school (reinforcement learning on pro setups) ---------- */
-const quiz = { chart: null, series: null, lastQ: null, lastAsked: -1, questions: [] };
+const quiz = { chart: null, series: null, lines: [], labels: null, picked: new Set(), cells: null, streaks: "",
+               mistakeAt: -1, mistakeShown: 0, viewing: null, lastPts: null, pps: 0, st: {} };
 const ACT = { buy: "BUY", sell: "SELL", wait: "STAY OUT" };
 function quizChart() {
   if (quiz.chart || !window.LightweightCharts) return;
@@ -610,61 +611,160 @@ function quizChart() {
   });
   quiz.series = quiz.chart.addCandlestickSeries({ upColor: "#3fb68b", downColor: "#e0574f", borderVisible: false, wickUpColor: "#3fb68b", wickDownColor: "#e0574f" });
 }
-function drawQuizBars(bars, after, trade) {
-  quizChart(); if (!quiz.series) return;
-  const faded = (after || []).map(b => ({ ...b, color: "rgba(140,144,152,.35)", wickColor: "rgba(140,144,152,.35)" }));
-  quiz.series.setData([...bars, ...faded]);
-  (quiz.lines || []).forEach(l => quiz.series.removePriceLine(l)); quiz.lines = [];
-  if (trade) quiz.lines = [["Entry", trade.entry, "#c9a24a"], ["Stop", trade.stop, "#e0574f"], ["Target", trade.target, "#3fb68b"]]
-    .map(([t, p, c]) => quiz.series.createPriceLine({ price: p, color: c, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: t }));
-  const now = bars[bars.length - 1];
+function drawQuizBars(q) {
+  quizChart(); if (!quiz.series || !q.bars) return;
+  const faded = (q.after || []).map(b => ({ ...b, color: "rgba(140,144,152,.35)", wickColor: "rgba(140,144,152,.35)" }));
+  quiz.series.setData([...q.bars, ...faded]);
+  quiz.lines.forEach(l => quiz.series.removePriceLine(l));
+  quiz.lines = q.trade ? [["Entry", q.trade.entry, "#c9a24a"], ["Stop", q.trade.stop, "#e0574f"], ["Target", q.trade.target, "#3fb68b"]]
+    .map(([t, p, c]) => quiz.series.createPriceLine({ price: p, color: c, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: t })) : [];
+  const now = q.bars[q.bars.length - 1];
   quiz.series.setMarkers(now ? [{ time: now.time, position: "aboveBar", color: "#c9a24a", shape: "arrowDown", text: "now" }] : []);
   quiz.chart.timeScale().fitContent();
 }
 function probBars(probs, pick) {
-  return `<div class="probs">${["buy", "sell", "wait"].map(a => `<span class="${a === pick ? "pick" : ""}">${a === "wait" ? "wait" : a}</span><div class="bar"><i style="width:${Math.round((probs?.[a] || 0) * 100)}%"></i></div><span class="num">${Math.round((probs?.[a] || 0) * 100)}%</span>`).join("")}</div>`;
+  return `<div class="probs">${["buy", "sell", "wait"].map(a => `<span class="${a === pick ? "pick" : ""}">${a === "wait" ? "stay out" : a}</span><div class="bar"><i style="width:${Math.round((probs?.[a] || 0) * 100)}%"></i></div><span class="num">${Math.round((probs?.[a] || 0) * 100)}%</span>`).join("")}</div>`;
 }
+function showQuestion(q, title, agent) {
+  $("#quiz-q-title").textContent = title;
+  $("#quiz-q-meta").textContent = `Q${q.id} · ${q.time} server time · ${q.setup_name}`;
+  drawQuizBars(q);
+  $("#quiz-answer").innerHTML = (agent ? `<p class="small" style="margin:0 0 6px">It answered <b>${ACT[agent.action]}</b>, this sure:</p>${probBars(agent.probs, agent.action)}
+      <p class="quiz-verdict down">✗ ${agent.verdict[0].toUpperCase() + agent.verdict.slice(1)} · ${agent.points} points</p>` : "")
+    + `<p class="small" style="margin:0"><b>Pro answer: ${ACT[q.answer]}.</b> <span class="muted">${q.explanation}</span></p>`
+    + (quiz.viewing ? `<p class="small" style="margin:6px 0 0"><a href="#" id="quiz-back">Back to its latest mistake</a></p>` : "");
+  const back = $("#quiz-back"); if (back) back.onclick = e => { e.preventDefault(); quiz.viewing = null; quiz.mistakeAt = -1; loadQuiz(); };
+}
+
+/* mastery board: one small square per practice question, drawn on a canvas so thousands stay fast */
+function boardLayout(n) {
+  const cv = $("#quiz-board"), w = cv.clientWidth || 600;
+  let cell = Math.floor(Math.sqrt((w * 200) / Math.max(1, n)));
+  cell = Math.max(4, Math.min(12, cell));
+  const gap = cell >= 9 ? 2 : 1, cols = Math.max(1, Math.floor((w + gap) / (cell + gap))), rows = Math.ceil(n / cols);
+  return { cell, gap, cols, rows, w, h: rows * (cell + gap) };
+}
+function drawBoard() {
+  const cv = $("#quiz-board"), st = quiz.streaks, n = st.length;
+  if (!n) { cv.style.height = "0px"; $("#quiz-board-meta").textContent = ""; return; }
+  const L = boardLayout(n), r = window.devicePixelRatio || 1;
+  cv.style.height = L.h + "px"; cv.width = Math.round(L.w * r); cv.height = Math.round(L.h * r);
+  const g = cv.getContext("2d"); g.setTransform(r, 0, 0, r, 0, 0); g.clearRect(0, 0, L.w, L.h);
+  const miss = quiz.st.mistake && quiz.st.running ? quiz.st.mistake.id : null, ids = quiz.labels?.ids;
+  for (let k = 0; k < n; k++) {
+    const x = (k % L.cols) * (L.cell + L.gap), y = Math.floor(k / L.cols) * (L.cell + L.gap), c = st[k];
+    g.fillStyle = c === "5" ? "#c9a24a" : c === "u" ? "#4a4f58" : c === "0" ? "#232830" : `rgba(201,162,74,${0.12 + 0.12 * +c})`;
+    g.fillRect(x, y, L.cell, L.cell);
+    const id = ids ? ids[k] : k + 1;
+    if (miss === id) { g.strokeStyle = "#e0574f"; g.lineWidth = 1.5; g.strokeRect(x + .75, y + .75, L.cell - 1.5, L.cell - 1.5); }
+    if (quiz.picked.has(id)) { g.strokeStyle = "#e6e2d8"; g.lineWidth = 1.5; g.strokeRect(x + .75, y + .75, L.cell - 1.5, L.cell - 1.5); }
+  }
+  quiz.cells = L;
+  const done = [...st].filter(c => c === "5").length, unclear = [...st].filter(c => c === "u").length;
+  $("#quiz-board-meta").textContent = `${done.toLocaleString()} of ${n.toLocaleString()} finished${unclear ? ` · ${unclear} unclear` : ""}`;
+}
+function boardHit(e) {
+  const L = quiz.cells; if (!L) return null;
+  const rc = $("#quiz-board").getBoundingClientRect(), x = e.clientX - rc.left, y = e.clientY - rc.top;
+  const col = Math.floor(x / (L.cell + L.gap)), row = Math.floor(y / (L.cell + L.gap)), k = row * L.cols + col;
+  if (col < 0 || col >= L.cols || k < 0 || k >= quiz.streaks.length) return null;
+  return { k, id: quiz.labels ? quiz.labels.ids[k] : k + 1, x, y };
+}
+$("#quiz-board").addEventListener("mousemove", e => {
+  const h = boardHit(e), tip = $("#quiz-tip");
+  if (!h) { tip.hidden = true; return; }
+  const c = quiz.streaks[h.k], lb = quiz.labels;
+  const name = lb ? lb.names[lb.setups[h.k]] : "", ans = lb ? ACT[lb.answers[h.k]] : "";
+  tip.textContent = `Q${h.id} · ${name} · ${ans} · ${c === "5" ? "finished" : c === "u" ? "unclear" : `streak ${c}/5`}`;
+  tip.hidden = false;
+  tip.style.left = Math.min(h.x + 12, $("#quiz-board").clientWidth - tip.offsetWidth - 4) + "px"; tip.style.top = (h.y + 14) + "px";
+});
+$("#quiz-board").addEventListener("mouseleave", () => { $("#quiz-tip").hidden = true; });
+$("#quiz-board").addEventListener("click", async e => {
+  const h = boardHit(e); if (!h) return;
+  if (quiz.streaks[h.k] !== "5") { quiz.picked.has(h.id) ? quiz.picked.delete(h.id) : quiz.picked.add(h.id); updatePicked(); drawBoard(); }
+  try { quiz.viewing = h.id; showQuestion(await api(`/api/quiz/question/${h.id}`), `Question ${h.id}`); } catch (err) {}
+});
+function updatePicked() {
+  const n = quiz.picked.size, b = $("#quiz-focus");
+  b.textContent = `Work on picked (${n.toLocaleString()})`; b.disabled = !n;
+}
+$("#quiz-pick-all").onclick = () => { quiz.picked = new Set(); [...quiz.streaks].forEach((c, k) => { if (c !== "5") quiz.picked.add(quiz.labels ? quiz.labels.ids[k] : k + 1); }); updatePicked(); drawBoard(); };
+$("#quiz-pick-clear").onclick = () => { quiz.picked.clear(); updatePicked(); drawBoard(); };
+
+function drawCurve(vals, max) {
+  const cv = $("#quiz-curve"), r = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight || 150;
+  cv.width = Math.round(w * r); cv.height = Math.round(h * r);
+  const g = cv.getContext("2d"); g.setTransform(r, 0, 0, r, 0, 0); g.clearRect(0, 0, w, h);
+  g.font = "10px 'IBM Plex Mono', monospace"; g.fillStyle = "#8c9098";
+  if (!vals || vals.length < 2) { g.fillText("Fills in as rounds finish.", 4, h / 2); return; }
+  const padL = 44, pad = 8, lo = Math.min(0, ...vals), hi = Math.max(max || 0, ...vals);
+  const X = i => padL + i / (vals.length - 1) * (w - padL - pad), Y = v => pad + (hi - v) / (hi - lo || 1) * (h - 2 * pad);
+  g.strokeStyle = "rgba(255,255,255,.05)";
+  [...new Set([lo, 0, hi])].forEach(v => { g.beginPath(); g.moveTo(padL, Y(v)); g.lineTo(w - pad, Y(v)); g.stroke(); g.fillText(Math.round(v).toLocaleString(), 0, Y(v) + 3); });
+  const grad = g.createLinearGradient(0, pad, 0, h); grad.addColorStop(0, "rgba(201,162,74,.28)"); grad.addColorStop(1, "rgba(201,162,74,0)");
+  g.beginPath(); vals.forEach((v, i) => i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v)));
+  g.lineTo(X(vals.length - 1), Y(lo)); g.lineTo(X(0), Y(lo)); g.closePath(); g.fillStyle = grad; g.fill();
+  g.beginPath(); vals.forEach((v, i) => i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v))); g.strokeStyle = "#c9a24a"; g.lineWidth = 1.5; g.stroke();
+  g.fillStyle = "#c9a24a"; g.beginPath(); g.arc(X(vals.length - 1), Y(vals[vals.length - 1]), 3, 0, 7); g.fill();
+}
+
 async function loadQuiz() {
   let r; try { r = await api("/api/quiz/state"); } catch (e) { return; }
   const st = r.state || {}, qz = r.quiz, pol = r.policy;
-  quiz.questions = qz?.questions || [];
-  const sp = r.control?.speed ?? 20;
+  quiz.st = st;
+  if (qz && quiz.labels?.built !== qz.built) { try { quiz.labels = await api("/api/quiz/labels"); quiz.picked.clear(); updatePicked(); } catch (e) {} }
+  const sp = r.control?.speed ?? 0;
   document.querySelectorAll("#quiz-speed button").forEach(b => b.classList.toggle("active", +b.dataset.speed === sp));
-  $("#quiz-status").textContent = r.job_running ? (st.round ? `round ${st.round} · running` : "working...") : st.done ? (st.stopped ? "stopped" : "finished") : qz ? `${qz.count} questions ready` : "no quiz yet";
-  const card = (l, v, c = "") => `<div class="stat"><span>${l}</span><strong class="${c}">${v}</strong></div>`;
-  const P = st.points ?? pol?.points;
-  $("#quiz-stats").innerHTML = card("Points (reward)", P != null ? `${P >= 0 ? "+" : ""}${Number(P).toLocaleString()}` : "–", cls(P || 0))
-    + card("Mastered", st.practice ? `${st.mastered}/${st.practice}` : pol ? `${pol.mastered}/${pol.practice}` : "–")
-    + card("Round", st.round ?? pol?.rounds ?? "–") + card("Answers", (st.asked ?? pol?.asked ?? 0).toLocaleString());
-  const streaks = st.streaks || [], need = st.mastery || 5, curId = st.question?.id;
-  $("#quiz-mastery").innerHTML = streaks.length ? streaks.map(q => `<div class="mq ${q.streak >= need ? "done" : ""} ${q.id === curId ? "now" : ""}" title="Q${q.id}: ${q.right}/${q.asked} right, best streak ${q.best}">Q${q.id}<div class="dots">${Array.from({ length: need }, (_, k) => `<i class="${k < Math.min(q.streak, need) ? "on" : ""}"></i>`).join("")}</div></div>`).join("")
-    : `<p class="muted small">Starts when the quiz runs.</p>`;
-  const ex = st.exam || pol?.exam;
-  $("#quiz-exam").innerHTML = ex ? `<h4 class="quiz-h">${st.exam ? "Exam" : "Last exam"}: questions it never trained on</h4>
-    <p class="small" style="margin:0 0 6px"><b>${ex.right}/${ex.total} right (${ex.pct}%)</b> · ${ex.points >= 0 ? "+" : ""}${ex.points} points · guessing would get about 33%.
-    ${ex.pct >= 60 ? "It picked up the pattern, not just the answers." : ex.pct >= 45 ? "Some of it carried over to new situations." : "It memorised the practice answers more than it learned the pattern. More questions help (build 60 or 100)."}</p>` : "";
-  const byId = Object.fromEntries(streaks.map(q => [q.id, q]));
-  $("#quiz-table tbody").innerHTML = quiz.questions.map(q => `<tr><td>${q.id}</td><td>${q.set}</td><td>${q.time.slice(0, 16)}</td><td>${q.setup_name}</td><td>${ACT[q.answer]}</td><td>${byId[q.id] ? `${byId[q.id].streak}` : ""}</td><td>${byId[q.id] ? `${byId[q.id].right}/${byId[q.id].asked}` : ""}</td></tr>`).join("")
-    || `<tr><td colspan="7" class="muted">No quiz yet. Click Build quiz (needs downloaded history: Train tab).</td></tr>`;
-  const q = st.question, a = st.agent;
-  if (q && a && st.asked !== quiz.lastAsked) {
-    quiz.lastAsked = st.asked;
-    $("#quiz-q-title").textContent = `Question ${q.id}`;
-    $("#quiz-q-meta").textContent = `${q.time.slice(0, 16)} server time · ${q.setup_name}`;
-    drawQuizBars(q.bars, q.after, q.trade);
-    const ok = a.correct;
-    $("#quiz-answer").innerHTML = `<p class="small" style="margin:0 0 6px">Agent's answer: <b>${ACT[a.action]}</b></p>${probBars(a.probs, a.action)}
-      <p class="quiz-verdict ${ok ? "up" : "down"}">${ok ? "✓ Right" : "✗ " + a.verdict[0].toUpperCase() + a.verdict.slice(1)} · ${a.points >= 0 ? "+" : ""}${a.points} points${ok ? " · reward!" : ""}</p>
-      <p class="small" style="margin:0"><b>Pro answer: ${ACT[q.answer]}.</b> <span class="muted">${q.explanation}</span></p>`;
+  $("#quiz-status").textContent = r.job_running ? (st.round ? (st.focus ? `working on ${st.focus.length.toLocaleString()} picked` : "running") : "working...")
+    : st.done ? (st.stopped ? "stopped" : "finished") : qz ? `${qz.count.toLocaleString()} questions ready` : "no quiz yet";
+  // points and rate
+  const P = st.points ?? pol?.points ?? 0, now = performance.now();
+  if (quiz.lastPts && r.job_running) { const dt = (now - quiz.lastPts.t) / 1000; if (dt > 0.2) quiz.pps = 0.6 * quiz.pps + 0.4 * (P - quiz.lastPts.p) / dt; }
+  quiz.lastPts = { p: P, t: now };
+  $("#quiz-points").textContent = `${P >= 0 ? "+" : "−"}${Math.abs(P).toLocaleString()}`;
+  $("#quiz-pps").textContent = r.job_running ? `${quiz.pps >= 0 ? "+" : "−"}${Math.abs(Math.round(quiz.pps)).toLocaleString()} points a second · ${(st.rate || 0).toLocaleString()} answers a second` : st.reason ? st.reason : " ";
+  $("#quiz-round").textContent = st.round ? `round ${st.round.toLocaleString()}` : "";
+  const card = (l, v, extra = "") => `<div class="stat"><span>${l}</span><strong>${v}</strong>${extra}</div>`;
+  const prac = st.practice ?? qz?.practice ?? 0, mastered = st.mastered ?? pol?.mastered ?? 0;
+  $("#quiz-stats").innerHTML = card("Finished", `${mastered.toLocaleString()}/${prac.toLocaleString()}`, `<div class="bar" style="width:100%;margin-top:6px"><i style="width:${prac ? 100 * mastered / prac : 0}%"></i></div>`)
+    + card("Answers", (st.asked ?? pol?.asked ?? 0).toLocaleString()) + card("Right, last 1,000", st.recent_pct != null ? `${st.recent_pct}%` : "–")
+    + card("Unclear", (st.unclear ?? 0).toLocaleString());
+  // board
+  if (typeof st.streaks === "string") quiz.streaks = st.streaks;
+  else if (qz && !quiz.streaks) quiz.streaks = "0".repeat(qz.practice);
+  drawBoard();
+  drawCurve(st.points_by_round, st.max_round_points);
+  $("#quiz-curve-meta").textContent = st.max_round_points ? `best possible +${st.max_round_points.toLocaleString()}` : "";
+  // latest mistake, held for at least 2 s so it can be read
+  const m = st.mistake;
+  if (!quiz.viewing && m && m.bars && m.at !== quiz.mistakeAt && now - quiz.mistakeShown > 2000) {
+    quiz.mistakeAt = m.at; quiz.mistakeShown = now;
+    showQuestion(m, "Latest mistake", m);
   }
-  if (!q && !st.done && quiz.questions.length && !r.job_running) {
-    $("#quiz-answer").innerHTML = `<p class="empty">${quiz.questions.length} questions ready. Click Start quiz.</p>`;
-  }
+  // hardest
+  $("#quiz-hard tbody").innerHTML = (st.hardest || []).map(h => `<tr data-id="${h.id}"><td>${h.id}</td><td>${h.setup_name}</td><td>${ACT[h.answer]}</td><td>${h.right}/${h.asked}</td></tr>`).join("")
+    || `<tr><td colspan="4" class="muted">Shows up once the quiz runs.</td></tr>`;
+  document.querySelectorAll("#quiz-hard tbody tr[data-id]").forEach(tr => tr.onclick = async () => { quiz.viewing = +tr.dataset.id; showQuestion(await api(`/api/quiz/question/${tr.dataset.id}`), `Question ${tr.dataset.id}`); });
+  // exam
+  const ex = st.exam || (!r.job_running ? pol?.exam : null);
+  $("#quiz-exam-panel").hidden = !ex;
+  if (ex) $("#quiz-exam").innerHTML = `<div class="panel-head"><h3>Exam</h3><span class="muted small">${ex.total.toLocaleString()} questions it never trained on</span></div>
+    <p style="margin:0 0 6px"><b class="num" style="font-size:20px">${ex.right.toLocaleString()}/${ex.total.toLocaleString()}</b> <span class="muted">right (${ex.pct}%) · guessing gets about 33%</span></p>
+    ${ex.by_setup ? `<table class="small" style="width:100%">${Object.entries(ex.by_setup).map(([k, [a, t]]) => `<tr><td>${k}</td><td class="num" style="text-align:right">${a}/${t}</td></tr>`).join("")}</table>` : ""}`;
 }
-$("#quiz-build").onclick = async () => { try { await api("/api/quiz/build", { method: "POST", body: { questions: +$("#quiz-n").value } }); toast("Finding pro setups in your history..."); } catch (e) { toast(e.message, true); } };
-$("#quiz-start").onclick = async () => { try { await api("/api/quiz/train", { method: "POST", body: {} }); quiz.lastAsked = -1; toast("Quiz started. Points are its reward."); } catch (e) { toast(e.message, true); } };
+async function startQuiz(body, msg) {
+  try { await api("/api/quiz/train", { method: "POST", body }); quiz.mistakeAt = -1; quiz.viewing = null; quiz.lastPts = null; toast(msg); loadQuiz(); }
+  catch (e) { toast(e.message, true); }
+}
+$("#quiz-build").onclick = async () => { try { await api("/api/quiz/build", { method: "POST", body: { questions: +$("#quiz-n").value } }); quiz.streaks = ""; toast("Finding pro setups in your history. This takes a minute."); } catch (e) { toast(e.message, true); } };
+$("#quiz-start").onclick = () => startQuiz({}, "Starting over with a fresh agent. Points are its reward.");
+$("#quiz-resume").onclick = () => startQuiz({ resume: true }, "Continuing where it left off.");
+$("#quiz-focus").onclick = () => startQuiz({ focus: [...quiz.picked] }, `Working on ${quiz.picked.size.toLocaleString()} picked question(s).`);
+$("#quiz-focus-hard").onclick = () => { const ids = (quiz.st.hardest || []).map(h => h.id); if (ids.length) startQuiz({ focus: ids }, `Working on the ${ids.length} hardest.`); };
 $("#quiz-stop").onclick = () => api("/api/quiz/control", { method: "POST", body: { stop: true } });
 document.querySelectorAll("#quiz-speed button").forEach(b => b.onclick = () => api("/api/quiz/control", { method: "POST", body: { speed: +b.dataset.speed } }).then(loadQuiz));
+addEventListener("resize", () => state.tab === "quiz" && drawBoard());
 $("#quiz-ask").onclick = async () => {
   $("#quiz-live").textContent = "Asking...";
   try {

@@ -193,3 +193,23 @@
   board, latest mistake held on the chart, points-per-round curve), B Answer tape (streaming answers, accuracy by
   setup, total points), C Question board (30 chart cards flashing right/wrong, streak dots, click for detail).
   https://claude.ai/artifact/UhJQwNYDN4XuaAdfvH8Les (simulated data). Waiting on the user's pick.
+
+## 2026-09-24: Quiz school v2 (layout A, up to 10,000 questions, no more unpassable questions)
+- User picked layout A (Scoreboard) with small squares; Max speed is the default (settings v4).
+- Build: 40 to 10,000 questions, at least an hour apart; charts/inputs stored in .npy files (quiz.json stays small).
+  Cleaner questions: pro winners must reach target within 3 h without going >60% toward the stop; stay-out spots are
+  where neither side would have been a clean trade (mixed through the plan, so they don't get crowded out).
+  Contradictions removed: a near-twin, or 4 of the 5 closest look-alikes, with the opposite answer.
+  4 years of candles hold ~5,200 clean questions; 10,000 needs most of the 2009+ history.
+- Why questions were unpassable, and fixes: (1) the agent compared each answer with its global average (~+9), so a
+  right answer on a question it always missed was barely a reward -> per-question expectation (REINFORCE with a
+  per-question baseline); (2) once sure of a wrong answer it never tried the right one -> exploration rises from 5% to
+  50% on a question it keeps missing; (3) unfinished questions asked 2 extra times a round; (4) mastery is sticky
+  (5 in a row once = finished; still reviewed); (5) policy is now a small network (49 -> 64 tanh -> 3);
+  (6) questions still stuck after 150 rounds are set aside as "unclear" instead of blocking.
+  Synthetic tests: 1,000 questions 739/746 finished, exam 74.6%; 5,185 questions 3,781/3,889, exam 83.4%.
+- Continue (saved agent + progress, saved every 20 s) and Work on picked (focus on chosen unfinished questions;
+  finished ones are left out) in CLI (--resume, --focus) and app.
+- App (layout A): controls + big points + points/s + stats + points-per-round curve + exam by setup on the left;
+  canvas mastery board (4-12 px squares, hover label, click to pick/view, pick all unfinished, work on picked),
+  latest mistake chart held 2 s, hardest-right-now table (work on these), ask-the-live-market.

@@ -15,9 +15,10 @@ Ryzen 5 7600: numpy/pandas and live inference; Strategy Tester 10–12 agents. R
 - **progression.py**: stage ladder (paper → demo → real_1 (2 open) → real_2 (5) → real_3), gates, evaluate/promote/demote, data/progression.json.
 - **learn.py**: analyze ledger → learned_rules.json + `.claude/skills/m1-bot-lessons/`; `block_reason()` used by run.py.
 - **practice.py**: `Practice.decide()` top-10% of the last 1440 confidence readings (Paper/Replay).
-- **quiz.py**: quiz school. `build` -> data/quiz.json (questions from real pro setups that worked + stay-out spots),
-  `train` -> REINFORCE softmax policy (reward = points) until 5-in-a-row on every practice question, exam on unseen
-  ones -> models/quiz_policy.json; state data/quiz_state.json, control data/quiz_control.json. `--quiz-filter` in run/replay.
+- **quiz.py**: quiz school. `build` (40-10,000) -> data/quiz.json + quiz_x/quiz_bars/quiz_times .npy (clean pro winners +
+  stay-out spots, contradictions removed); `train [--resume] [--focus ids]` -> 49-64-3 network, REINFORCE with
+  per-question baseline, adaptive exploration, sticky mastery, stuck -> "unclear"; progress data/quiz_progress.npz,
+  agent models/quiz_policy.json, live data/quiz_state.json. `--quiz-filter` in run/replay.
 - **pro.py**: professional-trader inputs (prior-day levels, Asian range, London/NY opening ranges, session average,
   liquidity sweeps, FVGs, H1 structure, round numbers) added by `build_features`; `active_setups()` / `primary_setup()`
   name setups for the bot card, ledger `setup` column and learn.py "by_setup" / `blocked_setups`.

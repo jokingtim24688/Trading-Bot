@@ -409,7 +409,7 @@ QUIZ_DIR = ROOT / "data"
 @app.post("/api/quiz/build")
 def quiz_build(body: dict = Body(default={})):
     s = settings.load()
-    n = max(34, min(200, int(body.get("questions", 40))))
+    n = max(34, min(10_000, int(body.get("questions", 40))))
     try:
         jobs.start("quiz", ["-m", "agent.quiz", "build", "--symbol", s["symbol"], "--questions", str(n), "--point", str(s["point"])])
     except RuntimeError as e:
@@ -422,11 +422,19 @@ def quiz_train(body: dict = Body(default={})):
     s = settings.load()
     if not (QUIZ_DIR / "quiz.json").exists():
         raise HTTPException(400, "Build the quiz first.")
-    speed = body.get("speed", s.get("quiz_speed", 100))
+    speed = body.get("speed", s.get("quiz_speed", 0))
     (QUIZ_DIR / "quiz_control.json").write_text(json.dumps({"speed": speed, "stop": False}))
+    args = ["-m", "agent.quiz", "train"]
+    focus = [int(v) for v in body.get("focus") or []]
+    if focus:                                          # work only on the questions picked on the board
+        args += ["--focus", ",".join(map(str, focus))]
+    elif body.get("resume"):
+        args.append("--resume")
+    else:
+        (QUIZ_DIR / "quiz_progress.npz").unlink(missing_ok=True)
     (QUIZ_DIR / "quiz_state.json").unlink(missing_ok=True)
     try:
-        jobs.start("quiz", ["-m", "agent.quiz", "train"])
+        jobs.start("quiz", args)
     except RuntimeError as e:
         raise HTTPException(409, str(e))
     return {"started": True}
@@ -455,9 +463,30 @@ def quiz_state():
     pol = q.load_policy()
     return {"state": st, "control": q.read_control(), "job_running": jobs.jobs["quiz"].running,
             "quiz": None if not qz else {"built": qz["built"], "count": len(qz["questions"]), "points": qz["points"],
-                                         "questions": [{k: x[k] for k in ("id", "time", "setup_name", "answer", "set", "explanation")}
-                                                       for x in qz["questions"]]},
+                                         "practice": sum(x["set"] == "practice" for x in qz["questions"])},
             "policy": pol.meta if pol else None}
+
+
+@app.get("/api/quiz/labels")
+def quiz_labels():
+    """Setup + answer per practice question (compact), for the mastery board's hover labels."""
+    from agent import quiz as q
+    qz = q._load_json(q.QUIZ, None)
+    if not qz:
+        return {"built": None, "names": [], "ids": [], "setups": [], "answers": []}
+    prac = [x for x in qz["questions"] if x["set"] == "practice"]
+    names = sorted({q.setup_name(x["setup"]) for x in prac})
+    return {"built": qz["built"], "names": names, "ids": [x["id"] for x in prac],
+            "setups": [names.index(q.setup_name(x["setup"])) for x in prac], "answers": [x["answer"] for x in prac]}
+
+
+@app.get("/api/quiz/question/{qid}")
+def quiz_question(qid: int):
+    from agent import quiz as q
+    v = q.question_view(qid)
+    if not v:
+        raise HTTPException(404, "No such question.")
+    return v
 
 
 @app.post("/api/quiz/ask")

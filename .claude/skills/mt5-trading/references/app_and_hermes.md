@@ -102,4 +102,6 @@ Builds 40+ questions from real gold history (pro setups that worked, plus stay-o
 reinforcement-learning agent whose only reward is points (+10 right, -10 wrong way, -5 trading when it should wait,
 -3 missing a good trade) until it answers every practice question right 5 times in a row. It then sits an exam of
 unseen questions; that score shows whether it learned the pattern or memorised answers. "What would you do now?" asks
-it about the live chart; Settings can make it a second opinion before the bot enters.
+it about the live chart; Settings can make it a second opinion before the bot enters. Up to 10,000 questions; the
+mastery board lets you pick unfinished questions to work on, and Continue resumes the saved agent. Questions it
+still can't learn after 150 rounds are set aside as "unclear" (their look-alikes mostly have the other answer).
