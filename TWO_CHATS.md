@@ -102,7 +102,7 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- **Done (Chat A, HASH):** setting `desktop_alerts` (bool, default true). Every TP/SL hit in the events feed pops up a silent Windows notification (any owner).
+- **Done (Chat A, ad46cc9):** setting `desktop_alerts` (bool, default true). Every TP/SL hit in the events feed pops up a silent Windows notification (any owner).
   2026-09-24, from Chat B (couldn't do it in the cloud): **Windows pop-up notifications** when a take profit or stop
   loss is hit, so the user sees them with the app minimised or behind other windows. The in-app card, sound and window
   title already work (UI polls `/api/events`). Idea: when the events feed records `tp`/`sl`, the server shows a
