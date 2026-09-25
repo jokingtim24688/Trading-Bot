@@ -30,7 +30,8 @@
 - **Trade**: Agent tab → `/api/agent/start` → `agent.run` → closed-bar poll → features → XGBoost proba → `RiskGate` → Paper/LiveBroker → `logs/journal_*.csv`.
 - **Chat**: Hermes tab → `/api/chat` → `brain.chat` → Hermes Agent (:8642) *or* Ollama `llama3.2:3b` (CPU) + `tools.py` → `data/hermes_memory.json`.
 - **Follow the bot**: `agent.run` → `ledger` (`data/trades.db`) ← `sync_ledger` (agent every 1s, app every refresh) → `/api/bot/trades` → Market *Bot trade* card, chart lines/markers, alerts; Agent *Bot trades* table; Hermes `get_bot_trades`.
-- **Kill**: hold button → `/api/kill` → STOP file → agent flattens → `close_all(magic 260923)`.
+- **Kill = reset**: hold button → `/api/kill` → STOP file → agent flattens → `close_all(magic 260923)`, then leftover paper trades are closed (reason `kill`) and `data/agent_status.json` is cleared. Stage, history and lessons stay.
+- **Confidence slider**: the only entry bar, practice mode included. The agent gets `--settings data/settings.json` and re-reads `threshold` every candle. Practice mode only reports `top10` (where its best ~10% of readings start).
 
 ## Tests
 `tests/` (pytest, `python -m pytest -q`): `conftest.py` puts `tests/fake_mt5/MetaTrader5.py` first on the path and

@@ -763,6 +763,24 @@ Each chat writes only in its own section below, and adds new entries just above 
   them, so it trades its top ~10% setups from the first new candle. If scoring fails it falls back to learning live.
 - 2 tests (`tests/test_practice.py`); 39 pass.
 
+### 2026-09-25: The confidence slider drives the agent; Hold to flatten resets the bot
+- The user saw "Needs 12% to enter" on the Bot trade card while the slider said 0.07. Two causes:
+  - Practice mode entered on its own "top 10% of readings" bar and ignored the slider.
+  - A running agent only read the slider once, at Start.
+- Now entries always use the slider, practice mode included. The agent gets `--settings data/settings.json` and
+  re-reads `threshold` every candle; a change is printed in the live log. Practice mode only reports `top10` in the
+  status (where its best ~10% of readings start), for the card.
+- `POST /api/kill` (Hold to flatten) now resets the bot:
+  - it stops the agent and closes its MT5 positions;
+  - it closes any paper trades still open (reason `kill`, at the current price);
+  - it clears `data/agent_status.json`.
+  Stage progress, history and lessons are kept.
+- UI handed to Chat B:
+  - the status text under Start agent was wrapping one word per line;
+  - the card's "Needs" line;
+  - the flatten button's label and instant clear.
+- Tests: `tests/test_kill_reset.py`; 41 passed.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

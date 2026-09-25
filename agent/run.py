@@ -48,7 +48,8 @@ def main():
     ap.add_argument("--news-currencies", default="USD", help="comma list of currencies whose news pauses the bot")
     ap.add_argument("--news-impact", default="High", help="comma list of impact levels that pause it (High,Medium,Low)")
     ap.add_argument("--quiz-filter", action="store_true", help="only enter when the quiz agent picks the same side")
-    ap.add_argument("--practice", action="store_true", help="paper only: trade the model's top 10%% setups instead of the threshold")
+    ap.add_argument("--practice", action="store_true", help="paper only: also show where the model's top 10%% of readings start")
+    ap.add_argument("--settings", default=None, help="the app's settings.json: its threshold is re-read every candle")
     ap.add_argument("--sl-score-mult", type=float, default=None, help="score penalty multiplier when a stop loss hits (default 1.5)")
     ap.add_argument("--terminal", default=None, help="path to terminal64.exe (optional)")
     ap.add_argument("--live", action="store_true", help="send real orders (demo account unless --allow-real)")
@@ -114,7 +115,7 @@ def main():
         """One line per closed candle in the live log + data/agent_status.json for the Market tab."""
         hhmm = str(bar_time)[11:16]
         pb, ps = probs["buy"], probs["sell"]
-        need = probs["need"] if practice is not None and probs["need"] else cfg.threshold
+        need = cfg.threshold                   # the slider's value: the only bar entries have to clear
         conf = f"buy {pb:.1%} / sell {ps:.1%} (needs {need:.1%})" if pb is not None else "model warming up"
         print(f"{hhmm} {conf} -> {decision}{': ' + reason if reason else ''}", flush=True)
         try:
@@ -122,7 +123,7 @@ def main():
             status_path.write_text(json.dumps({
                 "time_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "bar": hhmm, "mode": mode,
                 "symbol": cfg.symbol, "p_buy": pb, "p_sell": ps, "threshold": cfg.threshold, "need": need,
-                "practice": practice is not None, "setups": [SETUP_NAMES[k] for k in probs["setups"]],
+                "practice": practice is not None, "top10": probs["need"], "setups": [SETUP_NAMES[k] for k in probs["setups"]],
                 "decision": decision,
                 "reason": reason, "open": broker.open_count(), "max_open": max_open}))
         except OSError:
@@ -153,6 +154,14 @@ def main():
                 time.sleep(1.0)
                 continue
             last_bar = bar_time
+            if args.settings:                              # the slider moved while running: use it from this candle
+                try:
+                    thr = float(json.loads(Path(args.settings).read_text(encoding="utf-8"))["threshold"])
+                    if 0 < thr < 1 and thr != cfg.threshold:
+                        print(f"confidence threshold changed in the app: {cfg.threshold:.2f} -> {thr:.2f}", flush=True)
+                        cfg.threshold = thr
+                except (OSError, ValueError, KeyError, TypeError):
+                    pass
             bars = data.m1_bars(cfg.history_bars)
             bar = bars.iloc[-1]
             spread_px = float(bar["spread"]) * spec.point
@@ -190,14 +199,8 @@ def main():
                 side, prob = "buy", p_long
             elif p_short >= cfg.threshold and p_short > p_long:
                 side, prob = "sell", p_short
-            if practice is not None:
-                side, prob, cut = practice.decide(p_long, p_short)
-                probs["need"] = cut
-                if side is None:
-                    say(bar_time, "waiting for a strong setup",
-                        "practice mode enters on the best ~10% of readings (about 1 candle in 10)" if cut else
-                        f"practice mode: learning what a strong reading looks like ({len(practice.seen)}/60 candles)")
-                    continue
+            if practice is not None:                       # info only: where its best ~10% of readings start
+                probs["need"] = practice.decide(p_long, p_short)[2]
             if side is None:
                 say(bar_time, "waiting for a strong setup", "no side reached the needed confidence on this candle")
                 continue

@@ -373,7 +373,8 @@ def review_weeks():
 
 @app.post("/api/kill")
 def kill_switch():
-    """Flatten the agent's positions and stop it."""
+    """Flatten and reset the bot: stop the agent, close its MT5 positions and any paper trades still open, and clear
+    its status card, so the next Start begins clean. Stage progress, trade history and lessons are kept."""
     stop = ROOT / "STOP"
     if jobs.jobs["agent"].running:
         stop.write_text("stop")
@@ -392,7 +393,16 @@ def kill_switch():
         mt5_service.sync_bot_ledger(force=True)
     except mt5_service.MT5Unavailable:
         closed = []
-    return {"stopped": True, "closed": closed}
+    paper = ledger.open_trades("paper")          # the agent closes these itself; these are ones it left behind
+    try:
+        fl = mt5_service.floating_for(paper) if paper else {}
+    except mt5_service.MT5Unavailable:
+        fl = {}
+    for t in paper:
+        f = fl.get(t["id"]) or {}
+        ledger.close_trade(t["id"], f.get("price") or t["entry"], "kill", f.get("pnl") or 0.0)
+    (settings.DATA / "agent_status.json").unlink(missing_ok=True)
+    return {"stopped": True, "closed": closed, "paper_closed": [t["id"] for t in paper], "reset": True}
 
 
 # ---------- the bot's own trades ----------
@@ -448,6 +458,7 @@ def agent_args(s: dict, mode: str, max_open: int | None = None) -> list[str]:
                  "--news-impact", ",".join(s.get("news_impact") or ["High"])]
     if s.get("practice", True) and mode == "paper":
         args.append("--practice")
+    args += ["--settings", str(settings.PATH)]      # the agent re-reads the confidence slider every candle
     if s.get("terminal_path"):
         args += ["--terminal", s["terminal_path"]]
     if mode in ("demo", "real"):

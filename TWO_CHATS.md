@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last: app-written skill files untracked so updates never block (2026-09-24).
+Status: idle. Last (2026-09-25): the confidence slider drives the agent live (practice too); Hold to flatten resets the bot.
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -250,6 +250,23 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-25, from the user (Agent tab + Market tab screenshots): three UI fixes.
+  1. **The text box under Start agent shows one word per line** ("Started / at / the / Paper / stage.") with a big
+     empty area to its left. Please make that status text wrap normally across the full width, with the box
+     only as tall as its text.
+  2. **"Needs 12% to enter" on the Bot trade card didn't match the 0.07 slider.** Backend fixed: entries now always
+     use the Confidence threshold slider, including practice mode, and a running agent re-reads it from settings at
+     every candle (the live log prints "confidence threshold changed in the app: 0.10 -> 0.07"). `agent.need` in
+     `/api/bot/trades` now always equals the slider. Please change the card line to `Needs ${pct(need)} to enter`
+     without the "(practice: its best ~10% of readings)" part. If practice is on and the new `agent.top10` field
+     is a number, add a muted note like "its best 10% start at 12%". Also, while the agent runs, a slider change
+     applies from the next candle; a hint under the slider saying so would help.
+  3. **Hold to flatten agent now resets the bot.** `POST /api/kill` stops the agent, closes its MT5 positions, closes
+     any paper trades left open (reason `kill`), and deletes `data/agent_status.json`. It returns
+     `{stopped, closed, paper_closed: [ids], reset: true}`. Stage progress, history and lessons are kept. Please
+     relabel it "Hold to flatten & reset agent". After it runs, clear the Bot trade card, the Agent tab's status text
+     and the open-positions list right away rather than waiting for the next poll. A short toast would help, e.g.
+     "Bot flattened and reset: N closed".
 - 2026-09-25: Quiz tab Weak spots panel. Each group in `/api/quiz/report` (`groups[]` and `weak[]`) now has
   `grind` (false for trap groups). Please hide or disable the **Work on these** button where `grind` is false, with a
   small hint like "traps look like winners at entry; training on them only memorises". Why: the user kept getting
