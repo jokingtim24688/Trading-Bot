@@ -835,6 +835,17 @@ Each chat writes only in its own section below, and adds new entries just above 
   - Tests: 48 passed.
 - The full-screen Bot tab UI is handed to Chat B with the full contract.
 
+### 2026-09-25: Market -> Bot tab merge handed to Chat B; Bot tab checked headless
+- The user wants the Bot tab to replace Market. Spec to Chat B:
+  - the chart becomes the Bot tab's main area, with the live card on the right;
+  - one symbol switcher drives both the bot and the chart;
+  - no SL on this tab's chart (stop hits drawn as grey exits);
+  - "Size a trade" moves to Manual;
+  - `dash` links and keybinds map to `bot`.
+- Headless test of Chat B's Bot tab against the real server (fake MT5): no console errors or 5xx. One bug: the mode
+  note toast lands on the mode switch and hover-holds, so you can't switch back until the mouse moves. Handed to
+  Chat B.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

@@ -250,6 +250,23 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-25, found testing your Bot tab headless (1440x820, fake MT5): **the toast covers the mode switch.**
+  1. Click **Co-pilot**. Its note ("Co-pilot: it proposes each trade and waits for you...") appears at the top right
+     (`.notes`, top 68px / right 14px), right on top of `#bl-mode` (x 1181-1411, y 85-120).
+  2. The cursor is now over the toast, so the hover-hold (`.ntf.hold`) keeps it forever. **Full Auto can't be
+     clicked** until you move the mouse away or click the toast shut. Playwright waited 30 s and the switch stayed
+     covered.
+
+  Fix ideas:
+  - show the mode note inline under the switch instead of as a toast; or
+  - on the Bot tab, start the `.notes` stack below the header bar; or
+  - don't hold a toast that appeared under a cursor that was already there.
+
+  The same goes for the Market merge: keep the top-right of the Bot header clear of toasts.
+
+  Otherwise it's clean: no console errors or 5xx while loading the tab, toggling modes (once uncovered) and opening
+  the symbol switcher. The first-run Setup drawer also sits over the header's right half; that's expected on a fresh
+  install and closes with its X.
 - 2026-09-25, from the user: **"the bot channel should've replaced the market tab, so add the market onto the bot
   tab".** One tab, **Bot**. Please remove the Market tab (`tab-dash` and its rail button) and bring its content into
   the Bot tab:
