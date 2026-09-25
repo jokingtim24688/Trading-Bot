@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last (2026-09-25): checked Chat B's 57aeba9 against the backend (dots, first-click Manual, last_hour, top10, kill reset, trading hours): fields match, 43 tests pass.
+Status: idle. Last (2026-09-25): Bot tab backend: co-pilot / full auto engine, /api/bot/live (no SL), symbol switch, points, heartbeat.
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -250,6 +250,74 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-25, from the user (a long spec, pasted to both chats): **a full-screen "Bot" tab with a Co-pilot / Full Auto
+  mode.** Backend is done and tested (`app/botlive.py`, `agent/livecard.py`, `agent/run.py`, routes in
+  `app/server.py`). The real agent was run end to end in the simulator: approve filled, skip didn't, and a timeout
+  auto-executed with the toggle on. Please build the tab.
+  **Where:** a new **Bot** tab, first in the sidebar and the default on open. It fills the whole viewport with no page
+  scroll: no side tables, no raw logs. The Agent tab keeps its stage ladder, sliders, backtest and live log;
+  Start / Stop / Hold to flatten appear in both. Poll `GET /api/bot/live` every 1 s while the tab is visible (it is
+  one cheap call), and slow down when hidden as you do elsewhere.
+  **`GET /api/bot/live`** returns:
+  `{symbol, bot_mode: "auto"|"copilot", copilot_seconds, copilot_auto_execute, display_timezone, running, server_time,
+  status, proposal, heartbeat, points, positions}`. It **never contains a stop loss** (a test checks every key).
+  - `heartbeat` = `{broker, ai, feed}`, each `{ok, text}`.
+    - `feed` also has `price, bid, ask, digits` for the live price badge.
+    - `ai` = the agent is running and deciding every candle. Label it "Hermes AI" as the user asked.
+  - `points` = `{total, realized, floating, today, closed_trades, open_trades}`. 1 point = 1 unit of account currency,
+    the same points as the Paper gate; stop-loss hits count 1.5x.
+    - Big badge: `total` as `+145.50 PTS` in `--up` green or `-32.00 PTS` in `--down` red.
+    - Small line under it: "today +12.40 · floating +3.10".
+  - `status` (null when stopped) = the agent's card, now with:
+    - `headline`: the hero sentence, e.g. "Scanning XAUUSD: H1 trend is bullish, momentum is falling. Waiting for
+      a pullback above 7% before entering", "In an active SELL trade on XAUUSD, riding it toward take profit", or
+      "Co-pilot: proposing a BUY on XAUUSD, waiting for your approval".
+    - `confluence`: 4 pills `{key, name, state: good|bad|neutral, text}` for Trend alignment, Momentum, Volatility,
+      Execution ready. `good`/`bad` are relative to the side it leans to (`lean`).
+    - `confidence_pct`: 0-100, how this reading ranks against the model's last day of readings. Use it for the
+      **AI Confidence gauge**. The raw `p_buy`/`p_sell` (a few %) and `need` can sit small under the gauge.
+    - Plus everything it had before (`decision`, `reason`, `last_hour`, `setups`, `open`, `max_open`, ...).
+  - `positions`: the bot's open trades, each `{id, side, symbol, lots, entry, tp, price, points, progress_pct,
+    entry_time, mode}`.
+    - **Active Position panel shows only:** side + symbol, entry, TP, a progress bar entry -> TP (`progress_pct`
+      0-100, clamped), and live points.
+    - **No stop loss anywhere on this tab:** no SL price, line, label or red SL dot. The stop stays in the order at
+      the broker; the user asked for it to be hidden, not removed.
+  - `proposal` (co-pilot, null when none) = `{id, status: pending|executed|failed|skipped|expired, symbol, side, entry,
+    tp, lots, prob, confidence_pct, reason, seconds, seconds_left, expires, auto_execute, filled?}`. No SL.
+  **Co-pilot proposal card** (centrepiece, inside the live card, above everything else while `status == "pending"`):
+  - Show symbol, BUY/SELL, entry, TP, `reason` (one sentence), confidence, and a countdown bar from `seconds_left`
+    (count down locally between polls).
+  - Two big buttons: **Approve & Execute** and **Skip Setup**, which call `POST /api/copilot/decide {id, action:
+    "approve"|"skip"}`. The agent acts within 1 s.
+    - Answers: 200 `{ok, note}`; 409 `{detail}` when it's no longer waiting (decided, replaced or timed out); 400
+      for a bad action.
+  - Under the buttons, a switch **"Execute when the timer runs out"**: POST `/api/settings {copilot_auto_execute}`.
+    Add a small timer-length select (15 / 30 / 60 / 120 s: `copilot_seconds`). Both apply from the next proposal.
+  - After a decision, flash the outcome for a few seconds ("Executed", "Skipped", "Expired", "Order didn't go
+    through"), then clear.
+  - Add a sound + notification event "Co-pilot proposal" (so they hear it when the app is behind).
+  **Header bar:**
+  1. **Symbol switcher:** the current symbol large, plus a live price badge (`heartbeat.feed.price`, `digits`).
+     - The dropdown lists `GET /api/bot/symbols` -> `{current, trained: [...], watch: [...]}`. Only `trained` symbols
+       can be picked; show the others greyed with "train it first".
+     - Picking one calls `POST /api/bot/symbol {symbol}` -> `{ok, symbol, previous, restarted, open_on_previous,
+       note}` (400 `{detail}` without a model). A running agent restarts on the new symbol at once; it scores the
+       last day of candles on start, so it's deciding within seconds.
+     - Show `note` as a toast. It warns when bot trades are still open on the old symbol.
+  2. **Time zone:** a live clock like `America/New_York (EDT) — 11:15:04 AM`, plus a selector (common IANA zones +
+     "This PC"). It saves `display_timezone` (`""` = this PC) via `/api/settings`.
+     - Show every time on this tab in that zone (`Intl.DateTimeFormat` with `timeZone`).
+     - Note: the bot's trading hours setting is still in broker server time. Show a small hint next to the selector,
+       e.g. "Trading hours are set in server time (Settings)".
+  3. **Points badge** (above).
+  4. **Mode switch `Full Auto | Co-pilot`:** `POST /api/bot/mode {mode: "auto"|"copilot"}` -> `{ok, bot_mode,
+     note}`. A running agent applies it from the next candle; show `note`. Next to it, three heartbeat dots (Broker,
+     Hermes AI, Data Feed), each with its `text` as a tooltip.
+  **Also on the card:** Start / Stop and Hold to flatten & reset. When stopped, the hero says "Stopped. Press Start:
+  it scores the last day of candles and decides on the current candle, no warm-up".
+  Design: your system (dark, gold accents, Plex). The hero sentence is the largest text. The pills are the colours of
+  their state. The gauge is a half-ring or a bar. Everything fits one screen at 1280x720 and up, with no scroll.
 - 2026-09-25, from the user: **"remove in the manual section all of the click twice to confirm stuff".** Everything on
   the Manual tab acts on the first click. All in `app/static/app.js`; no backend change needed.
   - **Buy / Sell** (`placeOrder`, about line 1306): drop the arm-then-send step (`man.arm`, the "click again: ..." note,

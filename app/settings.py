@@ -26,6 +26,10 @@ DEFAULTS = {
     "max_open_trades": 10,                  # bot trades open at the same time (not a per-session total)
     "early_exit": True,
     "auto_promote_demo": True,             # move Paper -> Demo by itself once the Paper gate is passed
+    "bot_mode": "auto",                    # "auto" = Full Auto (trades on its own) | "copilot" = asks you first
+    "copilot_seconds": 30,                 # how long a co-pilot proposal waits for Approve / Skip
+    "copilot_auto_execute": False,         # when that time runs out: True = send it anyway, False = skip it
+    "display_timezone": "",                # the Bot tab's clock and times (IANA name, e.g. America/New_York; "" = this PC's)
     "trade_hours_start": 0,                # server-time hours new bot entries are allowed [start, end); 0-24 = all day
     "trade_hours_end": 24,                 # (the 23:00-01:00 rollover pause, when spreads blow out, still applies)
     "use_learned": True,                   # apply the rules the bot learned from its own trades

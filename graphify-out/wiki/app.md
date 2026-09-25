@@ -195,3 +195,5 @@
 - Quiz: `isTrapQ(h)` greys trap rows in "Hardest right now"; Work on these drills only real setups (`#quiz-hard-hint`).
 - `pollEvents` retries every 30 s after a 404 (`alertsState.retryAt`). Settings > About (`#set-about`, `#ver-box`) +
   the logo tooltip: `renderVersion(status.version)` with the update message (warning style when `ok` is false) and notes.
+
+- **botlive.py** (2026-09-25): `live(status)` backs `GET /api/bot/live` (no SL anywhere), `decide()` writes the co-pilot decision file, `set_mode()`, `symbols()`, `points()` (realized score + floating), `heartbeat()` (broker / ai / feed).

@@ -807,6 +807,34 @@ Each chat writes only in its own section below, and adds new entries just above 
   anyway", bulk close, Cancel all, position close. Full list handed to Chat B. The real-money "type REAL" check stays
   (backend `confirm_real`).
 
+### 2026-09-25: Bot tab backend: Co-pilot / Full Auto, live card, symbol switch, points (UI to Chat B)
+- **No warm-up:**
+  - The agent now always scores the last 1440 closed candles on start (before, only in practice mode). The
+    confidence rank is ready at once, and it decides on the current candle within seconds of Start.
+  - The indicators already got 5000 candles up front.
+- **Co-pilot mode** (`bot_mode` = `copilot`; Full Auto = `auto`, the default). The agent re-reads the mode every
+  candle. When every check passes, instead of sending the order it:
+  - writes `data/copilot.json` (symbol, side, entry, TP, a one-sentence reason, a 0-100 confidence rank, expiry);
+  - checks every second for `data/copilot_decision.json` (written by `POST /api/copilot/decide`);
+  - on Approve, re-prices at the current tick and sends. Skip drops it. On timeout it sends when
+    `copilot_auto_execute` is on, otherwise drops it (`copilot_seconds`, default 30).
+- **`GET /api/bot/live`:** one call for the full-screen card:
+  - headline sentence, confluence pills (trend / momentum / volatility / execution ready), confidence rank;
+  - heartbeat (broker / AI / feed), points (realized score + floating P/L, today);
+  - open positions with entry, TP, progress and points;
+  - the proposal.
+  It has **no stop loss anywhere**, and a test walks every key. Stops stay in the orders.
+- **Other routes:**
+  - `POST /api/bot/symbol` restarts a running agent on the new symbol (it needs a trained model).
+  - `POST /api/bot/mode`, and `GET /api/bot/symbols`.
+- **New settings:** `bot_mode`, `copilot_seconds`, `copilot_auto_execute`, `display_timezone`.
+- **New module** `agent/livecard.py`: the plain-words card.
+- **Verified:** the real agent ran against the simulated market:
+  - Co-pilot: approve -> filled, skip -> nothing, timeout with auto-execute -> filled.
+  - Full Auto: opened on the first candle.
+  - Tests: 48 passed.
+- The full-screen Bot tab UI is handed to Chat B with the full contract.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

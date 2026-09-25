@@ -14,7 +14,7 @@ from agent import learn, ledger, progression, score as scoring
 from agent.pro import SETUP_NAMES
 
 from . import update as update_mod
-from . import backup, brain, bridge, manual, memory, mt5_service, review, settings, sounds, stats, telegram, watch, watchdog
+from . import backup, botlive, brain, bridge, manual, memory, mt5_service, review, settings, sounds, stats, telegram, watch, watchdog
 from .jobs import LOGS, jobs
 from .settings import ROOT
 
@@ -402,6 +402,7 @@ def kill_switch():
         f = fl.get(t["id"]) or {}
         ledger.close_trade(t["id"], f.get("price") or t["entry"], "kill", f.get("pnl") or 0.0)
     (settings.DATA / "agent_status.json").unlink(missing_ok=True)
+    botlive.proposal_path().unlink(missing_ok=True)
     return {"stopped": True, "closed": closed, "paper_closed": [t["id"] for t in paper], "reset": True}
 
 
@@ -493,6 +494,76 @@ def agent_start(body: dict = Body(default={})):
     except RuntimeError as e:
         raise HTTPException(409, str(e))
     return jobs.status()["agent"]
+
+
+# ---------- Bot tab live card: co-pilot, mode, symbol ----------
+def _agent_status() -> dict | None:
+    if not jobs.jobs["agent"].running:
+        return None
+    try:
+        return json.loads((settings.DATA / "agent_status.json").read_text())
+    except (OSError, ValueError):
+        return {"decision": "starting", "reason": "loading the model and scoring the last day of candles",
+                "headline": "Starting: loading the model and scoring the last day of candles"}
+
+
+@app.get("/api/bot/live")
+def bot_live():
+    """Everything the Bot tab's live card shows, in one call. Never includes a stop loss."""
+    return botlive.live(_agent_status())
+
+
+@app.get("/api/bot/symbols")
+def bot_symbols():
+    return botlive.symbols()
+
+
+@app.post("/api/bot/mode")
+def bot_mode(body: dict = Body(...)):
+    try:
+        return botlive.set_mode(str(body.get("mode", "")))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/copilot/decide")
+def copilot_decide(body: dict = Body(...)):
+    try:
+        return botlive.decide(str(body.get("id", "")), str(body.get("action", "")))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except LookupError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/api/bot/symbol")
+def bot_symbol(body: dict = Body(...)):
+    """Switch the bot to another symbol. A running agent restarts on it at once (it scores the last day of candles
+    on start, so there's no warm-up). Needs a trained model for that symbol."""
+    sym = str(body.get("symbol", "")).strip()
+    if not sym:
+        raise HTTPException(400, "Pick a symbol.")
+    if not mt5_service.model_exists(sym):
+        raise HTTPException(400, f"No trained model for {sym} yet. Train it on the Train tab (Fetch data, then Train), "
+                                 f"then switch. Trained: {', '.join(botlive.symbols()['trained']) or 'none'}.")
+    s = settings.load()
+    old = s["symbol"]
+    if sym == old:
+        return {"ok": True, "symbol": sym, "restarted": False, "note": f"Already on {sym}."}
+    s = settings.save({"symbol": sym})
+    restarted = jobs.jobs["agent"].running
+    if restarted:
+        jobs.stop("agent")
+        (settings.DATA / "agent_status.json").unlink(missing_ok=True)
+        botlive.proposal_path().unlink(missing_ok=True)
+        (ROOT / "STOP").unlink(missing_ok=True)
+        jobs.start("agent", stage_args(s))
+    left = botlive.other_symbol_open(old)
+    note = f"Switched to {sym}" + (", the agent restarted on it." if restarted else ".")
+    if left:
+        note += (f" {left} bot trade{'s' if left > 1 else ''} on {old} keep{'s' if left == 1 else ''} its stop and target"
+                 f" at the broker; paper ones wait until you switch back (or Hold to flatten).")
+    return {"ok": True, "symbol": sym, "previous": old, "restarted": restarted, "open_on_previous": left, "note": note}
 
 
 # ---------- stage ladder + learning ----------
