@@ -846,6 +846,20 @@ Each chat writes only in its own section below, and adds new entries just above 
   note toast lands on the mode switch and hover-holds, so you can't switch back until the mouse moves. Handed to
   Chat B.
 
+### 2026-09-25: Learned confidence bar blocked every trade (0.20 vs a model reading 0.05-0.10)
+- The user's Bot tab showed:
+  - "held back: learned: confidence 0.09 below 0.20";
+  - 9 of 9 candles skipped for that reason;
+  - no trades at all.
+- Cause: `learned_rules.json` had `min_confidence` 0.20. It was learned from trades on another confidence scale
+  (the learner also reads Replay trades, possibly from an older model), while the current model reads 0.05-0.10.
+- Fix: `learn.block_reason(..., recent_probs=)` caps the learned bars at the live model's own last day of
+  readings: the median for `min_confidence`, the 80th percentile for loss cautions. run.py passes `ranker.seen`.
+  - A stale bar can no longer block everything.
+  - Below-median readings are still filtered.
+  - Replays are unchanged (they pass no readings).
+- Test in `tests/test_practice.py`; 49 passed.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

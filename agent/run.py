@@ -377,7 +377,8 @@ def main():
 
             if not args.no_learned:
                 why = learn.block_reason(learn.load_rules(), "buy" if side == "buy" else "sell", float(prob),
-                                         datetime.now(timezone.utc).hour, setup=primary_setup(probs["setups"], side))
+                                         datetime.now(timezone.utc).hour, setup=primary_setup(probs["setups"], side),
+                                         recent_probs=ranker.seen)
                 if why:
                     journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side, prob=round(prob, 3), note=why)
                     say(bar_time, f"skipped {side}", why)

@@ -361,21 +361,33 @@ def load_rules() -> dict:
 
 
 def block_reason(rules: dict, side: str, prob: float, utc_hour: int, setup: str | None = None,
-                 cautions: bool = True) -> str | None:
+                 cautions: bool = True, recent_probs=None) -> str | None:
     """Why the learned rules skip this entry, or None to allow it. Cautions from recent losses apply only live
-    (replays pass cautions=False: their clock is history, not now)."""
+    (replays pass cautions=False: their clock is history, not now).
+
+    `recent_probs` = the model's own recent readings (live: the last day's). A learned confidence bar is then capped
+    at their median (cautions: their 80th percentile), so a bar learned from another model or from replays on a
+    different scale can't block every entry: a learned 0.20 against a model that reads 0.05-0.10 never lets
+    anything through."""
     if not rules:
         return None
+    vals = sorted(float(v) for v in (recent_probs or []))
+    cap_min = _quantile(vals, 50) if len(vals) >= 60 else None
+    cap_caution = _quantile(vals, 80) if len(vals) >= 60 else None
     if cautions:
         now = time.time()
         for c in rules.get("cautions", []):
-            if c["side"] == side and (c["setup"] or None) == (setup or None) and c["until"] > now and prob < c["min_prob"]:
+            need = min(c["min_prob"], cap_caution) if cap_caution is not None else c["min_prob"]
+            if c["side"] == side and (c["setup"] or None) == (setup or None) and c["until"] > now and prob < need:
                 return (f"learned from a recent loss: {side}s on '{_setup_label(setup)}' need confidence "
-                        f"{c['min_prob']:.2f} until {c['until_utc'][5:16].replace('T', ' ')} UTC ({c['why']})")
+                        f"{need:.2f} until {c['until_utc'][5:16].replace('T', ' ')} UTC ({c['why']})")
     if utc_hour in rules.get("blocked_hours", []):
         return f"learned: {utc_hour:02d}:00 UTC has been losing"
-    if rules.get("min_confidence") and prob < rules["min_confidence"]:
-        return f"learned: confidence {prob:.2f} below {rules['min_confidence']:.2f}"
+    mc = rules.get("min_confidence")
+    if mc and cap_min is not None:
+        mc = min(mc, cap_min)
+    if mc and prob < mc:
+        return f"learned: confidence {prob:.2f} below {mc:.2f}"
     if rules.get("disabled_side") == side:
         return f"learned: {side} trades have been losing"
     if setup and setup in rules.get("blocked_setups", []):
