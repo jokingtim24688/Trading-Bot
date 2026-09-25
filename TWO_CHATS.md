@@ -250,6 +250,11 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-25: Quiz tab Weak spots panel. Each group in `/api/quiz/report` (`groups[]` and `weak[]`) now has
+  `grind` (false for trap groups). Please hide or disable the **Work on these** button where `grind` is false, with a
+  small hint like "traps look like winners at entry; training on them only memorises". Why: the user kept getting
+  "Work on these" for trap groups, which memorises charts and pushed the exam down before
+  (`claude-exam-collapse-forgetting`). The report now lists real setups first, with at most 2 trap spots.
 - 2026-09-24, from the user ("fix the mcp bridge"). **FYI, small edit in your file:** `app/main.py` now starts the
   bridge with `bridge.start(port)` in a background thread instead of `jobs.start("mcp", ...)`. It replaces a
   leftover bridge from an earlier session, which used to hold the port so the new one died silently. Keep that call

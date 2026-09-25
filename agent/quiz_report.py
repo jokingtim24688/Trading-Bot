@@ -28,6 +28,7 @@ REPORT_MD = Q.DATA / "quiz_report.md"
 SKILL_DIR = Q.ROOT / ".claude" / "skills" / "quiz-weak-spots"
 MIN_GROUP = 15            # questions a group needs before it can be called a weak spot
 TOP = 8                   # weak spots reported
+TRAP_SPOTS = 2            # at most this many of them trap groups (they look like winners; grinding only memorises)
 D_PATTERN = 0.35          # effect size that counts as a pattern
 D_SEPARATE = 0.25         # below this for every feature, traps and winners look the same on the chart
 ACT_NAME = {"buy": "BUY", "sell": "SELL", "wait": "STAY OUT"}
@@ -194,7 +195,12 @@ def make_report(verbose=False):
         g["score"] = 0.4 * (1 - a) + 0.3 * (1 - e) + 0.3 * (1 - g["finished"])
         groups.append(g)
     big = [g for g in groups if g["practice"] >= MIN_GROUP] or [g for g in groups if g["practice"] >= 5]
-    weak = sorted(big, key=lambda g: -g["score"])[:TOP]
+    ranked = sorted(big, key=lambda g: -g["score"])
+    real = [g for g in ranked if not g["trap"]]          # real setups first: they're what extra training can improve
+    trap = [g for g in ranked if g["trap"]][:TRAP_SPOTS]  # traps look like winners at entry (claude-traps-look-like-winners)
+    weak = (real[:TOP - len(trap)] + trap)[:TOP] if real else ranked[:TOP]
+    for g in groups:
+        g["grind"] = not g["trap"]                       # the app shows "Work on these" only where grinding helps
 
     # patterns for each weak spot, and the trap check
     for g in weak:
@@ -307,7 +313,11 @@ def _fixes(g):
                    "history from similar years would help.")
     if g.get("exam") is not None and g.get("acc") is not None and g["exam_n"] >= 5 and g["acc"] - g["exam"] > 0.25:
         out.append("It memorised these more than it learned them (practice far above exam): build a bigger quiz.")
-    if g["finished"] < 0.9:
+    if g["trap"]:
+        out.append("Don't press Work on these for traps: at the moment of entry they look like the setup's winners, so "
+                   "grinding on them only memorises charts and pushes out what it knows about real setups (see "
+                   "claude-traps-look-like-winners). Judge the agent by its exam on real setups.")
+    elif g["finished"] < 0.9:
         out.append("Work on these questions (Weak spots -> Work on these); it loops until they are finished.")
     if g["main_wrong"] and g["main_wrong_share"] >= 0.7:
         out.append(f"Its mistake is almost always {ACT_NAME[g['main_wrong']]}: the pro answer here is "

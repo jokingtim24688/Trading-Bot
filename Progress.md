@@ -749,6 +749,13 @@ Each chat writes only in its own section below, and adds new entries just above 
 
 - 2026-09-24: quiz report 22:34 (mid-run, no exam yet): traps finished 18% -> 41% while trap practice accuracy stayed at 58%, which means memorising. Added an update to `claude-traps-look-like-winners.md` (check the real-setup exam at the end; Continue if it dropped).
 
+### 2026-09-25: quiz report stops sending the user to grind on traps
+- Three pasted reports in a row listed only trap groups as weak spots, each saying "Work on these", which is the step
+  that memorises and pushes out real knowledge.
+- `agent/quiz_report.py`: weak spots now lead with real setups (up to 6); at most 2 trap groups (`TRAP_SPOTS`) keep
+  the trap check visible. Trap spots say "Don't press Work on these" and why. Every group has `grind` (false for traps)
+  so the app can hide the button. Checked on the sandbox quiz; 37 tests pass.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
