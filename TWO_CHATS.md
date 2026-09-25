@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last (2026-09-25): bot trades all day (trading hours setting); the card gets a last-hour summary of why it did or didn't trade.
+Status: idle. Last (2026-09-25): checked Chat B's 57aeba9 against the backend (dots, first-click Manual, last_hour, top10, kill reset, trading hours): fields match, 43 tests pass.
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
