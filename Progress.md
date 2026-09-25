@@ -1103,4 +1103,22 @@ Each chat writes only in its own section below, and adds new entries just above 
   logo's tooltip). Quiz: trap rows greyed and left out of Work on these. Events retry every 30 s after a 404.
 - Tests: 43 passed. Browser-tested in the sandbox (bot trades, history and kill mocked), 0 page errors.
 
+### 2026-09-25: the Bot tab (Co-pilot / Full Auto), on Chat A's backend
+- New **Bot** tab, first in the sidebar and the one the app opens on (key: the ` key left of 1). One full-screen card,
+  no scrolling at 1280x720 and 1440x900:
+  - Header: symbol switcher (trained symbols only; the others say "train it first") with the live price, a clock you
+    click to pick the time zone (every time on the tab follows it), the points badge, the Full Auto / Co-pilot switch
+    and three heartbeat dots (Broker, Hermes AI, Data Feed).
+  - The hero sentence (what the bot is doing right now), four confluence pills in their state colours, a "Last hour"
+    bar of what it did on each of the last 60 candles, the AI Confidence half-ring gauge and the active position with
+    its progress to take profit. No stop loss anywhere on the tab.
+  - Co-pilot proposals sit on top with a countdown, Approve & Execute / Skip Setup, the "Execute when the timer runs
+    out" switch and a 15/30/60/120 s timer; the outcome flashes for 4 s. A new sound + notification "Co-pilot
+    proposal" (also on screen when the app is behind).
+  - Start / Stop / Hold to flatten & reset on the card; Hold is on the Agent tab now too.
+- Fixed while at it: at 1280 px the top bar pushed the whole page wider than the window (it now fits; session
+  details hide below 1400 px).
+- Tests: 48 passed. Browser-tested in the sandbox: the whole co-pilot flow with mocked proposals (approve, skip, 409,
+  timer out, expired), mode, symbol, time zone, stopped state; Start / Stop / Hold against the real sandbox backend.
+
 <!-- Chat B: add new entries above this line -->

@@ -197,3 +197,23 @@
   the logo tooltip: `renderVersion(status.version)` with the update message (warning style when `ok` is false) and notes.
 
 - **botlive.py** (2026-09-25): `live(status)` backs `GET /api/bot/live` (no SL anywhere), `decide()` writes the co-pilot decision file, `set_mode()`, `symbols()`, `points()` (realized score + floating), `heartbeat()` (broker / ai / feed).
+
+## Bot tab (2026-09-25, Chat B; backend by Chat A in fb93b00)
+- `#tab-bot` is first in the rail and the tab the app opens on (`state.tab = "bot"`, `openBot()` at boot; key "`").
+  One full-screen card, no page scroll at 1280x720 and up (`.bot-live` grid with `minmax(0, 1fr)` columns; the body
+  grid is `76px minmax(0, 1fr)` so the top bar can't widen the page; the top bar drops session details under 1400 px).
+- Data: `loadBotLive()` -> `GET /api/bot/live` every 1 s on the tab, every 3 s elsewhere while a co-pilot runs, else
+  10 s (`bl` state). `renderBotLive()` draws the header (symbol + live price, `renderClock()` in `display_timezone` via
+  `tzFmt`/`inZone`, points badge, `#bl-mode` Full Auto / Co-pilot -> `POST /api/bot/mode`, heartbeat dots), the hero
+  (`status.headline`, state line, reason), confluence pills (`.cpill` good/bad/neutral), `lastHourBar()` (stacked bar of
+  the last 60 candles), the half-ring gauge (`confidence_pct`, raw p_buy/p_sell/need under it) and
+  `renderBotPositions()` (entry, TP, progress to TP, points; keyed rows; no stop loss anywhere on the tab).
+- Co-pilot: `renderProposal()` / `drawProposal()` / `tickProposal()` (local countdown from `seconds_left`),
+  Approve & Execute / Skip Setup -> `POST /api/copilot/decide` (409 = no longer waiting), `showOutcome()` flashes
+  Executed / Skipped / Expired / Order didn't go through for 4 s (only for proposals this screen showed, or decided in
+  the last 10 s), `hideProposal()`. `#bl-copts` (auto-execute switch + 15/30/60/120 s timer -> `/api/settings`) moves
+  under the buttons while a proposal waits (`moveCopts`). New proposals: sound event `copilot` + `notify()` (on screen
+  too when the app is behind).
+- Symbol switcher `#bl-sym-pop` (`GET /api/bot/symbols`, trained only; `POST /api/bot/symbol`, its note as a
+  notification). Start / Stop (`agentStart` / `agentStop`, shared with the Agent tab) and every `.kill` button (Market,
+  Agent, Bot) share one hold handler.

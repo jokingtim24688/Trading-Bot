@@ -1,6 +1,6 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const state = { settings: null, symbol: null, mode: "paper", tab: "dash", chart: null, series: null, lastBid: null, digits: 2, equityShown: false };
+const state = { settings: null, symbol: null, mode: "paper", tab: "bot", chart: null, series: null, lastBid: null, digits: 2, equityShown: false };
 
 async function api(path, opts = {}) {
   if (opts.method && opts.method !== "GET") posCache.at = 0;       // a close/order/edit: the next positions read is fresh
@@ -105,12 +105,14 @@ function showTab(name) {
   // leaving the Hermes tab puts the local model to sleep (frees RAM/VRAM; the next message reloads it)
   if (state.tab === "chat" && name !== "chat") api("/api/assistant/sleep", { method: "POST" }).catch(() => {});
   if (name !== "agent") closeLog();
+  if (name !== "bot") closeSymPop();
   if (name === "settings" && state.settings && !$("#savebar").classList.contains("is-dirty")) { fillSettings(); updateDirty(); }
   state.tab = name;
   $$(".rail-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   $$(".tab").forEach(t => t.classList.toggle("active", t.id === `tab-${name}`));
   moveRailInd();
   if (name === "dash" && state.chart && state.chartAuto && !state.autoT) realignChart(true);
+  if (name === "bot") openBot();
   if (name === "chat") { loadHistory(); loadFacts(); }
   if (name === "manual") openManual();
   if (name === "review") openReview();
@@ -216,7 +218,7 @@ renderSessions(); setInterval(() => !document.hidden && renderSessions(), 20000)
 /* PC resources live behind a small button */
 $("#sys-btn").onclick = e => { e.stopPropagation(); const p = $("#sys-pop"), open = p.hidden; p.hidden = !open; $("#sys-btn").setAttribute("aria-expanded", String(open)); };
 document.addEventListener("click", e => { if (!e.target.closest(".sys-wrap")) { $("#sys-pop").hidden = true; $("#sys-btn").setAttribute("aria-expanded", "false"); } });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !keys.capturing) { $("#sys-pop").hidden = true; $("#sys-btn").setAttribute("aria-expanded", "false"); closeLog(); closeSetup(); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !keys.capturing) { $("#sys-pop").hidden = true; $("#sys-btn").setAttribute("aria-expanded", "false"); closeLog(); closeSetup(); closeSymPop(); } });
 
 /* ---------- chart ---------- */
 function initChart() {
@@ -909,25 +911,26 @@ $("#positions").addEventListener("click", async e => {
   loadPositions();
 });
 
-/* ---------- kill switch (hold 1.2s) ---------- */
-(() => {
-  const k = $("#kill"); let h;
+/* ---------- kill switch (hold 1.2 s): the same button on the Market, Agent and Bot tabs ---------- */
+$$(".kill").forEach(k => {
+  let h;
   const cancel = () => { clearTimeout(h); k.classList.remove("holding"); };
   k.addEventListener("pointerdown", () => {
     k.classList.add("holding");
     h = setTimeout(async () => {
-      k.querySelector(".kill-label").textContent = "Flattening…";
+      const labels = $$(".kill .kill-label"); labels.forEach(l => { l.dataset.txt ||= l.textContent; l.textContent = "Flattening…"; });
       try {
         const r = await api("/api/kill", { method: "POST" }), n = (r.closed?.length || 0) + (r.paper_closed?.length || 0);
         toast(`Bot flattened and reset: ${n} closed`);
-        if (state.bot.data) { state.bot.data.open = []; state.bot.data.agent = null; }   // clear the card and lists now, not at the next poll
-        $("#agent-msg").textContent = ""; renderBotCard(); drawBotOverlay(); pollBot(); pollStatus();
+        if (state.bot.data) { state.bot.data.open = []; state.bot.data.agent = null; }   // clear the cards and lists now, not at the next poll
+        if (bl.d) Object.assign(bl.d, { running: false, status: null, proposal: null, positions: [] });
+        $("#agent-msg").textContent = ""; renderBotCard(); drawBotOverlay(); renderBotLive(); pollBot(); pollStatus(); loadBotLive();
       } catch (e) { toast(e.message, true); }
-      k.querySelector(".kill-label").textContent = "Hold to flatten & reset agent"; cancel(); loadPositions(); if (state.tab === "manual") loadManPositions();
+      labels.forEach(l => l.textContent = l.dataset.txt); cancel(); loadPositions(); if (state.tab === "manual") loadManPositions();
     }, 1200);
   });
   ["pointerup", "pointerleave"].forEach(ev => k.addEventListener(ev, cancel));
-})();
+});
 
 /* ---------- agent ---------- */
 /* ---------- stage ladder: Paper -> Demo -> Real 2 -> Real 5 -> Real full ---------- */
@@ -1017,13 +1020,24 @@ function bindSlider(id, key, suffix, digits) {
   el.oninput = () => txt.textContent = `${Number(el.value).toFixed(digits)}${suffix}`;
   el.onchange = () => api("/api/settings", { method: "POST", body: { [key]: parseFloat(el.value) } });
 }
-$("#agent-start").onclick = async () => {
-  const msg = $("#agent-msg"); msg.className = "note";
+async function agentStart() {                    // Start on the Agent tab and on the Bot tab
+  const msg = $("#agent-msg"), bm = $("#bl-ctl-msg"); msg.className = "note";
   if (state.mode === "real" && !confirm(`Start the agent at ${state.progress?.stage?.label}? It will place REAL-money orders.`)) return;
-  try { await api("/api/agent/start", { method: "POST", body: {} }); msg.textContent = `Started at the ${state.progress?.stage?.label || state.mode} stage. It acts when the next M1 candle closes.`; pollStatus(); openLog(); }
-  catch (e) { msg.textContent = e.message; msg.className = "note err"; }
-};
-$("#agent-stop").onclick = async () => { await api("/api/agent/stop", { method: "POST" }); $("#agent-msg").textContent = "Stopped. Any open position keeps its server-side stop loss and take profit."; pollStatus(); };
+  bm.textContent = "Starting: scoring the last day of candles…";
+  try {
+    await api("/api/agent/start", { method: "POST", body: {} });
+    msg.textContent = `Started at the ${state.progress?.stage?.label || state.mode} stage. It scores the last day of candles and decides on the current one.`;
+    pollStatus(); if (state.tab === "agent") openLog(); loadBotLive();
+  } catch (e) { msg.textContent = e.message; msg.className = "note err"; bm.textContent = ""; if (state.tab !== "agent") toast(e.message, true); }
+  setTimeout(() => { if (bm.textContent.startsWith("Starting")) bm.textContent = ""; }, 8000);
+}
+async function agentStop() {
+  try { await api("/api/agent/stop", { method: "POST" }); } catch (e) { toast(e.message, true); return; }
+  $("#agent-msg").textContent = "Stopped. Any open position keeps its server-side stop loss and take profit.";
+  $("#bl-ctl-msg").textContent = "Stopped. Open trades stay open at the broker with their exits."; setTimeout(() => $("#bl-ctl-msg").textContent = "", 6000);
+  pollStatus(); loadBotLive();
+}
+$("#agent-start").onclick = agentStart; $("#agent-stop").onclick = agentStop;
 // console panels show a small "nothing yet" card until their job has written something
 function showLog(which, log, stickToEnd) {
   if (!log || !log.trim()) return;
@@ -2162,7 +2176,7 @@ const KEY_GROUPS = {
     desc: "These place and close orders on the first press, with nothing to confirm. On a real account the first order of the session asks you to type REAL." },
   app: { label: "Moving around", on: true, desc: "Switch tabs, realign charts, step through replays, mute. Safe to leave on." },
 };
-const TAB_NAME = { dash: "Market", manual: "Manual", agent: "Agent", review: "Review", train: "Train", quiz: "Quiz", chat: "Hermes", keys: "Keys", sounds: "Sounds", settings: "Settings" };
+const TAB_NAME = { bot: "Bot", dash: "Market", manual: "Manual", agent: "Agent", review: "Review", train: "Train", quiz: "Quiz", chat: "Hermes", keys: "Keys", sounds: "Sounds", settings: "Settings" };
 function pressBtn(sel) {
   const el = $(sel); if (!el || el.disabled) return;
   el.click(); if (el.animate && motionOK()) el.animate([{ transform: "scale(.96)" }, { transform: "none" }], { duration: 160 });
@@ -2189,7 +2203,7 @@ const KEY_ACTIONS = [
   { id: "man.market", group: "manual", tabs: ["manual"], label: "Order type: market", short: "Market", key: null, run: () => pressBtn('#man-type [data-type="market"]') },
   { id: "man.limit", group: "manual", tabs: ["manual"], label: "Order type: limit", short: "Limit", key: null, run: () => pressBtn('#man-type [data-type="limit"]') },
   { id: "man.stop", group: "manual", tabs: ["manual"], label: "Order type: stop", short: "Stop", key: null, run: () => pressBtn('#man-type [data-type="stop"]') },
-  ...Object.entries({ dash: "1", manual: "2", agent: "3", review: "4", train: "5", quiz: "6", chat: "7", keys: "8", sounds: "9", settings: "0" })
+  ...Object.entries({ bot: "`", dash: "1", manual: "2", agent: "3", review: "4", train: "5", quiz: "6", chat: "7", keys: "8", sounds: "9", settings: "0" })
     .map(([t, k]) => ({ id: `tab.${t}`, group: "app", label: `Go to ${TAB_NAME[t]}`, short: TAB_NAME[t], key: k, run: () => showTab(t) })),
   { id: "chart.realign", group: "app", tabs: ["dash", "manual", "review"], label: "Realign the chart", short: "Realign", key: "R", run: realignHere },
   { id: "log", group: "app", tabs: ["agent"], label: "Open or close the live log", short: "Log", key: "L", run: () => $("#log-drawer").classList.contains("open") ? closeLog() : openLog() },
@@ -2409,6 +2423,7 @@ const SOUND_EVENTS = [
   { id: "demoted", label: "Bot moved back a stage", short: "stage down", desc: "Its drawdown limit was hit.", def: { sound: "gong", volume: .8, tone: .6 } },
   { id: "feedLost", label: "MT5 or the price feed went quiet", short: "feed lost", desc: "MT5 closed or lost its connection, or prices stopped while the market is open.", def: { sound: "alarm", volume: .5, tone: .7 } },
   { id: "hermes", label: "Hermes replied", short: "Hermes", desc: "Only when you're not looking at the Hermes tab.", def: { sound: "pop", volume: .6 } },
+  { id: "copilot", label: "Co-pilot proposal", short: "co-pilot", desc: "The bot proposes a trade on the Bot tab and waits for Approve or Skip.", def: { sound: "chime", pitch: 5, volume: .85 } },
   { id: "watchdog", label: "Bot crashed or looks stuck", short: "watchdog", desc: "The watchdog restarts it; this rings when it gives up or the bot stops reporting.", def: { sound: "alarm", volume: .6, tone: .7 } },
 ];
 const SND_MASTER = { volume: .8, mute: false, gap: .45, quiet: { on: false, from: "23:00", to: "07:00" } };
@@ -2863,6 +2878,301 @@ $("#dbk-now").onclick = async () => {
 $('#set-nav a[href="#set-backup"]').addEventListener("click", loadDataBackups);
 setInterval(() => { if (seen() && state.tab === "agent") loadWatchdog(); }, 10000);
 
+/* ---------- Bot tab: one full-screen live card from GET /api/bot/live (every second while you look at it, slower
+   otherwise). Co-pilot proposals wait here for Approve / Skip. No stop loss anywhere on this tab: it stays in every
+   order at the broker, the user asked for it to be hidden, not removed. Times show in the tab's own time zone
+   (setting display_timezone, "" = this PC). ---------- */
+const TZ_LIST = ["UTC", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "America/Toronto", "America/Sao_Paulo",
+  "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Athens", "Europe/Moscow", "Africa/Johannesburg", "Asia/Dubai", "Asia/Kolkata",
+  "Asia/Singapore", "Asia/Hong_Kong", "Asia/Shanghai", "Asia/Tokyo", "Australia/Sydney", "Pacific/Auckland"];
+const PILL_ICON = { good: '<path d="M5 12.5l4.2 4.2L19 7"/>', bad: '<path d="M7 7l10 10M17 7L7 17"/>', neutral: '<path d="M6 12h12"/>' };
+const PILL_NAMES = [["trend", "Trend alignment"], ["momentum", "Momentum"], ["volatility", "Volatility"], ["ready", "Execution ready"]];
+const OUTCOME = {
+  executed: { cls: "ok", text: "Executed", icon: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.7"/>' },
+  failed: { cls: "err", text: "Order didn't go through", icon: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/>' },
+  skipped: { cls: "idle", text: "Skipped", icon: '<path d="M5 6l7 6-7 6M13 6l7 6-7 6"/>' },
+  expired: { cls: "idle", text: "Expired", icon: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/>' },
+  sending: { cls: "idle", text: "Sending the order…", icon: '<path d="M4 12l16-8-6 16-2.5-6.5z"/>' },
+};
+const bl = { d: null, busy: false, t: 0, tz: "", hold: {}, prop: null, deadline: 0, tick: null, outcome: null, outT: null,
+             seen: new Set(), shown: new Set(), sending: null, price: null, err: null };
+const pctRaw = v => v == null ? "–" : `${(v * 100).toFixed(1)}%`;
+const blDigits = (sym, v) => sym === bl.d?.symbol && bl.d?.heartbeat?.feed?.digits != null ? bl.d.heartbeat.feed.digits : Math.abs(v || 0) < 20 ? 5 : 2;
+const pcZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "This PC"; } catch (e) { return "This PC"; } };
+const tzFmts = new Map();
+function tzFmt(opts) {                            // a formatter in the tab's zone; a zone name the PC doesn't know falls back to this PC
+  const key = bl.tz + JSON.stringify(opts);
+  if (!tzFmts.has(key)) { let f; try { f = new Intl.DateTimeFormat("en-US", { ...opts, timeZone: bl.tz || undefined }); } catch (e) { f = new Intl.DateTimeFormat("en-US", opts); } tzFmts.set(key, f); }
+  return tzFmts.get(key);
+}
+const inZone = (date, opts = { hour: "numeric", minute: "2-digit" }) => tzFmt(opts).format(date);
+function renderClock() {
+  const el = $("#bl-clock"), now = new Date();
+  const abbr = tzFmt({ timeZoneName: "short" }).formatToParts(now).find(p => p.type === "timeZoneName")?.value || "";
+  const txt = `${bl.tz || pcZone()}${abbr ? ` (${abbr})` : ""} — ${inZone(now, { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
+  if (el.textContent !== txt) el.textContent = txt;
+}
+function fillTz() {
+  const sel = $("#bl-tz"), list = !bl.tz || TZ_LIST.includes(bl.tz) ? TZ_LIST : [bl.tz, ...TZ_LIST];
+  const changed = setHTML(sel, `<option value="">This PC (${esc(pcZone())})</option>` + list.map(z => `<option value="${esc(z)}">${esc(z.replace(/_/g, " "))}</option>`).join(""));
+  if (changed || sel.value !== bl.tz) sel.value = bl.tz;
+}
+const justSet = k => Date.now() - (bl.hold[k] || 0) < 3000;   // a control you just changed isn't overwritten by a poll already in flight
+
+function openBot() { renderClock(); loadBotLive(); }
+async function loadBotLive() {
+  if (bl.busy) return; bl.busy = true;
+  try { bl.d = await api("/api/bot/live"); bl.err = null; renderBotLive(); }
+  catch (e) { bl.err = e; renderBotErr(e); }
+  bl.busy = false;
+}
+function renderBotErr(e) {
+  if (bl.d) return;                               // keep the last good card; a blip shouldn't blank it
+  $("#bl-state").textContent = "Offline";
+  $("#bl-headline").textContent = e.status === 404 ? "The Bot tab needs the newest backend. Restart the app to update it." : `Can't reach the bot: ${e.message}`;
+}
+function setMode(m) {
+  $$("#bl-mode .seg-opt").forEach(b => { const on = b.dataset.mode === m; b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); });
+  const d = bl.d, strip = $("#bl-copilot");
+  strip.hidden = m !== "copilot";
+  $("#bl-copilot-txt").textContent = `Co-pilot is on: every trade waits ${d?.copilot_seconds ?? 30} s for Approve or Skip${d?.running ? "" : " once the agent runs"}.`;
+}
+function renderBotLive() {
+  const d = bl.d; if (!d) return;
+  // header: symbol + live price, heartbeat, points, mode, clock
+  $("#bl-sym").textContent = d.symbol || "—";
+  const f = d.heartbeat?.feed || {}, pe = $("#bl-price");
+  if (f.price != null) {
+    const txt = fmt(f.price, f.digits ?? 2);
+    if (pe.textContent !== txt) { const prev = bl.price; pe.textContent = txt; if (prev != null && f.price !== prev) flash(pe, f.price > prev ? 1 : -1); }
+    bl.price = f.price;
+  } else pe.textContent = "—";
+  ["broker", "ai", "feed"].forEach(k => {
+    const h = d.heartbeat?.[k] || {}, el = $(`#bl-hb [data-hb="${k}"]`);
+    el.className = `hb ${h.ok ? "ok" : "bad"}`; el.title = `${{ broker: "Broker", ai: "Hermes AI", feed: "Data Feed" }[k]}: ${h.text || "unknown"}`;
+  });
+  const pt = d.points || {}, tot = $("#bl-pts");
+  setHTML(tot, `${signed(pt.total ?? 0)}<em>PTS</em>`); tot.className = `num ${cls(pt.total)}`;
+  $("#bl-pts-sub").textContent = `today ${signed(pt.today ?? 0)} · floating ${signed(pt.floating ?? 0)}`;
+  $("#bl-pts").parentElement.title = `Points: 1 point = 1 unit of your account currency, the same points as the Paper gate. ${pt.closed_trades ?? 0} closed trade${pt.closed_trades === 1 ? "" : "s"} (${signed(pt.realized ?? 0)}) plus ${pt.open_trades ?? 0} open (${signed(pt.floating ?? 0)}); a stop-loss hit counts 1.5x.`;
+  if (!justSet("mode")) setMode(d.bot_mode); else setMode($("#bl-mode .seg-opt.on")?.dataset.mode || d.bot_mode);
+  if (!justSet("tz") && (d.display_timezone || "") !== bl.tz) { bl.tz = d.display_timezone || ""; tzFmts.clear(); }
+  fillTz(); renderClock();
+  if (!justSet("auto")) $("#bl-autoexec").checked = !!d.copilot_auto_execute;
+  if (!justSet("secs")) {
+    const v = String(d.copilot_seconds ?? 30), sel = $("#bl-secs");
+    if (![...sel.options].some(o => o.value === v)) sel.insertAdjacentHTML("beforeend", `<option value="${esc(v)}">${esc(v)} s</option>`);
+    sel.value = v;
+  }
+  $("#bl-start").disabled = !!d.running; $("#bl-stop").disabled = !d.running; $("#bl-start").textContent = d.running ? "Running" : "Start";
+  // hero: what it is doing right now
+  const st = d.status, run = !!d.running;
+  const when = st?.time_utc ? inZone(new Date(st.time_utc)) : "";
+  setHTML($("#bl-state"), run ? `<span class="live-dot"></span><b>${esc(st?.mode ? st.mode[0].toUpperCase() + st.mode.slice(1) : "Starting")}</b>${when ? ` · last decision ${esc(when)}` : ""} · ${d.bot_mode === "copilot" ? "Co-pilot" : "Full Auto"}`
+    : `<b>Stopped</b> · ${d.bot_mode === "copilot" ? "Co-pilot" : "Full Auto"} when it runs`);
+  const hl = $("#bl-headline");
+  hl.textContent = run ? (st?.headline || (st?.decision ? `${st.decision}${st.reason ? `: ${st.reason}` : ""}` : "Starting: loading the model")) : "Stopped. Press Start: it scores the last day of candles and decides on the current candle, no warm-up";
+  hl.classList.toggle("stopped", !run);
+  const why = run && st?.decision && st.decision !== "starting" ? `${st.decision}${st.reason ? ` · ${st.reason}` : ""}${st.setups?.length ? ` · pro read: ${st.setups.join(", ")}` : ""}` : "";
+  if ($("#bl-reason").textContent !== why) $("#bl-reason").textContent = why;
+  const pills = run && st?.confluence?.length ? st.confluence : PILL_NAMES.map(([key, name]) => ({ key, name, state: "off", text: run ? "waiting for a reading" : "starts with the bot" }));
+  setHTML($("#bl-pills"), pills.map(x => `<div class="cpill ${x.state === "off" ? "neutral off" : esc(x.state)}" title="${esc(x.name)}: ${esc(x.text)}"><svg viewBox="0 0 24 24" aria-hidden="true">${PILL_ICON[x.state] || PILL_ICON.neutral}</svg><b>${esc(x.name)}</b><span>${esc(x.text)}</span></div>`).join(""));
+  setHTML($("#bl-last"), run ? lastHourBar(st?.last_hour) : "");
+  // AI confidence gauge: how this reading ranks against the model's last day of readings
+  const c = run && st?.confidence_pct != null ? Math.max(0, Math.min(100, +st.confidence_pct)) : null, g = $("#bl-gauge-val");
+  g.style.strokeDashoffset = c == null ? 100 : 100 - c;
+  g.classList.toggle("hi", c != null && c >= 80); g.classList.toggle("lo", c != null && c < 40);
+  $("#bl-conf-txt").textContent = c == null ? "—" : `${Math.round(c)}%`;
+  $("#bl-lean").textContent = run && st?.lean ? `leans ${st.lean.toUpperCase()}` : "";
+  $("#bl-conf-sub").textContent = run && st?.p_buy != null ? `buy ${pctRaw(st.p_buy)} · sell ${pctRaw(st.p_sell)} · needs ${pctRaw(st.need ?? st.threshold)}` : run ? "scoring the last day of candles…" : "shows while the bot runs";
+  $(".bl-gauge").title = c == null ? "" : `This reading is stronger than ${Math.round(c)}% of the model's readings over the last day.`;
+  renderBotPositions(d.positions || [], run);
+  renderProposal();
+}
+function lastHourBar(h) {                        // what it did on each of the last 60 candles, as one bar; a top skip reads amber
+  const list = Object.entries(h || {}).filter(([, n]) => n > 0).sort((x, y) => y[1] - x[1]); if (!list.length) return "";
+  const total = list.reduce((a, [, n]) => a + n, 0), greys = ["rgba(230,227,218,.42)", "rgba(230,227,218,.27)", "rgba(230,227,218,.16)"];
+  let g = 0; const col = ([k], i) => k === "opened" ? "var(--up)" : i === 0 ? "var(--warn)" : greys[Math.min(g++, greys.length - 1)];
+  const items = list.map((x, i) => ({ k: x[0], n: x[1], c: col(x, i) }));
+  return `<div class="lh"><div class="lh-head"><b>Last hour</b><small>what it did on each of the last ${total} candles</small></div>
+    <div class="lh-bar" role="img" aria-label="${esc(items.map(x => `${x.n} ${x.k}`).join(", "))}">${items.map(x => `<i style="flex:${x.n};background:${x.c}" title="${x.n} ${esc(x.k)}"></i>`).join("")}</div>
+    <div class="lh-legend">${items.map((x, i) => `<span class="${i === 0 && x.k !== "opened" ? "top" : ""}"><i style="background:${x.c}"></i>${x.n} ${esc(x.k)}</span>`).join("")}</div></div>`;
+}
+function renderBotPositions(ps, run) {             // side + symbol, entry, TP, progress to TP and live points; no stop loss
+  const box = $("#bl-pos"), max = window.innerHeight < 800 ? 2 : 3, show = ps.slice(0, max), ids = show.map(t => t.id).join(",") + `|${ps.length}`;
+  $("#bl-pos-count").textContent = ps.length > 1 ? `${ps.length} open` : "";
+  if (!ps.length) {
+    box._ids = null;
+    setHTML(box, `<div class="empty-state compact">${ICON.bot}<div><b>No open trade</b>${run ? "When the bot enters, the trade shows here with its way to take profit." : "Start the bot and its trades show here."}</div></div>`);
+    return;
+  }
+  const foot = t => `${t.progress_pct == null ? "waiting for a price" : `${Math.round(t.progress_pct)}% of the way to TP`}`;
+  if (box._ids !== ids) {                          // new set of trades: build the rows once, then only update them
+    box._ids = ids; box._html = null;
+    box.innerHTML = show.map(t => { const dg = blDigits(t.symbol, t.entry), op = t.opened ? inZone(new Date(t.opened)) : "";
+      return `<div class="bpos" data-id="${t.id}"><div class="bpos-top"><span class="dir ${t.side === "buy" ? "buy" : "sell"}">${t.side === "buy" ? "▲ BUY" : "▼ SELL"}</span><b>${esc(t.symbol)}</b><span class="tag">${esc(t.mode || "")}</span>
+        <span class="bpos-pts"></span></div>
+        <div class="bpos-lv"><span>Entry ${fmt(t.entry, dg)}</span><span class="tp">TP ${fmt(t.tp, dg)}</span></div>
+        <div class="bpos-bar" role="progressbar" aria-label="Progress to take profit" aria-valuemin="0" aria-valuemax="100"><i></i></div>
+        <div class="bpos-foot"><span class="bpos-prog"></span><span>${t.lots} lots${op ? ` · opened ${esc(op)}` : ""}</span></div></div>`; }).join("")
+      + (ps.length > max ? `<p class="bl-more"><a href="#" data-goto="dash">+${ps.length - max} more open: see the Market tab</a></p>` : "");
+  }
+  show.forEach(t => {
+    const row = box.querySelector(`.bpos[data-id="${t.id}"]`); if (!row) return;
+    const pe = row.querySelector(".bpos-pts"), txt = `${t.points == null ? "—" : signed(t.points)}<small>PTS</small>`;
+    if (setHTML(pe, txt) && pe._last != null && t.points != null && t.points !== pe._last) flash(pe, t.points > pe._last ? 1 : -1);
+    pe._last = t.points; pe.className = `bpos-pts num ${cls(t.points)}`;
+    row.querySelector(".bpos-bar i").style.transform = `scaleX(${(t.progress_pct ?? 0) / 100})`;
+    row.querySelector(".bpos-bar").setAttribute("aria-valuenow", String(Math.round(t.progress_pct ?? 0)));
+    row.querySelector(".bpos-prog").textContent = foot(t);
+  });
+}
+
+/* co-pilot proposal: symbol, side, entry, TP, the reason and a countdown; Approve & Execute or Skip Setup */
+function moveCopts(intoCard) {                    // the auto-execute switch + timer sit under the buttons while a proposal waits
+  const o = $("#bl-copts"), slot = intoCard && $("#bl-prop .bp-opts-slot");
+  if (slot) slot.append(o); else if (o.parentElement !== $("#bl-copilot")) $("#bl-copilot").append(o);
+}
+function renderProposal() {
+  const d = bl.d, p = d?.proposal, now = d?.server_time || Date.now() / 1000;
+  if (p?.status === "pending" && d.running) {
+    if (bl.sending === p.id) return;                 // approved: "Sending the order…" until the agent answers
+    if (!bl.seen.has(p.id)) { bl.seen.add(p.id); onNewProposal(p); }
+    const want = performance.now() + (+p.seconds_left || 0) * 1000;
+    const fresh = bl.prop?.id !== p.id || !!bl.outcome;
+    if (fresh || Math.abs(want - bl.deadline) > 900) bl.deadline = want;
+    bl.prop = p;
+    if (fresh) drawProposal(p);
+    tickProposal(); if (!bl.tick) bl.tick = setInterval(tickProposal, 200);
+    return;
+  }
+  // decided: flash the outcome of one this screen showed, for a few seconds, then clear
+  if (p?.id && p.status !== "pending" && (bl.seen.has(p.id) || bl.sending === p.id) && !bl.shown.has(p.id) && (!p.decided || now - p.decided < 10)) {
+    bl.shown.add(p.id); showOutcome(p.status, p); return;
+  }
+  if (!bl.outcome) hideProposal();
+}
+function drawProposal(p) {
+  const card = $("#bl-prop"), dg = blDigits(p.symbol, p.entry);
+  clearTimeout(bl.outT); bl.outcome = null; moveCopts(false);
+  card.className = `bl-prop ${p.side === "sell" ? "sell" : "buy"}`; card.hidden = false; card._html = null;
+  card.innerHTML = `<div class="bp-top"><span class="bp-kicker">Co-pilot proposal</span>
+      <span class="bp-trade ${p.side === "sell" ? "sell" : "buy"}">${p.side === "sell" ? "▼ SELL" : "▲ BUY"} <span>${esc(p.symbol)}</span></span>
+      <span class="bp-lots">${esc(p.lots)} lots${p.mode ? ` · ${esc(p.mode)}` : ""}</span>
+      ${p.confidence_pct != null ? `<span class="bp-conf" title="How this reading ranks against the model's last day of readings">${Math.round(p.confidence_pct)}% confidence</span>` : ""}</div>
+    <div class="bp-levels"><span><small>Entry</small>${fmt(p.entry, dg)}</span><span class="tp"><small>Take profit</small>${fmt(p.tp, dg)}</span></div>
+    <p class="bp-reason">${esc(p.reason || "")}</p>
+    <div class="bp-timer" aria-hidden="true"><div class="bp-bar"><i></i></div><span class="bp-left num"></span></div>
+    <div class="bp-acts"><button class="btn approve" type="button" data-decide="approve">Approve &amp; Execute</button><button class="btn" type="button" data-decide="skip">Skip Setup</button></div>
+    <div class="bp-opts-slot"></div>`;
+  moveCopts(true); $("#bl-main").classList.add("has-prop");
+}
+function tickProposal() {
+  const p = bl.prop, card = $("#bl-prop"); if (!p || bl.outcome) return;
+  const bar = card.querySelector(".bp-bar i"); if (!bar) return;
+  const left = Math.max(0, (bl.deadline - performance.now()) / 1000), total = Math.max(1, +p.seconds || 30), tm = card.querySelector(".bp-timer");
+  bar.style.transform = `scaleX(${Math.min(1, left / total)})`;
+  tm.classList.toggle("low", left > 0 && left <= 5); tm.classList.toggle("out", left <= 0);
+  const txt = left > 0 ? `${Math.ceil(left)} s to decide` : p.auto_execute ? "time's up: sending it" : "time's up: skipping it";
+  const le = card.querySelector(".bp-left"); if (le.textContent !== txt) le.textContent = txt;
+  if (left <= 0) card.querySelectorAll("[data-decide]").forEach(b => b.disabled = true);
+}
+function showOutcome(kind, p) {
+  const o = OUTCOME[kind] || OUTCOME.skipped, card = $("#bl-prop"), dg = blDigits(p.symbol, p.entry);
+  const sub = { executed: `${p.side === "sell" ? "SELL" : "BUY"} ${p.lots} ${p.symbol} at ${fmt(p.entry, dg)}, riding it toward ${fmt(p.tp, dg)}.`,
+                failed: "The broker didn't take it. The live log on the Agent tab says why.", skipped: "It keeps scanning for the next setup.",
+                expired: "The timer ran out, so it was skipped.", sending: `${p.side === "sell" ? "SELL" : "BUY"} ${p.lots} ${p.symbol}` }[kind] || "";
+  clearInterval(bl.tick); bl.tick = null; clearTimeout(bl.outT); moveCopts(false);
+  bl.outcome = kind; card.hidden = false; card._html = null; card.className = `bl-prop ${o.cls}`;
+  card.innerHTML = `<div class="bp-outcome"><svg viewBox="0 0 24 24" aria-hidden="true">${o.icon}</svg><span>${o.text}${sub ? `<br><small>${esc(sub)}</small>` : ""}</span></div>`;
+  $("#bl-main").classList.add("has-prop");
+  bl.outT = setTimeout(hideProposal, kind === "sending" ? 15000 : 4000);   // "sending" waits for the agent's answer (it acts within a second)
+}
+function hideProposal() {
+  const card = $("#bl-prop");
+  clearInterval(bl.tick); bl.tick = null; clearTimeout(bl.outT); bl.outcome = null; bl.prop = null; bl.sending = null;
+  moveCopts(false);
+  if (card.hidden) return;
+  const done = () => { if (bl.prop || bl.outcome) return; card.hidden = true; card.className = "bl-prop"; card._html = null; card.innerHTML = ""; $("#bl-main").classList.remove("has-prop"); };
+  if (motionOK() && shown(card)) { card.classList.add("leaving"); setTimeout(done, 450); } else done();
+}
+function onNewProposal(p) {                        // a sound and a notification (on screen too when the app is behind)
+  playEvent("copilot");
+  const dg = blDigits(p.symbol, p.entry);
+  notify({ kind: "info", title: `Co-pilot: ${p.side === "sell" ? "SELL" : "BUY"} ${p.symbol}?`, onClick: () => showTab("bot"),
+    body: `Entry ${fmt(p.entry, dg)}, take profit ${fmt(p.tp, dg)}${p.confidence_pct != null ? ` · ${Math.round(p.confidence_pct)}% confidence` : ""} · ${Math.round(p.seconds_left ?? p.seconds ?? 0)} s to decide on the Bot tab` });
+}
+$("#bl-prop").addEventListener("click", async e => {
+  const b = e.target.closest("[data-decide]"); if (!b || b.disabled || !bl.prop) return;
+  const p = bl.prop, action = b.dataset.decide;
+  $$("#bl-prop [data-decide]").forEach(x => x.disabled = true);
+  try {
+    await api("/api/copilot/decide", { method: "POST", body: { id: p.id, action } });
+    bl.sending = p.id;
+    if (action === "approve") showOutcome("sending", p); else { bl.shown.add(p.id); showOutcome("skipped", p); }
+    setTimeout(loadBotLive, 400); setTimeout(loadBotLive, 1300);
+  } catch (err) {
+    toast(err.message, true);
+    if (err.status === 409) { bl.shown.add(p.id); hideProposal(); loadBotLive(); } else $$("#bl-prop [data-decide]").forEach(x => x.disabled = false);
+  }
+});
+$("#bl-autoexec").onchange = async e => {
+  const on = e.target.checked; bl.hold.auto = Date.now();
+  try { await api("/api/settings", { method: "POST", body: { copilot_auto_execute: on } }); toast(on ? "From the next proposal: when the timer runs out, the trade is sent." : "From the next proposal: when the timer runs out, the trade is skipped."); }
+  catch (err) { toast(err.message, true); e.target.checked = !on; }
+};
+$("#bl-secs").onchange = async e => {
+  const v = +e.target.value; bl.hold.secs = Date.now();
+  try { await api("/api/settings", { method: "POST", body: { copilot_seconds: v } }); toast(`From the next proposal: ${v} seconds to decide.`); if (bl.d) bl.d.copilot_seconds = v; setMode($("#bl-mode .seg-opt.on")?.dataset.mode || "auto"); }
+  catch (err) { toast(err.message, true); }
+};
+$("#bl-mode").addEventListener("click", async e => {
+  const b = e.target.closest("[data-mode]"); if (!b || b.classList.contains("on")) return;
+  const m = b.dataset.mode; bl.hold.mode = Date.now(); setMode(m);
+  try {
+    const r = await api("/api/bot/mode", { method: "POST", body: { mode: m } });
+    if (bl.d) bl.d.bot_mode = r.bot_mode; if (state.settings) state.settings.bot_mode = r.bot_mode;
+    toast(`${r.bot_mode === "copilot" ? "Co-pilot: it proposes each trade and waits for you." : "Full Auto: it trades on its own."} ${r.note || ""}`);
+  } catch (err) { toast(err.message, true); bl.hold.mode = 0; loadBotLive(); }
+});
+$("#bl-tz").onchange = async e => {
+  bl.tz = e.target.value; bl.hold.tz = Date.now(); tzFmts.clear(); $("#bl-pos")._ids = null; renderBotLive(); renderClock();
+  try { await api("/api/settings", { method: "POST", body: { display_timezone: bl.tz } }); if (state.settings) state.settings.display_timezone = bl.tz; }
+  catch (err) { toast(err.message, true); }
+};
+$("#bl-start").onclick = agentStart; $("#bl-stop").onclick = agentStop;
+/* symbol switcher: trained symbols can be picked; the rest show greyed with "train it first" */
+function closeSymPop() { const p = $("#bl-sym-pop"); if (p.hidden) return; p.hidden = true; $("#bl-sym-btn").setAttribute("aria-expanded", "false"); }
+$("#bl-sym-btn").onclick = async e => {
+  e.stopPropagation();
+  const pop = $("#bl-sym-pop"); if (!pop.hidden) return closeSymPop();
+  pop.hidden = false; $("#bl-sym-btn").setAttribute("aria-expanded", "true"); setHTML(pop, `<p>Loading symbols…</p>`);
+  let s; try { s = await api("/api/bot/symbols"); } catch (err) { setHTML(pop, `<p>${esc(err.message)}</p>`); return; }
+  const trained = new Set(s.trained || []);
+  setHTML(pop, ((s.trained || []).length ? `<h4>Trained, ready to trade</h4>` + s.trained.map(x => `<button type="button" role="option" data-sym="${esc(x)}" aria-selected="${x === s.current}" class="${x === s.current ? "on" : ""}">${esc(x)}${x === s.current ? "<small>trading now</small>" : ""}</button>`).join("")
+      : `<p>No symbol has a trained model yet. Train one on the Train tab first.</p>`)
+    + ((s.watch || []).filter(x => !trained.has(x)).map((x, i) => `${i ? "" : "<h4>In your watchlist</h4>"}<button type="button" role="option" disabled title="No trained model for ${esc(x)} yet: on the Train tab, Fetch data, then Train">${esc(x)}<small>train it first</small></button>`).join("")));
+  pop.querySelector("button.on, button:not(:disabled)")?.focus();
+};
+$("#bl-sym-pop").addEventListener("click", async e => {
+  const b = e.target.closest("[data-sym]"); if (!b || b.disabled) return;
+  const sym = b.dataset.sym; closeSymPop(); if (sym === bl.d?.symbol) return;
+  $("#bl-sym").textContent = sym; bl.price = null; $("#bl-price").textContent = "—";
+  try {
+    const r = await api("/api/bot/symbol", { method: "POST", body: { symbol: sym } });
+    if (state.settings) state.settings.symbol = r.symbol;
+    notify({ kind: r.open_on_previous ? "info" : "ok", title: `Switched to ${r.symbol}`, body: r.note || "" });
+  } catch (err) { toast(err.message, true); }
+  loadBotLive();
+});
+document.addEventListener("click", e => { if (!e.target.closest(".bl-sym")) closeSymPop(); });
+setInterval(() => {                                // 1 s while you look at the Bot tab; a waiting co-pilot is checked every 3 s elsewhere
+  bl.t++;
+  const onTab = state.tab === "bot" && !document.hidden, copilot = bl.d?.running && bl.d?.bot_mode === "copilot";
+  if (onTab || (copilot && bl.t % 3 === 0) || bl.t % 10 === 0) loadBotLive();
+  if (onTab) renderClock();
+}, 1000);
+
 /* ---------- boot ---------- */
 initChart();
 moveRailInd(); document.fonts?.ready.then(moveRailInd);
@@ -2871,6 +3181,7 @@ moveRailInd(); document.fonts?.ready.then(moveRailInd);
 const seen = () => !document.hidden;
 let bgTick = 0;
 pollStatus().then(() => { pollAccount(); loadPositions(); brainStatus(); pollBot(); });
+openBot();
 setInterval(() => { bgTick++; if (seen() || bgTick % 2 === 0) pollBot(); }, 2000);            // hidden: every 4 s
 loadProgress(); setInterval(() => { if (seen() || bgTick % 6 === 0) loadProgress(); }, 5000);   // hidden: stage moves still get noticed
 setInterval(() => seen() && pollStatus(), 2000);
@@ -2887,6 +3198,7 @@ document.addEventListener("visibilitychange", () => {   // back in front: everyt
   pollStatus(); pollAccount(); loadPositions(); pollBot(); loadProgress(); brainStatus(); renderSessions(); renderMute();
   if (state.tab === "dash" && !state.replay.view) loadBars();
   if (state.tab === "manual") openManual();
+  if (state.tab === "bot") loadBotLive();
 });
 
 /* ---------- quiz school (reinforcement learning on pro setups) ---------- */
