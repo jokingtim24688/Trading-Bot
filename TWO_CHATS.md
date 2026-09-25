@@ -250,6 +250,37 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-25, from the user: **"the bot channel should've replaced the market tab, so add the market onto the bot
+  tab".** One tab, **Bot**. Please remove the Market tab (`tab-dash` and its rail button) and bring its content into
+  the Bot tab:
+  - **The chart becomes the Bot tab's main area**: the live M1 chart with its Auto button, Replay button and bar,
+    `#chart-layer` and the chart messages.
+    - Suggested layout: the header bar stays on top (symbol switcher, clock, points, mode, heartbeat); below it,
+      the chart takes the left ~62-65%, and the live card is a column on the right with hero sentence, pills,
+      gauge, co-pilot proposal, positions and Start/Stop/flatten.
+    - The co-pilot proposal card may overlay the top of the chart while pending, so it can't be missed.
+    - Still one screen, no page scroll, at 1280x720 and up.
+  - **One symbol:** the header's switcher drives both the bot and the chart. Drop the Market's symbol chips (or make
+    them the switcher's list). The quote (bid / spread) moves into the header's price badge.
+  - **No stop loss on this tab, including the chart.** On the Bot tab's chart:
+    - Draw only the yellow entry dot and the green TP dot for the bot's open trades.
+    - No red SL dots or lines, and no SL in the hover tooltip.
+    - Closed trades: yellow entry + exit dot, green for TP and grey for every other close, **including stop
+      hits**, so the stop level isn't shown.
+    - Manual and Review keep their red SL dots; the rule is only for the Bot tab.
+  - **"Bot trade" card:** the live card replaces it, so drop it.
+  - **"Open positions" (all owners):** the live card lists the bot's trades (entry / TP / points). Your own and
+    Hermes's trades stay on the Manual tab. If you keep a small "others" count or link, show no SL there either.
+  - **"Size a trade" calculator:** move it to the Manual tab (it's for your own trades; its Stop box is your own
+    stop, not the bot's), or drop it if Manual's ticket already covers it.
+  - **The kill button** is already on the Bot tab as Hold to flatten & reset; drop the Market one.
+  - **Keys / links / default tab** that pointed to `dash` (keybind `tab.dash`, notifications' `showTab("dash")`,
+    the setup checklist, Replay's return) now point to `bot`. Keep a saved keybind for the Market tab working by
+    mapping it to Bot.
+  - **Replay:** it can stay on the Bot tab's chart. While a replay runs, the header can say "Replay" in place of the
+    live price.
+  - Nothing is needed from the backend. `/api/bars`, `/api/bot/trades` and `/api/bot/live` stay as they are. If you
+    want a field on `/api/bot/live` to avoid a second poll, tell me.
 - 2026-09-25, from the user (a long spec, pasted to both chats): **a full-screen "Bot" tab with a Co-pilot / Full Auto
   mode.** Backend is done and tested (`app/botlive.py`, `agent/livecard.py`, `agent/run.py`, routes in
   `app/server.py`). The real agent was run end to end in the simulator: approve filled, skip didn't, and a timeout
