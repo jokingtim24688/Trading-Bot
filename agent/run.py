@@ -8,6 +8,7 @@ Create a file named STOP in the working directory to flatten and exit.
 """
 import argparse
 import json
+from collections import Counter, deque
 import time
 from pathlib import Path
 
@@ -49,6 +50,7 @@ def main():
     ap.add_argument("--news-impact", default="High", help="comma list of impact levels that pause it (High,Medium,Low)")
     ap.add_argument("--quiz-filter", action="store_true", help="only enter when the quiz agent picks the same side")
     ap.add_argument("--practice", action="store_true", help="paper only: also show where the model's top 10%% of readings start")
+    ap.add_argument("--hours", default=None, help="server-time hours new entries are allowed, e.g. 9-22 (default all day)")
     ap.add_argument("--settings", default=None, help="the app's settings.json: its threshold is re-read every candle")
     ap.add_argument("--sl-score-mult", type=float, default=None, help="score penalty multiplier when a stop loss hits (default 1.5)")
     ap.add_argument("--terminal", default=None, help="path to terminal64.exe (optional)")
@@ -76,6 +78,9 @@ def main():
     mode = ("demo" if data.is_demo() else "real") if args.live else "paper"
     broker = LiveBroker(data, cfg.risk.magic, mode) if args.live else PaperBroker(args.paper_equity, spec, cfg.symbol, data.tick)
     model = SignalModel.load(cfg.model_dir, cfg.symbol, cfg.hardware)
+    if args.hours:
+        h0, h1 = (int(x) for x in args.hours.split("-"))
+        cfg.risk.session_start_hour, cfg.risk.session_end_hour = h0, h1
     gate = RiskGate(cfg.risk)
     journal = Journal(cfg.log_dir, cfg.symbol, "paper" if mode == "paper" else "live")
     L = cfg.labels
@@ -111,8 +116,12 @@ def main():
         except Exception as e:                 # noqa: BLE001 - fall back to learning it live
             print(f"practice mode: couldn't score recent candles ({e}); learning them live", flush=True)
 
+    recent = deque(maxlen=60)                  # the last hour's decisions, so the card can say what's blocking it
+
     def say(bar_time, decision, reason=""):
         """One line per closed candle in the live log + data/agent_status.json for the Market tab."""
+        recent.append("opened" if decision.startswith("OPENED") else
+                      reason.split(":")[0].split(" (")[0] if decision.startswith("skipped") else decision)
         hhmm = str(bar_time)[11:16]
         pb, ps = probs["buy"], probs["sell"]
         need = cfg.threshold                   # the slider's value: the only bar entries have to clear
@@ -125,7 +134,8 @@ def main():
                 "symbol": cfg.symbol, "p_buy": pb, "p_sell": ps, "threshold": cfg.threshold, "need": need,
                 "practice": practice is not None, "top10": probs["need"], "setups": [SETUP_NAMES[k] for k in probs["setups"]],
                 "decision": decision,
-                "reason": reason, "open": broker.open_count(), "max_open": max_open}))
+                "reason": reason, "last_hour": dict(Counter(recent).most_common()),
+                "hours": [cfg.risk.session_start_hour, cfg.risk.session_end_hour], "open": broker.open_count(), "max_open": max_open}))
         except OSError:
             pass
 

@@ -72,6 +72,7 @@ def main():
     ap.add_argument("--volume-step", type=float, default=0.01)
     ap.add_argument("--no-early-exit", action="store_true")
     ap.add_argument("--no-learned", action="store_true")
+    ap.add_argument("--hours", default=None, help="server-time hours new entries are allowed, e.g. 9-22 (default all day)")
     ap.add_argument("--quiz-filter", action="store_true", help="only enter when the quiz agent picks the same side")
     ap.add_argument("--sl-score-mult", type=float, default=None)
     ap.add_argument("--fresh", action="store_true", help="clear previous replay trades first")
@@ -152,6 +153,8 @@ def main():
     broker.clock = lambda: utc_iso(cur["i"])  # trades get the replayed candle's date/hour, not today's
     if not args.strict_filters:
         cfg.risk.max_spread_to_atr = float("inf")
+    if args.hours:
+        cfg.risk.session_start_hour, cfg.risk.session_end_hour = (int(x) for x in args.hours.split("-"))
     gate = RiskGate(cfg.risk)
     skips = Counter()                                  # why candles with a signal didn't become trades
     practice = Practice() if args.practice else None

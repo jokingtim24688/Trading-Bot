@@ -439,13 +439,20 @@ def bot_trades(limit: int = 100, symbol: str | None = None):
 
 
 # ---------- jobs ----------
+def _hours(s: dict) -> str:
+    """Settings' trading hours as "start-end" server hours, each kept within 0-24."""
+    a, b = (min(24, max(0, int(s.get(k, d) or 0))) for k, d in (("trade_hours_start", 0), ("trade_hours_end", 24)))
+    return f"{a}-{b}"
+
+
 def agent_args(s: dict, mode: str, max_open: int | None = None) -> list[str]:
     args = ["-m", "agent.run", "--symbol", s["symbol"], "--threshold", str(s["threshold"]),
             "--stake-pct", str(s["stake_pct"]), "--sl-pct", str(s["sl_pct_of_stake"]),
             "--tp-small", str(s["tp_pct_small"]), "--tp-large", str(s["tp_pct_large"]),
             "--small-stake", str(s["small_stake"]), "--large-stake", str(s["large_stake"]),
             "--max-open", str(int(max_open or s["max_open_trades"])), "--paper-equity", str(s["paper_balance"]),
-            "--sl-score-mult", str(s["sl_score_mult"]), "--ref-leverage", str(s.get("ref_leverage", 100))]
+            "--sl-score-mult", str(s["sl_score_mult"]), "--ref-leverage", str(s.get("ref_leverage", 100)),
+            "--hours", _hours(s)]
     if not s.get("early_exit", True):
         args.append("--no-early-exit")
     if not s.get("use_learned", True):
@@ -621,6 +628,7 @@ def _replay_args(s: dict, data: Path, days, start) -> list[str]:
     args = ["-m", "agent.replay", str(data), "--symbol", s["symbol"], "--point", str(s["point"]),
             "--days", str(days), "--from", str(start),
             "--threshold", str(s["threshold"]), "--balance", str(s["paper_balance"]),
+            "--hours", _hours(s),
             "--stake-pct", str(s["stake_pct"]), "--sl-pct", str(s["sl_pct_of_stake"]),
             "--tp-small", str(s["tp_pct_small"]), "--tp-large", str(s["tp_pct_large"]),
             "--max-open", str(int(s["max_open_trades"])), "--ref-leverage", str(s.get("ref_leverage", 100)),

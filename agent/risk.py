@@ -104,12 +104,14 @@ class RiskGate:
         if self.trades_today >= c.max_trades_per_day:
             return False, "max trades today"
         h = server_time.hour
-        if not (c.session_start_hour <= h < c.session_end_hour):
-            return False, "outside session"
+        a, b = c.session_start_hour % 24, c.session_end_hour % 24
+        if a != b and not ((a <= h < b) if a < b else (h >= a or h < b)):      # start == end: all day; a > b wraps
+            return False, (f"outside trading hours ({c.session_start_hour:02d}:00-{c.session_end_hour:02d}:00 server "
+                           "time, Settings)")
         b0, b1 = c.rollover_blackout
         in_blackout = (b0 <= h or h < b1) if b0 > b1 else (b0 <= h < b1)
         if in_blackout:
-            return False, "rollover blackout"
+            return False, "daily rollover pause (23:00-01:00 server time, spreads widen)"
         if atr_px <= 0 or spread_px / atr_px > c.max_spread_to_atr:
             return False, "spread too large vs ATR"
         if median_spread_px > 0 and spread_px > median_spread_px * c.max_spread_vs_median:

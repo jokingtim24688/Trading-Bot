@@ -31,6 +31,7 @@
 - **Chat**: Hermes tab → `/api/chat` → `brain.chat` → Hermes Agent (:8642) *or* Ollama `llama3.2:3b` (CPU) + `tools.py` → `data/hermes_memory.json`.
 - **Follow the bot**: `agent.run` → `ledger` (`data/trades.db`) ← `sync_ledger` (agent every 1s, app every refresh) → `/api/bot/trades` → Market *Bot trade* card, chart lines/markers, alerts; Agent *Bot trades* table; Hermes `get_bot_trades`.
 - **Kill = reset**: hold button → `/api/kill` → STOP file → agent flattens → `close_all(magic 260923)`, then leftover paper trades are closed (reason `kill`) and `data/agent_status.json` is cleared. Stage, history and lessons stay.
+- **Trading hours**: settings `trade_hours_start`/`trade_hours_end` (default 0-24 = all day, a start later than the end wraps midnight) → `--hours` for agent.run and replay → `RiskGate` session check. The 23-01 rollover pause stays. The status card gets `last_hour` (skip-reason counts over 60 candles).
 - **Confidence slider**: the only entry bar, practice mode included. The agent gets `--settings data/settings.json` and re-reads `threshold` every candle. Practice mode only reports `top10` (where its best ~10% of readings start).
 
 ## Tests

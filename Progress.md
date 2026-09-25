@@ -781,6 +781,22 @@ Each chat writes only in its own section below, and adds new entries just above 
   - the flatten button's label and instant clear.
 - Tests: `tests/test_kill_reset.py`; 41 passed.
 
+### 2026-09-25: Why the bot didn't trade with high confidence: hidden trading hours
+- Checked end to end: the real agent was run against a simulated live market (a trained model and an MT5 stand-in
+  serving candles, one a second, in a scratch copy).
+  - At 10:00 server time it opened on the first candle and filled all 10 slots.
+  - At 07:00 every reading was "skipped: outside session". New entries were only allowed 09:00-22:00 server time,
+    fixed in `agent/config.py` with no setting. The user's screenshot was at 07:06.
+- Fix:
+  - Entries are allowed all day by default, set by `trade_hours_start`/`trade_hours_end` (a start later than the end
+    wraps midnight), passed as `--hours` to agent.run and replay/backtest. The 23:00-01:00 rollover pause stays.
+  - Re-run at 07:00: it opened at once, and a slider change while running applied on the next candle.
+- The other thing that can overrule the slider: **loss cautions** (after losses on a side, that side needs more
+  confidence for 24 h). They are on purpose, and the "Use learned rules" switch turns them off.
+- Skip reasons are now in plain words. `agent_status.json` gets `last_hour` (outcome counts over 60 candles) so the
+  card can show what's blocking it (Chat B handoff: trading-hours pickers + that line).
+- Tests: 43 passed.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

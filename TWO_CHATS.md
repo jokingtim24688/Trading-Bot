@@ -23,7 +23,7 @@ commit hash. The user only has to say "go" to the other chat.
 
 ### Chat A (chat 1): Backend & Skills
 
-Status: idle. Last (2026-09-25): the confidence slider drives the agent live (practice too); Hold to flatten resets the bot.
+Status: idle. Last (2026-09-25): bot trades all day (trading hours setting); the card gets a last-hour summary of why it did or didn't trade.
 
 Owns what the app does:
 - `agent/`: trading agent, Quiz school, replay, history, learning, risk and money rules
@@ -250,6 +250,21 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-25, from the user ("the confidence was overflowing and it did not trade"): **why the bot didn't trade, and
+  a trading-hours setting.** Cause: new entries were only allowed 09:00-22:00 server time, a hidden rule. The user's
+  candle was 07:06, so every strong reading was skipped as "outside session". Backend done: entries are allowed all
+  day by default (the 23:00-01:00 rollover pause stays), and the agent gets `--hours` from the settings.
+  1. **Settings > Bot money rules (or Trading): "Trading hours (server time)"**, two hour pickers 0-24 for the new
+     settings `trade_hours_start` (default 0) and `trade_hours_end` (default 24). Start = end, or 0-24, means all day;
+     a start later than the end wraps midnight (22-06 = overnight). Hint: "The bot only opens new trades in these
+     hours; open trades are managed all the time. Applies from the next Start."
+  2. **Bot trade card: say what's blocking it.** `agent` in `/api/bot/trades` now has `last_hour`, a count of the last
+     60 candles' outcomes, most common first, e.g. `{"outside trading hours": 40, "waiting for a strong setup": 12,
+     "opened": 3, "learned from a recent loss": 5}`, plus `hours: [start, end]`. Please show one muted line under the
+     decision, e.g. "Last hour: 3 opened · 40 outside trading hours · 12 below confidence". When the top reason is a
+     skip, show it in amber, so "confidence high but no trade" always has a visible why. Skip reasons now read in
+     plain words ("outside trading hours (09:00-22:00 server time, Settings)", "daily rollover pause (23:00-01:00
+     server time, spreads widen)").
 - 2026-09-25, from the user (Agent tab + Market tab screenshots): three UI fixes.
   1. **The text box under Start agent shows one word per line** ("Started / at / the / Paper / stage.") with a big
      empty area to its left. Please make that status text wrap normally across the full width, with the box

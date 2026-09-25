@@ -55,9 +55,9 @@ class RiskConfig:
     max_trades_per_day: int = 100       # new entries per day (at most one per M1 candle)
     max_spread_to_atr: float = 0.35    # stops are stake-based now; the spread-vs-stop check does the real work
     max_spread_vs_median: float = 1.8
-    # Server-time hours when new entries are allowed (typical GMT+2/+3 broker: London open .. NY afternoon)
-    session_start_hour: int = 9
-    session_end_hour: int = 22
+    # Server-time hours when new entries are allowed, [start, end). All day by default; the app passes its settings
+    session_start_hour: int = 0
+    session_end_hour: int = 24
     rollover_blackout: tuple = (23, 1)   # server hours [start, end) with no entries; wraps midnight
     magic: int = 260923
 
