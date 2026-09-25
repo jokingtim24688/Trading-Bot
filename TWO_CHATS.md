@@ -270,6 +270,11 @@ with the commit hash.
     - Green if it closed at TP; red if it closed at SL.
     - Any other close (early exit, manual, kill): a small grey dot.
   - Hover a dot for the details the banners used to show: owner, side, lots, entry, SL, TP, P/L.
+  - **How (tested):** Lightweight Charts v4.2's `setMarkers` can't place a dot at a price (only above/below/in the
+    bar). One tiny line series per dot works: `addLineSeries({color, lineVisible: false, pointMarkersVisible: true,
+    pointMarkersRadius: 4, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false})` with
+    `setData([{time, value}])`. Colours: entry `#e8c547`, TP `--up` `#3fb68b`, SL `--down` `#e0574f`, other close `--muted`.
+    The user has seen and liked a mockup made exactly this way (two panels, Manual + Market).
   - **Data, all already served:**
     - Positions (`/api/positions`, Manual and Market): `time` (server epoch), `open` (entry price), `sl`, `tp`, `magic`.
     - Bot trades in `/api/bot/trades` (`open` and `recent`): `entry_time` (server epoch, same clock as `/api/bars`),
