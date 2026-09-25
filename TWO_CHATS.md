@@ -250,6 +250,32 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-25, from the user: **dots only, on both charts (Manual and the Market/bot chart).** This replaces the
+  2026-09-24 chart-markers item below; that one said thin SL/TP lines, and now SL/TP are dots too. The user's words:
+  "make the tp a green dot sl a red dot and where we bought a yellow dot on both charts they can overlap and go on top
+  of each other if bought at the same time".
+  - **Yellow dot = entry**, at the trade's open time and entry price, for buys and sells alike.
+  - **Green dot = take profit**, at the TP price. **Red dot = stop loss**, at the SL price.
+    - Put both on the entry's candle, so each trade reads as one vertical column: red, yellow, green.
+    - A trade without a TP or SL gets no dot for it.
+  - No banners, no price lines, no text on the chart. Small dots, all the same size (about 6-8 px). They may overlap
+    and stack on top of each other: trades opened on the same candle share a column. Don't offset or merge them.
+  - **Open trades:**
+    - Show all three dots.
+    - When the SL/TP moves (drag, break-even, trailing, the bot), move its dot to the new price.
+    - Keep drag-to-move working by dragging the green/red dot up and down, if the chart lets you. Otherwise keep the
+      edit in the positions table.
+  - **Closed trades** (bot history, Manual history replay): the yellow entry dot, plus one exit dot at the close time
+    and price.
+    - Green if it closed at TP; red if it closed at SL.
+    - Any other close (early exit, manual, kill): a small grey dot.
+  - Hover a dot for the details the banners used to show: owner, side, lots, entry, SL, TP, P/L.
+  - **Data, all already served:**
+    - Positions (`/api/positions`, Manual and Market): `time` (server epoch), `open` (entry price), `sl`, `tp`, `magic`.
+    - Bot trades in `/api/bot/trades` (`open` and `recent`): `entry_time` (server epoch, same clock as `/api/bars`),
+      `entry`, `sl`, `tp`, `exit_time`, `exit`, `exit_reason` (`tp` / `sl` / other).
+    - Manual history rows: `open_time`, `sl`, `tp`, `reason`.
+    - Tell me if a field is missing on either chart and I'll add it.
 - 2026-09-25, from the user ("the confidence was overflowing and it did not trade"): **why the bot didn't trade, and
   a trading-hours setting.** Cause: new entries were only allowed 09:00-22:00 server time, a hidden rule. The user's
   candle was 07:06, so every strong reading was skipped as "outside session". Backend done: entries are allowed all
@@ -296,7 +322,7 @@ with the commit hash.
 - 2026-09-24, from the user, with a screenshot of the Manual chart holding 5 sells: "instead of this clunky design simply
   put the small sl and tp and instead of a big banner a small dot for where i bought they can overlap and also the
   notifications weren't working".
-  **1. Chart markers (Manual chart, and the Market chart's bot trades if they use the same style):**
+  **1. Chart markers (superseded by the 2026-09-25 "dots only" item above):**
   - Remove the big gold "you sell 0.1" price-line banners, one per position, which stack into a wall.
   - Entry = a **small dot** where the trade opened: a candle marker at the open time and price (e.g. `setMarkers`
     `shape: "circle"`, small, green for buys and red for sells, no text; or a small canvas dot on `#chart-layer`).

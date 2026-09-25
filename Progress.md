@@ -797,6 +797,11 @@ Each chat writes only in its own section below, and adds new entries just above 
   card can show what's blocking it (Chat B handoff: trading-hours pickers + that line).
 - Tests: 43 passed.
 
+### 2026-09-25: Chart dots handed to Chat B
+- The user wants dots on both charts (Manual and bot): yellow at entry, green at TP, red at SL. They may overlap. The
+  full spec is in TWO_CHATS.md (For Chat B) and replaces the thin SL/TP lines idea. The backend already serves every
+  field.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
