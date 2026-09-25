@@ -274,7 +274,7 @@ with the commit hash.
     bar). One tiny line series per dot works: `addLineSeries({color, lineVisible: false, pointMarkersVisible: true,
     pointMarkersRadius: 4, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false})` with
     `setData([{time, value}])`. Colours: entry `#e8c547`, TP `--up` `#3fb68b`, SL `--down` `#e0574f`, other close `--muted`.
-    The user has seen and liked a mockup made exactly this way (two panels, Manual + Market).
+    The user was shown a mockup made exactly this way (two panels, Manual + Market).
   - **Data, all already served:**
     - Positions (`/api/positions`, Manual and Market): `time` (server epoch), `open` (entry price), `sl`, `tp`, `magic`.
     - Bot trades in `/api/bot/trades` (`open` and `recent`): `entry_time` (server epoch, same clock as `/api/bars`),
