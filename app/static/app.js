@@ -26,18 +26,18 @@ const appAway = () => document.hidden || !document.hasFocus();
 function notify({ title = "", body = "", html = "", kind = "info", amount = null, onClick = null, screen = true } = {}) {
   const box = $("#notes"); if (!box) return;
   const secs = noteSecs(), el = document.createElement("div");
-  el.className = `note ${kind}`; el.setAttribute("role", kind === "err" ? "alert" : "status");
-  el.innerHTML = `<svg class="note-ic" viewBox="0 0 24 24" aria-hidden="true">${NOTE_ICON[kind] || NOTE_ICON.info}</svg>
-    <div class="note-body">${title ? `<b>${esc(title)}</b>` : ""}${html || body ? `<span>${html || esc(body)}</span>` : ""}</div>
-    ${amount != null ? `<em class="num ${cls(amount)}">${signed(amount)}</em>` : ""}<i class="note-life" style="animation-duration:${secs}s"></i>`;
+  el.className = `ntf ${kind}`; el.setAttribute("role", kind === "err" ? "alert" : "status");
+  el.innerHTML = `<svg class="ntf-ic" viewBox="0 0 24 24" aria-hidden="true">${NOTE_ICON[kind] || NOTE_ICON.info}</svg>
+    <div class="ntf-body">${title ? `<b>${esc(title)}</b>` : ""}${html || body ? `<span>${html || esc(body)}</span>` : ""}</div>
+    ${amount != null ? `<em class="num ${cls(amount)}">${signed(amount)}</em>` : ""}<i class="ntf-life" style="animation-duration:${secs}s"></i>`;
   box.append(el);                                // the newest sits below the others
-  while (box.querySelectorAll(".note:not(.out)").length > 6) removeNote(box.querySelector(".note:not(.out)"), true);
+  while (box.querySelectorAll(".ntf:not(.out)").length > 6) removeNote(box.querySelector(".ntf:not(.out)"), true);
   let left = secs * 1000, t0 = performance.now(), timer = setTimeout(() => removeNote(el), left);
   el.addEventListener("mouseenter", () => { clearTimeout(timer); left -= performance.now() - t0; el.classList.add("hold"); });
   el.addEventListener("mouseleave", () => { t0 = performance.now(); el.classList.remove("hold"); timer = setTimeout(() => removeNote(el), Math.max(500, left)); });
   el.addEventListener("click", () => { clearTimeout(timer); onClick?.(); removeNote(el); });
   if (screen && appAway() && pref("screenNotes", true))   // not in front: the pop-up at the top right of the screen too
-    window.pywebview?.api?.notify?.({ title, body: body || el.querySelector(".note-body span")?.textContent || "", kind, amount: amount == null ? null : signed(amount), secs })?.catch?.(() => {});
+    window.pywebview?.api?.notify?.({ title, body: body || el.querySelector(".ntf-body span")?.textContent || "", kind, amount: amount == null ? null : signed(amount), secs })?.catch?.(() => {});
 }
 function removeNote(el, instant = false) {       // fade out, then the ones below glide up into its place
   if (!el || el._gone) return; el._gone = true;
@@ -132,9 +132,20 @@ function countUp(el, to, digits = 2) {
     el.textContent = fmt(to * e, digits); if (p < 1) requestAnimationFrame(step); };
   requestAnimationFrame(step);
 }
+function renderVersion(v) {                      // Settings > About and the logo's tooltip: "Version abc1234 · 2026-09-25 14:02"
+  if (!v) return; const sig = JSON.stringify(v); if (sig === state.verSig) return; state.verSig = sig;
+  const u = v.update, day = x => String(x || "").slice(0, 16).replace("T", " ");
+  const txt = v.commit ? `Version ${v.commit}${v.date ? ` · ${day(v.date)}` : ""}` : "Version unknown (this folder isn't a git copy)";
+  $(".brand").title = `Trading Bot · M1\n${txt}${u?.message ? `\n${u.message}` : ""}`;
+  setHTML($("#ver-box"), `<p class="ver-line"><b class="num">${esc(txt)}</b>${v.branch ? `<span class="muted small">branch ${esc(v.branch)}</span>` : ""}</p>
+    ${u ? `<p class="ver-upd${u.ok === false ? " warn" : ""}">${esc(u.message || "")}${u.checked ? ` <span class="muted small">checked ${esc(day(u.checked))}</span>` : ""}</p>`
+        : `<p class="muted small">No update check recorded yet.</p>`}
+    ${u?.notes?.length ? `<ul class="ver-notes">${u.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}`);
+}
 async function pollStatus() {
   try {
     const s = await api("/api/status"); state.status = s;
+    renderVersion(s.version);
     if (!state.settings) { state.settings = s.settings; initFromSettings(); }
     state.settings = { ...state.settings, ...s.settings };
     const r = s.resources || {};
@@ -153,6 +164,7 @@ async function pollStatus() {
     $("#thr-hint").textContent = !s.model_ready ? "Train a model first." :
       md.suggested_threshold != null ? `Training suggests ${md.suggested_threshold}. Break-even win rate with these exits: ${md.breakeven_win_pct}%.`
       : md.breakeven_win_pct != null ? `No profitable threshold in testing. Keep it on Paper. Break-even win rate: ${md.breakeven_win_pct}%.` : "";
+    if (a.running && s.model_ready) $("#thr-hint").textContent += " While it runs, a change applies from the next candle.";
     const tr = s.jobs.train, fe = s.jobs.fetch;
     $("#train-state").textContent = tr.running ? "training…" : fe.running ? "downloading…" : "";
     $("#btn-train").disabled = tr.running; $("#btn-fetch").disabled = fe.running;
@@ -367,6 +379,73 @@ const HIST = { FIRST: 300, CHUNK: 500, MAX: 1800, MARGIN: 60 };
 const newWin = () => ({ symbol: null, bars: [], live: true, begin: false, busy: false });
 state.win = newWin();
 const pickBar = b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close });
+/* ---------- price dots on the charts: yellow = where a trade opened, green = take profit, red = stop loss, grey = any
+   other close. No lines or banners. Lightweight Charts can't put a marker at a price, so each colour is a few line
+   series that show only their point markers. A series holds one point per candle, so dots on the same candle go into
+   the next layer and sit on top of each other. Dots snap to a loaded candle, so they never add times to the chart.
+   Hover a dot for its trade. ---------- */
+const DOT_COLOR = { entry: "#e8c547", sl: "#e0574f", tp: "#3fb68b", exit: "#8c9098",
+  pentry: "rgba(232,197,71,.5)", psl: "rgba(224,87,79,.5)", ptp: "rgba(63,182,139,.5)" };
+const DOT_NAME = { entry: "Entry", sl: "Stop loss", tp: "Take profit", exit: "Closed", pentry: "Entry if you trade now", psl: "Stop loss if you trade now", ptp: "Take profit if you trade now" };
+function dotSet(chart, series, el) {
+  if (getComputedStyle(el).position === "static") el.style.position = "relative";
+  const tip = document.createElement("div"); tip.className = "dot-tip"; tip.hidden = true; el.append(tip);
+  const D = { chart, series, el, tip, pool: {}, list: [], sig: "", drag: null };
+  chart.subscribeCrosshairMove(p => { if (!D.drag) dotHover(D, p.point); });
+  el.addEventListener("pointerleave", () => { if (!D.drag) tip.hidden = true; });
+  return D;
+}
+function setDots(D, dots) {                      // dots: [{t (server epoch), price, kind, tip (html), drag}]
+  const bars = D.series.data(), n = bars.length;
+  const snap = t => {                             // the loaded candle a time falls in, or null outside them
+    if (!n || !t) return null; t -= t % 60;
+    if (t < bars[0].time || t > bars[n - 1].time + 120) return null;
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (bars[mid].time <= t) lo = mid; else hi = mid - 1; }
+    return bars[lo].time;
+  };
+  D.list = [];
+  for (const d of dots) { const time = d.price ? snap(d.t) : null; if (time != null) D.list.push({ ...d, time }); }
+  const sig = D.list.map(d => `${d.kind}${d.time}:${d.price}`).join("|") + `#${n && bars[0].time}-${n && bars[n - 1].time}`;
+  if (sig === D.sig) return; D.sig = sig;
+  const layers = {};
+  for (const d of D.list) { const ls = layers[d.kind] ||= []; let i = 0; while (ls[i]?.has(d.time)) i++; (ls[i] ||= new Map()).set(d.time, d.price); }
+  for (const kind in DOT_COLOR) {
+    const ls = layers[kind] || [], pool = D.pool[kind] ||= [];
+    while (pool.length < ls.length) pool.push(D.chart.addLineSeries({ color: DOT_COLOR[kind], lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 4,
+      lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }));
+    pool.forEach((s, i) => s.setData(ls[i] ? [...ls[i]].sort((a, b) => a[0] - b[0]).map(([time, value]) => ({ time, value })) : []));
+  }
+}
+function dotsAt(D, x, y, pick = () => true) {    // the dots within 8 px of a point on the chart, nearest first
+  const ts = D.chart.timeScale(), out = [];
+  for (const d of D.list) {
+    if (!pick(d)) continue;
+    const dx = ts.timeToCoordinate(d.time), dy = D.series.priceToCoordinate(d.price); if (dx == null || dy == null) continue;
+    const r = Math.hypot(dx - x, dy - y); if (r <= 8) out.push({ d, r, dx, dy });
+  }
+  return out.sort((a, b) => a.r - b.r);
+}
+function showDotTip(D, html, x, y) {
+  const t = D.tip; setHTML(t, html); t.hidden = false;
+  const w = t.offsetWidth, h = t.offsetHeight, W = D.el.clientWidth, H = D.el.clientHeight;
+  t.style.left = `${Math.max(4, x + 14 + w > W - 60 ? x - 14 - w : x + 14)}px`;
+  t.style.top = `${Math.max(4, Math.min(H - h - 28, y - h / 2))}px`;
+}
+function dotHover(D, pt) {
+  const hits = pt ? dotsAt(D, pt.x, pt.y) : [];
+  if (!hits.length) { D.tip.hidden = true; return; }
+  const byTrade = new Map();                      // one block per trade, naming the dots under the pointer
+  for (const { d } of hits) { const k = d.tip || d.kind; if (!byTrade.has(k)) byTrade.set(k, { tip: d.tip, kinds: new Set() }); byTrade.get(k).kinds.add(d.kind); }
+  const html = [...byTrade.values()].slice(0, 4).map(b => `<span class="dk">${[...b.kinds].map(k => `<i style="background:${DOT_COLOR[k]}"></i>${DOT_NAME[k]}`).join(" · ")}</span>${b.tip || ""}`).join("<hr>");
+  showDotTip(D, html, hits[0].dx, hits[0].dy);
+}
+function tradeTip(o, dg) {                        // owner, side, lots, entry, SL, TP, P/L (and the exit for closed trades)
+  const f = v => v ? Number(v).toFixed(dg) : "none";
+  return `<b class="${o.side === "buy" ? "up" : "down"}">${o.side === "buy" ? "▲ Buy" : "▼ Sell"} ${o.lots ?? ""}</b> <span class="tag ${o.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[o.owner] || "You"}</span>${o.mode ? ` <span class="muted">${o.mode}</span>` : ""}
+    <div class="dt-grid"><span>Entry</span><b>${f(o.entry)}</b><span>SL</span><b>${f(o.sl)}</b><span>TP</span><b>${f(o.tp)}</b>${o.exit ? `<span>Exit</span><b>${f(o.exit)}${o.why ? ` <small>${esc(o.why)}</small>` : ""}</b>` : ""}${o.pl != null ? `<span>P/L</span><b class="${cls(o.pl)}">${signed(o.pl)}</b>` : ""}</div>`;
+}
+const exitKind = r => r === "tp" ? "tp" : r === "sl" || r === "stop_out" || r === "so" ? "sl" : "exit";
 function showQuote(d) {
   state.digits = d.digits; state.lastBid = d.bid;
   const qb = $("#q-bid"), prevBid = state.lastBidShown;
@@ -547,7 +626,7 @@ function selectSymbol(sym) {
 }
 
 /* ---------- the bot's own trades: card, chart overlay, history, alerts ---------- */
-state.bot = { known: null, data: null, filter: "", lines: [] };
+state.bot = { known: null, data: null, filter: "" };
 let audioCtx;
 document.addEventListener("pointerdown", () => audioCtx && audioCtx.state === "suspended" && audioCtx.resume());
 const px = (v, sym) => v == null ? "—" : Number(v).toFixed(sym === state.symbol ? state.digits : (v < 20 ? 5 : 2));
@@ -591,6 +670,10 @@ const ICON = {
   list: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"/></svg>`,
 };
 
+function lastHour(h) {                           // "Last hour: 40 outside trading hours · 12 waiting · 3 opened"; a top skip reads amber
+  const list = Object.entries(h || {}).filter(([, n]) => n > 0).sort((x, y) => y[1] - x[1]); if (!list.length) return "";
+  return `<p class="small last-hour">Last hour: ${list.map(([k, n], i) => `<span class="${i === 0 && k !== "opened" ? "warn" : ""}">${n} ${esc(k)}</span>`).join(" · ")}</p>`;
+}
 function renderBotCard() {
   const d = state.bot.data; if (!d) return;
   const box = $("#bot-now"), open = d.open.filter(t => (t.mode === "replay") === !!state.replay?.view);
@@ -612,9 +695,9 @@ function renderBotCard() {
         <div class="watch-head"><span class="live-dot"></span><strong>Watching ${state.settings?.symbol || ""} · ${a.mode || ""}</strong><span class="muted small">${a.bar ? "candle " + a.bar : ""}</span></div>
         ${a.p_buy != null ? `<div class="conf"><span>Buy</span><div class="bar"><i style="width:${Math.min(100, a.p_buy / Math.max(need, .001) * 100)}%"></i></div><span class="num">${pct(a.p_buy)}</span></div>
         <div class="conf"><span>Sell</span><div class="bar"><i style="width:${Math.min(100, a.p_sell / Math.max(need, .001) * 100)}%"></i></div><span class="num">${pct(a.p_sell)}</span></div>
-        <p class="muted small" style="margin:4px 0 0">Needs ${pct(need)} to enter${a.practice ? " (practice: its best ~10% of readings)" : ""} · ${a.open ?? 0}/${a.max_open ?? "–"} open</p>` : ""}
+        <p class="muted small" style="margin:4px 0 0">Needs ${pct(need)} to enter · ${a.open ?? 0}/${a.max_open ?? "–"} open${a.practice && typeof a.top10 === "number" ? ` · its best 10% start at ${pct(a.top10)}` : ""}</p>` : ""}
         ${a.setups?.length ? `<div class="setups"><span class="muted small">Pro read:</span>${a.setups.map(x => `<span class="setup-chip">${x}</span>`).join("")}</div>` : ""}
-        <p class="small" style="margin:8px 0 0"><b>${a.decision}</b>${a.reason ? ` · <span class="muted">${a.reason}</span>` : ""}</p></div>`
+        <p class="small" style="margin:8px 0 0"><b>${a.decision}</b>${a.reason ? ` · <span class="muted">${a.reason}</span>` : ""}</p>${lastHour(a.last_hour)}</div>`
       : `<div class="empty-state compact">${ICON.bot}<div><b>The bot isn't running</b>Start it on the Agent tab. When it enters you get an alert, and its entry, stop and target are drawn on the chart.</div><button class="btn xs" data-goto="agent">Open Agent</button></div>`);
     return;
   }
@@ -649,25 +732,22 @@ $("#bot-now").addEventListener("click", async e => {
   }
 });
 
-function drawBotOverlay() {
-  const d = state.bot.data; if (!d || !state.series) return;
-  state.bot.lines.forEach(l => state.series.removePriceLine(l)); state.bot.lines = [];
-  const inView = t => (t.mode === "replay") === !!state.replay?.view;
-  d.open.filter(t => t.symbol === state.symbol && inView(t)).forEach(t => {
-    const mk = (price, color, title, style) => price && state.bot.lines.push(state.series.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
-    mk(t.entry, "#89cff0", `bot ${t.side}`, 2); mk(t.sl, "#e0574f", "bot SL", 0); mk(t.tp, "#3fb68b", "bot TP", 0);
-  });
-  const r = state.barRange; if (!r) { state.series.setMarkers([]); return; }
-  const snap = t => t - (t % 60), inRange = t => t && t >= r[0] && t <= r[1] + 60;
-  const marks = [];
-  d.recent.filter(t => t.symbol === state.symbol && inView(t)).forEach(t => {
-    if (inRange(t.open_bar)) marks.push({ time: Math.min(snap(t.open_bar), r[1]), position: t.side === "buy" ? "belowBar" : "aboveBar",
-      color: t.side === "buy" ? "#3fb68b" : "#e0574f", shape: t.side === "buy" ? "arrowUp" : "arrowDown", text: `bot ${t.side} ${t.lots}` });
-    if (t.status === "closed" && inRange(t.close_bar)) marks.push({ time: Math.min(snap(t.close_bar), r[1]), position: t.side === "buy" ? "aboveBar" : "belowBar",
-      color: t.pnl >= 0 ? "#3fb68b" : "#e0574f", shape: "circle", text: t.r_multiple != null ? `${t.r_multiple >= 0 ? "+" : ""}${t.r_multiple}R` : t.exit_reason });
-  });
-  marks.sort((a, b) => a.time - b.time);
-  state.series.setMarkers(marks);
+function drawBotOverlay() {                     // dots for open positions, the bot's paper/replay trades and its recent closes
+  if (!state.series) return;
+  state.dots ||= dotSet(state.chart, state.series, $("#chart"));
+  const d = state.bot.data, view = !!state.replay?.view, inView = t => (t.mode === "replay") === view, dg = state.digits ?? 2, dots = [];
+  const trio = (t, entry, sl, tp, tip) => dots.push({ t, price: entry, kind: "entry", tip }, { t, price: sl, kind: "sl", tip }, { t, price: tp, kind: "tp", tip });
+  if (!view) (state.posList || []).filter(p => p.symbol === state.symbol).forEach(p =>
+    trio(p.time, p.open, p.sl, p.tp, tradeTip({ side: p.side, lots: p.volume, owner: p.owner, entry: p.open, sl: p.sl, tp: p.tp, pl: p.profit }, dg)));
+  if (d) {
+    d.open.filter(t => t.symbol === state.symbol && inView(t) && (t.mode === "paper" || t.mode === "replay")).forEach(t =>   // demo/real ones are MT5 positions above
+      trio(t.entry_time ?? t.open_bar, t.entry, t.sl, t.tp, tradeTip({ side: t.side, lots: t.lots, owner: "bot", mode: t.mode, entry: t.entry, sl: t.sl, tp: t.tp, pl: t.pnl }, dg)));
+    d.recent.filter(t => t.symbol === state.symbol && inView(t) && t.status === "closed").forEach(t => {
+      const tip = tradeTip({ side: t.side, lots: t.lots, owner: "bot", mode: t.mode, entry: t.entry, sl: t.sl, tp: t.tp, exit: t.exit, why: REASON[t.exit_reason] || t.exit_reason, pl: t.pnl }, dg);
+      dots.push({ t: t.entry_time ?? t.open_bar, price: t.entry, kind: "entry", tip }, { t: t.exit_time ?? t.close_bar, price: t.exit, kind: exitKind(t.exit_reason), tip });
+    });
+  }
+  setDots(state.dots, dots);
   scheduleSessions();
 }
 
@@ -812,7 +892,7 @@ async function loadPositions() {
     const ps = await getPositions(), box = $("#positions");
     $("#pos-count").textContent = ps.length ? `${ps.length} open` : ""; $("#open-count").textContent = ps.length;
     const seen = state.posSeen; state.posSeen = new Set(ps.map(p => p.ticket));
-    guessCloses(ps);
+    guessCloses(ps); state.posList = ps; drawBotOverlay();
     if (!ps.length) { setHTML(box, `<div class="empty-state compact">${ICON.list}<div><b>Nothing open</b>Positions from the bot, Hermes or your own MT5 trades show up here.</div></div>`); return; }
     setHTML(box, ps.map(p => `<div class="pos ${p.side}${seen && !seen.has(p.ticket) ? " enter" : ""}">
       <span><strong>${p.symbol}</strong><span class="tag ${p.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[p.owner] || "You"}</span> <span class="${p.side === "buy" ? "up" : "down"}">${p.side === "buy" ? "▲" : "▼"}</span> <span class="muted">${p.side} ${p.volume}</span></span>
@@ -837,9 +917,13 @@ $("#positions").addEventListener("click", async e => {
     k.classList.add("holding");
     h = setTimeout(async () => {
       k.querySelector(".kill-label").textContent = "Flattening…";
-      try { const r = await api("/api/kill", { method: "POST" }); toast(`Agent stopped · ${r.closed.length} position(s) closed`); }
-      catch (e) { toast(e.message, true); }
-      k.querySelector(".kill-label").textContent = "Hold to flatten agent"; cancel(); loadPositions();
+      try {
+        const r = await api("/api/kill", { method: "POST" }), n = (r.closed?.length || 0) + (r.paper_closed?.length || 0);
+        toast(`Bot flattened and reset: ${n} closed`);
+        if (state.bot.data) { state.bot.data.open = []; state.bot.data.agent = null; }   // clear the card and lists now, not at the next poll
+        $("#agent-msg").textContent = ""; renderBotCard(); drawBotOverlay(); pollBot(); pollStatus();
+      } catch (e) { toast(e.message, true); }
+      k.querySelector(".kill-label").textContent = "Hold to flatten & reset agent"; cancel(); loadPositions(); if (state.tab === "manual") loadManPositions();
     }, 1200);
   });
   ["pointerup", "pointerleave"].forEach(ev => k.addEventListener(ev, cancel));
@@ -1180,8 +1264,8 @@ function initFromSettings(keepSymbol = false) {
 /* ---------- manual trading (UI by Chat B; the /api/manual/* backend is specced for Chat A in TWO_CHATS.md) ----------
    Watching prices and closing positions work today through /api/bars and /api/positions/{ticket}/close. Placing,
    editing and pending orders switch on by themselves once /api/manual/* answers. */
-const man = { symbol: null, backend: null, spec: null, q: null, type: "market", arm: null, owner: "any", pos: [], editing: null, realSession: false, tick: 0,
-              auto: null, priceAt: 0, feedErr: null, blocked: null, drag: null, holding: null };
+const man = { symbol: null, backend: null, spec: null, q: null, type: "market", owner: "any", pos: [], editing: null, realSession: false, tick: 0,
+              auto: null, priceAt: 0, feedErr: null, blocked: null, drag: null };
 const BULK_LABEL = { profit: "Close profitable", loss: "Close negative", buys: "Close buys", sells: "Close sells", all: "Close all" };
 const volStep = () => man.spec?.volume_step || 0.01;
 const volDec = () => Math.max(0, Math.round(-Math.log10(volStep())));
@@ -1194,7 +1278,7 @@ function manSymbols() {
 function manPick(sym) {
   if (!sym || sym === man.symbol) return;
   man.symbol = sym; man.spec = null; man.q = null; man.priceAt = Date.now(); $("#man-bid")._v = $("#man-ask")._v = null;
-  $("#man-price").value = ""; man.lineSig = ""; disarm(); manSymbols(); loadManBars(); loadManQuote(); loadManQuotes();
+  $("#man-price").value = ""; manSymbols(); loadManBars(); loadManQuote(); loadManQuotes();
 }
 async function probeManual() {
   if (man.backend !== null) return;
@@ -1242,7 +1326,7 @@ function updateLevels() {
 ["#man-tp-pts", "#man-sl-pts"].forEach(s => $(s).addEventListener("input", () => {
   TPSL.tp = +$("#man-tp-pts").value || 160; TPSL.sl = +$("#man-sl-pts").value || 80;
   try { localStorage.setItem("manTPSL", JSON.stringify(TPSL)); } catch (e) {}
-  updateLevels(); updateRisk(); drawManLines(); disarm();
+  updateLevels(); updateRisk(); drawManLines();
 }));
 $("#man-tp-pts").value = TPSL.tp; $("#man-sl-pts").value = TPSL.sl;
 /* the Manual tab's own chart: candles for the symbol you trade, your open positions, and a preview of where the take
@@ -1271,25 +1355,30 @@ async function loadManBars() {
     if (!full) return (man.barsSym = null, loadManBars());     // candles were missed: reload
     man.series.applyOptions({ priceFormat: { type: "price", precision: d.digits, minMove: d.point } });
     man.series.setData(bars); man.barsSym = sym; man.lastBar = bars.length ? bars[bars.length - 1].time : 0;
-    man.chart.timeScale().scrollToRealTime(); man.lineSig = "";
+    man.chart.timeScale().scrollToRealTime();
   } else for (const b of bars) if (b.time >= man.lastBar) { man.series.update(b); man.lastBar = b.time; }
   drawManLines();
 }
-function drawManLines() {
-  const q = man.q; if (!man.series || !q || man.drag) return;      // never rebuild a line while it's being dragged
-  const want = [];
+function drawManLines() {                       // dots: open positions (entry, SL, TP), today's closes (entry, exit), the Buy/Sell preview
+  const q = man.q; if (!man.series || !q || man.drag) return;      // never rebuild while a dot is being dragged
+  man.dots ||= dotSet(man.chart, man.series, $("#man-chart"));
+  const dg = q.digits, dots = [];
   man.pos.filter(p => p.symbol === man.symbol).forEach(p => {
-    want.push([p.open, p.owner === "bot" ? "#89cff0" : "#c9a24a", `${p.owner === "bot" ? "bot" : "you"} ${p.side} ${p.volume}`, 2]);
-    const trail = man.auto?.tickets?.[p.ticket]?.trail_points ? " trail" : "";
-    if (p.sl) want.push([p.sl, "#e0574f", `SL${trail}`, 0, { ticket: p.ticket, kind: "sl" }]);
-    if (p.tp) want.push([p.tp, "#3fb68b", "TP", 0, { ticket: p.ticket, kind: "tp" }]);
+    const trail = man.auto?.tickets?.[p.ticket]?.trail_points ? "trailing" : "";
+    const tip = tradeTip({ side: p.side, lots: p.volume, owner: p.owner, entry: p.open, sl: p.sl, tp: p.tp, pl: p.profit, mode: trail }, dg)
+      + (man.backend ? `<small class="muted">Drag the red or green dot to move it</small>` : "");
+    dots.push({ t: p.time, price: p.open, kind: "entry", tip },
+      { t: p.time, price: p.sl, kind: "sl", tip, drag: { ticket: p.ticket, kind: "sl" } }, { t: p.time, price: p.tp, kind: "tp", tip, drag: { ticket: p.ticket, kind: "tp" } });
   });
-  if (man.preview) { const L = levelsFor(man.preview); want.push([L.tp, "#3fb68b", `TP if you ${man.preview}`, 1], [L.sl, "#e0574f", `SL if you ${man.preview}`, 1]); }
-  const sig = want.map(w => `${w[0].toFixed(q.digits)}${w[2]}`).join("|");
-  if (sig === man.lineSig) return; man.lineSig = sig;
-  (man.lines || []).forEach(l => man.series.removePriceLine(l.line));
-  man.lines = want.map(([price, color, title, lineStyle, meta]) => ({ price, meta, color, title,
-    line: man.series.createPriceLine({ price, color, lineWidth: meta ? 2 : 1, lineStyle, axisLabelVisible: true, title }) }));
+  (man.hist || []).filter(h => h.symbol === man.symbol && h.open_time).forEach(h => {
+    const tip = tradeTip({ side: h.side, lots: h.volume, owner: h.owner, entry: h.open, sl: h.sl, tp: h.tp, exit: h.close, why: REASON[h.reason] || h.reason, pl: h.profit }, dg);
+    dots.push({ t: epoch(h.open_time), price: h.open, kind: "entry", tip }, { t: epoch(h.time), price: h.close, kind: exitKind(h.reason), tip });
+  });
+  if (man.preview) {
+    const L = levelsFor(man.preview), tip = `<small class="muted">${man.preview === "buy" ? "Buy" : "Sell"} ${(+$("#man-vol").value).toFixed(volDec())} now: TP ${fmt(L.tp, dg)}, SL ${fmt(L.sl, dg)}</small>`;
+    if (L) dots.push({ t: man.lastBar, price: L.entry, kind: "pentry", tip }, { t: man.lastBar, price: L.sl, kind: "psl", tip }, { t: man.lastBar, price: L.tp, kind: "ptp", tip });
+  }
+  setDots(man.dots, dots);
 }
 ["buy", "sell"].forEach(s => {
   const b = $(`#man-${s}`);
@@ -1297,26 +1386,12 @@ function drawManLines() {
   b.addEventListener("mouseenter", on); b.addEventListener("focus", on); b.addEventListener("mouseleave", off); b.addEventListener("blur", off);
 });
 function orderText(side) { return `${side.toUpperCase()}${man.type === "market" ? "" : " " + man.type} ${(+$("#man-vol").value).toFixed(volDec())}`; }
-function disarm() {
-  if (!man.arm) return;
-  clearTimeout(man.arm.t); $(`#man-${man.arm.side}`).classList.remove("armed"); $(`#man-${man.arm.side}-note`).textContent = ""; man.arm = null;
-}
 async function manTrade(side) {
   if (!man.backend) { toast("Placing orders needs the manual-trading backend. Chat A is building it from the spec in TWO_CHATS.md.", true); return; }
-  if (man.blocked) { disarm(); toast(`Not sending: ${man.blocked.toLowerCase()}.`, true); return; }
-  const anyway = man.spreadArm?.side === side;      // the second click after "spread too wide"
-  if (man.spreadArm) { clearTimeout(man.spreadArm.t); $(`#man-${man.spreadArm.side}`).classList.remove("armed"); man.spreadArm = null; }
-  const oneClick = anyway || ($("#man-oneclick").checked && (!isReal() || man.realSession));
-  if (!oneClick && man.arm?.side !== side) {             // first click arms, the second sends
-    disarm(); $(`#man-${side}`).classList.add("armed");
-    $(`#man-${side}-note`).textContent = `click again: ${orderText(side)}${isReal() ? " · REAL money" : ""}`;
-    man.arm = { side, t: setTimeout(disarm, 4000) }; return;
-  }
-  disarm();
-  if (!(await realCheck())) return;
+  if (man.blocked) { toast(`Not sending: ${man.blocked.toLowerCase()}.`, true); return; }
+  if (!(await realCheck())) return;               // the first click sends; only real money asks you to type REAL, once
   const body = { symbol: man.symbol, side, type: man.type, volume: +$("#man-vol").value, deviation: +$("#man-dev").value || 20 };
   if (man.auto) Object.assign(body, { be_points: +$("#man-be-pts").value || 0, trail_points: +$("#man-trail-pts").value || 0 });
-  if (anyway) body.ignore_spread = true;
   const why = $("#man-note").value.trim(), tags = splitTags($("#man-tags").value);
   if (why) body.note = why; if (tags.length) body.tags = tags;
   if (man.type !== "market" && !parseFloat($("#man-price").value)) { toast("Set the price for the pending order.", true); return; }
@@ -1335,11 +1410,10 @@ async function manTrade(side) {
     playEvent(r.ok ? "orderOk" : "orderFail");
     if (r.ok && (why || tags.length)) { $("#man-note").value = ""; $("#man-tags").value = ""; loadManNotes(); }
   } catch (e) {
-    toast(e.message, true); playEvent("orderFail");
-    if (e.status === 400 && /spread/i.test(e.message) && body.type === "market") {   // too wide: one more click sends it anyway
-      $(`#man-${side}`).classList.add("armed"); $(`#man-${side}-note`).textContent = "spread too wide: click again to send anyway";
-      man.spreadArm = { side, t: setTimeout(() => { $(`#man-${side}`).classList.remove("armed"); $(`#man-${side}-note`).textContent = ""; man.spreadArm = null; }, 6000) };
-    }
+    const q = man.q, wide = e.status === 400 && /spread/i.test(e.message) && body.type === "market";
+    toast(wide && q?.max_spread ? `Spread ${q.spread} is over your limit of ${q.max_spread} points (Settings > Manual trading; 0 = no limit).`
+      : wide ? e.message.replace(/,? or send the order anyway\.?/i, ".") : e.message, true);
+    playEvent("orderFail");
   }
   b.disabled = false; loadManPositions(); loadManOrders(); loadPositions();
 }
@@ -1347,7 +1421,7 @@ $("#man-buy").onclick = () => manTrade("buy"); $("#man-sell").onclick = () => ma
 $("#man-symbols").addEventListener("click", e => { const b = e.target.closest("[data-sym]"); if (b) manPick(b.dataset.sym); });
 function setVol(v) {
   const s = volStep(), mn = man.spec?.volume_min || s, mx = man.spec?.volume_max || 100;
-  $("#man-vol").value = Math.min(mx, Math.max(mn, Math.round(v / s) * s)).toFixed(volDec()); updateRisk(); disarm();
+  $("#man-vol").value = Math.min(mx, Math.max(mn, Math.round(v / s) * s)).toFixed(volDec()); updateRisk();
 }
 $$("[data-vol]").forEach(b => b.onclick = () => setVol(+$("#man-vol").value + (+b.dataset.vol) * volStep()));
 $("#man-vol-presets").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) setVol(b.dataset.v === "min" ? (man.spec?.volume_min || volStep()) : +b.dataset.v); });
@@ -1357,7 +1431,7 @@ $("#man-type").addEventListener("click", e => {
   man.type = b.dataset.type; $$("#man-type .seg-opt").forEach(x => x.classList.toggle("on", x === b));
   $(".man-price").hidden = man.type === "market";
   if (man.type !== "market" && !$("#man-price").value && man.q) $("#man-price").value = ((man.q.bid + man.q.ask) / 2).toFixed(man.q.digits);
-  updatePriceHint(); updateRisk(); updateLevels(); drawManLines(); disarm();
+  updatePriceHint(); updateRisk(); updateLevels(); drawManLines();
 });
 function updatePriceHint() {
   const q = man.q, h = $("#man-price-hint"); if (!q || man.type === "market") return;
@@ -1370,7 +1444,7 @@ function updateRisk() {
   const money = q.tick_value && q.tick_size ? dist / q.tick_size * q.tick_value * v : null;
   el.textContent = `Stop ${Math.round(dist / q.point).toLocaleString()} points away${money != null ? ` · risks ${fmt(money)}${state.acct?.currency ? " " + state.acct.currency : ""}` : ""}`;
 }
-$("#man-price").addEventListener("input", () => { updateRisk(); updatePriceHint(); updateLevels(); drawManLines(); disarm(); });
+$("#man-price").addEventListener("input", () => { updateRisk(); updatePriceHint(); updateLevels(); drawManLines(); });
 $("#man-size").onclick = async () => {
   const L = levelsFor("buy"); if (!L) return;
   const sl = L.sl, entry = L.entry;
@@ -1380,14 +1454,6 @@ $("#man-size").onclick = async () => {
     else toast(`Even the minimum lot risks more than ${$("#man-risk").value}% with that stop.`, true);
   } catch (e) { toast(e.message, true); }
 };
-(() => {                                         // one-click trading: remembered on this PC; on real money it asks once
-  const el = $("#man-oneclick"); try { el.checked = localStorage.getItem("oneClick") === "1"; } catch (e) {}
-  el.onchange = async () => {
-    if (el.checked && isReal() && !(await realCheck())) { el.checked = false; return; }   // on real money: type REAL first
-    try { localStorage.setItem("oneClick", el.checked ? "1" : "0"); } catch (e) {}
-    disarm();
-  };
-})();
 async function loadManPositions() {
   const tb = $("#man-pos tbody"), a = state.acct;
   if (a) setHTML($("#man-acct"), `<span>Balance <b>${fmt(a.balance)}</b></span><span>Equity <b>${fmt(a.equity)}</b></span><span>Margin <b>${fmt(a.margin)}</b></span><span>Free <b>${fmt(a.margin_free)}</b></span><span>Level <b>${a.margin_level ? Math.round(a.margin_level) + "%" : "–"}</b></span>`);
@@ -1396,16 +1462,14 @@ async function loadManPositions() {
   const sel = ps.filter(p => man.owner === "any" || p.owner === man.owner);
   const groups = { profit: sel.filter(p => p.profit > 0), loss: sel.filter(p => p.profit < 0), buys: sel.filter(p => p.side === "buy"), sells: sel.filter(p => p.side === "sell"), all: sel };
   $$("[data-bulk]").forEach(b => {
-    if (b.classList.contains("armed")) return;
     const g = groups[b.dataset.bulk], sum = g.reduce((s, p) => s + p.profit, 0);
     setHTML(b, `${BULK_LABEL[b.dataset.bulk]}<span class="cnt">${g.length}${g.length ? ` · ${signed(sum)}` : ""}</span>`); b.disabled = !g.length;
   });
   const net = sel.reduce((s, p) => s + p.profit, 0);
   setHTML($("#man-open-sum"), sel.length ? `${sel.length} open, net <b class="num ${cls(net)}">${signed(net)}</b>` : "");
-  const real = isReal();
-  if (man.holding == null) setHTML($("#man-open"), sel.map(p => `<span class="tchip ${p.profit >= 0 ? "pos" : "neg"}${man.chipArm === p.ticket ? " armed" : ""}" title="#${p.ticket} opened at ${p.open}">
+  setHTML($("#man-open"), sel.map(p => `<span class="tchip ${p.profit >= 0 ? "pos" : "neg"}" title="#${p.ticket} opened at ${p.open}">
       <span class="${p.side === "buy" ? "up" : "down"}">${p.side === "buy" ? "▲" : "▼"}</span><b>${p.symbol}</b><span class="muted">${p.volume}</span><span class="tag ${p.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[p.owner] || "You"}</span>
-      <em class="num ${cls(p.profit)}">${signed(p.profit)}</em><button type="button" data-quick="${p.ticket}" aria-label="Close #${p.ticket}"${real ? ` title="Real account: hold to close"` : ""}>${man.chipArm === p.ticket ? "close?" : real ? "hold ×" : "×"}</button></span>`).join("")
+      <em class="num ${cls(p.profit)}">${signed(p.profit)}</em><button type="button" data-quick="${p.ticket}" aria-label="Close #${p.ticket}" title="Close #${p.ticket}">×</button></span>`).join("")
     || `<span class="muted small">No open trades${man.owner === "any" ? "" : " for this filter"}. Buy or Sell under the chart opens one.</span>`);
   drawManLines();
   if (man.editing != null) return;               // don't wipe the SL/TP editor while you type
@@ -1446,6 +1510,7 @@ $("#man-pos").addEventListener("click", async e => {
     $("#ed-note").focus(); return;
   }
   if (act === "cancel") { man.editing = null; loadManPositions(); return; }
+  if ((act === "close" || act === "half") && !(await realCheck())) return;   // at once; real money: type REAL once
   b.disabled = true;
   try {
     let r;
@@ -1471,33 +1536,30 @@ $("#man-pos").addEventListener("click", async e => {
   } catch (err) { toast(err.message, true); }
   loadManPositions(); loadPositions();
 });
-$("#man-open").addEventListener("click", async e => {    // × on a chip: two clicks, then that trade closes
-  const b = e.target.closest("[data-quick]"); if (!b || isReal()) return;     // real account: hold instead (below)
-  const tk = +b.dataset.quick;
-  if (man.chipArm !== tk) { man.chipArm = tk; clearTimeout(man.chipT); man.chipT = setTimeout(() => { man.chipArm = null; loadManPositions(); }, 3000); loadManPositions(); return; }
-  clearTimeout(man.chipT); man.chipArm = null; selfClosed.add(tk);
-  try { const r = await api(`/api/positions/${tk}/close`, { method: "POST" }); toast(r.retcode === 10009 ? `Closed #${tk}.` : `Close result: ${r.comment}`, r.retcode !== 10009); } catch (err) { toast(err.message, true); }
+$("#man-open").addEventListener("click", async e => {    // × on a chip closes that trade at once
+  const b = e.target.closest("[data-quick]"); if (!b || b.disabled) return;
+  const tk = +b.dataset.quick, p = man.pos.find(x => x.ticket === tk);
+  if (!(await realCheck())) return;
+  b.disabled = true; selfClosed.add(tk);
+  try { const r = await api(`/api/positions/${tk}/close`, { method: "POST" }); toast(r.retcode === 10009 ? `Closed #${tk}${p ? ` · ${signed(p.profit)}` : ""}` : `Close result: ${r.comment}`, r.retcode !== 10009); } catch (err) { toast(err.message, true); }
   loadManPositions(); loadPositions();
 });
 document.addEventListener("click", async e => {
   const b = e.target.closest("#tab-manual [data-bulk]"); if (!b || b.disabled) return;
   const kind = b.dataset.bulk, match = { profit: p => p.profit > 0, loss: p => p.profit < 0, buys: p => p.side === "buy", sells: p => p.side === "sell", all: () => true }[kind];
   const sel = man.pos.filter(p => (man.owner === "any" || p.owner === man.owner) && match(p));
-  if (!b.classList.contains("armed")) {          // two clicks, like Wipe: the first shows exactly what will close
-    $$("#tab-manual .bulk-btns .btn.armed").forEach(x => x.classList.remove("armed"));
-    b.classList.add("armed"); b.textContent = `Click again: close ${sel.length} (${signed(sel.reduce((s, p) => s + p.profit, 0))})`;
-    clearTimeout(man.bulkT); man.bulkT = setTimeout(() => { b.classList.remove("armed"); b._html = null; loadManPositions(); }, 4000); return;
-  }
-  clearTimeout(man.bulkT); b.classList.remove("armed"); b._html = null; b.disabled = true;
-  sel.forEach(p => selfClosed.add(p.ticket));
-  let closed = 0, failed = 0;
+  if (!sel.length || !(await realCheck())) return;   // closes at once; only real money asks you to type REAL, once
+  b.disabled = true; sel.forEach(p => selfClosed.add(p.ticket));
+  let closed = 0, failed = 0, net = 0;
   if (man.backend) {
-    try { const r = await api("/api/manual/close", { method: "POST", body: { filter: kind, owner: man.owner } }); closed = r.closed.length; failed = r.failed.length; }
-    catch (err) { toast(err.message, true); }
+    try {
+      const r = await api("/api/manual/close", { method: "POST", body: { filter: kind, owner: man.owner } });
+      closed = r.closed.length; failed = r.failed.length; net = r.closed.reduce((s, x) => s + (+x.profit || 0), 0);
+    } catch (err) { toast(err.message, true); }
   } else {
-    for (const p of sel) { try { const r = await api(`/api/positions/${p.ticket}/close`, { method: "POST" }); r.retcode === 10009 ? closed++ : failed++; } catch (err) { failed++; } }
+    for (const p of sel) { try { const r = await api(`/api/positions/${p.ticket}/close`, { method: "POST" }); r.retcode === 10009 ? (closed++, net += p.profit) : failed++; } catch (err) { failed++; } }
   }
-  toast(`Closed ${closed} position${closed === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}.`, failed > 0);
+  notify({ title: `Closed ${closed} position${closed === 1 ? "" : "s"}`, body: `${BULK_LABEL[kind]}${failed ? ` · ${failed} failed` : ""}`, kind: failed ? "err" : net > 0 ? "tp" : net < 0 ? "sl" : "info", amount: closed ? net : null });
   loadManPositions(); loadPositions();
 });
 async function loadManOrders() {
@@ -1515,9 +1577,7 @@ $("#man-orders").addEventListener("click", async e => {
   loadManOrders();
 });
 $("#man-cancel-all").onclick = async () => {
-  const b = $("#man-cancel-all");
-  if (!b.classList.contains("armed")) { b.classList.add("armed", "danger-outline"); b.textContent = "Click again to cancel all"; clearTimeout(man.cancelT); man.cancelT = setTimeout(() => { b.classList.remove("armed", "danger-outline"); b.textContent = "Cancel all"; }, 4000); return; }
-  clearTimeout(man.cancelT); b.classList.remove("armed", "danger-outline"); b.textContent = "Cancel all";
+  const b = $("#man-cancel-all"); b.disabled = true;   // at once
   try { const r = await api("/api/manual/orders/cancel", { method: "POST", body: { all: true } }); toast(`Cancelled ${r.cancelled.length} order(s)${r.failed.length ? ` · ${r.failed.length} failed` : ""}.`, r.failed.length > 0); } catch (err) { toast(err.message, true); }
   loadManOrders();
 };
@@ -1527,7 +1587,7 @@ async function loadManHistory() {
   let hs; try { hs = await api("/api/manual/history?days=1"); } catch (e) { setHTML(tb, `<tr><td colspan="9" class="muted">${e.message}</td></tr>`); return; }
   const net = hs.reduce((s, h) => s + (h.profit || 0), 0);
   setHTML($("#man-hist-meta"), hs.length ? `${hs.length} closed · net <b class="num ${cls(net)}">${signed(net)}</b>` : "");
-  man.hist = hs;
+  man.hist = hs; drawManLines();
   setHTML(tb, hs.map((h, i) => `<tr class="click" data-h="${i}" title="Replay this trade"><td>${srvHM(h.time)}</td><td>${h.symbol}</td><td class="${h.side === "buy" ? "up" : "down"}">${h.side === "buy" ? "▲" : "▼"} ${h.side}</td><td>${h.volume}</td><td>${h.open}</td><td>${h.close}</td>
       <td class="${cls(h.profit)}">${signed(h.profit)}</td><td><span class="tag ${h.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[h.owner] || "You"}</span></td><td class="note-cell">${noteCell(h.note, h.tags)}</td></tr>`).join("")
     || `<tr><td colspan="9" class="muted">Nothing closed today yet.</td></tr>`);
@@ -1555,11 +1615,11 @@ setInterval(() => {                               // only while the Manual tab i
   if (man.tick % 15 === 0) { loadManHistory(); loadManNotes(); }
 }, 1000);
 
-/* real-account guard: a red banner on the Manual tab, "type REAL" once per app session before the first real order
-   (and before one-click can be switched on), and hold-to-close on the quick-close chips */
+/* real-account guard: a red banner on the Manual tab and "type REAL" once per app session before the first real order
+   or close from this tab. Nothing else asks twice. */
 function realBanner() {
   const real = isReal(); $("#man-real").hidden = !real;
-  if (man.wasReal !== real) { man.wasReal = real; if (state.tab === "manual") loadManPositions(); }   // chips switch to hold-to-close $("#tab-manual").classList.toggle("is-real", real);
+  if (man.wasReal !== real) { man.wasReal = real; $("#tab-manual").classList.toggle("is-real", real); }   // a red frame on the trade bar
   if (real) $("#man-real-acct").textContent = $("#acct-server").textContent || "this account";
 }
 function realCheck() {
@@ -1572,17 +1632,6 @@ function realCheck() {
 $("#real-input").addEventListener("input", e => $("#real-ok").disabled = e.target.value.trim().toUpperCase() !== "REAL");
 $("#real-input").addEventListener("keydown", e => {        // Enter confirms only when REAL is typed (never the Cancel button)
   if (e.key !== "Enter") return; e.preventDefault(); if (!$("#real-ok").disabled) $("#real-dlg").close("ok");
-});
-$("#man-open").addEventListener("pointerdown", e => {    // real account: hold × for a second to close that trade
-  const b = e.target.closest("[data-quick]"); if (!b || !isReal() || e.button !== 0) return;
-  e.preventDefault(); const tk = +b.dataset.quick; man.holding = tk; b.classList.add("holding");
-  const stop = () => { clearTimeout(man.holdT); b.classList.remove("holding"); man.holding = null; document.removeEventListener("pointerup", stop); b.removeEventListener("pointerleave", stop); };
-  document.addEventListener("pointerup", stop); b.addEventListener("pointerleave", stop);
-  man.holdT = setTimeout(async () => {
-    stop(); selfClosed.add(tk);
-    try { const r = await api(`/api/positions/${tk}/close`, { method: "POST" }); toast(r.retcode === 10009 ? `Closed #${tk}.` : `Close result: ${r.comment}`, r.retcode !== 10009); } catch (err) { toast(err.message, true); }
-    loadManPositions(); loadPositions();
-  }, 1000);
 });
 
 /* connection: Buy and Sell grey out when MT5 is offline, the broker link is down, the market is closed or the price
@@ -1608,52 +1657,57 @@ function renderConn() {
   $$("#man-buy, #man-sell").forEach(b => { b.classList.toggle("blocked", block); b.title = block ? `Can't trade: ${txt.toLowerCase()}` : ""; });
 }
 
-/* drag a position's SL or TP line on the chart; letting go sends /api/manual/modify (a bad level snaps back) */
+/* drag a position's red (SL) or green (TP) dot up or down on the chart; letting go sends /api/manual/modify (a bad
+   level snaps back). The price axis holds still while you drag. */
 (() => {
   const wrap = $("#man-chart");
-  const yOf = e => e.clientY - wrap.getBoundingClientRect().top;
-  function lineAt(y) {
-    let best = null;
-    (man.lines || []).forEach(L => {
-      if (!L.meta) return; const ly = man.series.priceToCoordinate(L.price); if (ly == null) return;
-      const d = Math.abs(ly - y); if (d < 7 && (!best || d < best.d)) best = { ...L, d };
-    });
-    return best;
-  }
+  const xy = e => { const r = wrap.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  const dotAt = e => man.dots && man.backend ? dotsAt(man.dots, ...xy(e), d => !!d.drag)[0]?.d : null;
   function check(d) {                             // is this level on the right side of the price, outside the stop level?
     const q = man.q, gap = (q.stops_level || 0) * q.point, buy = d.p.side === "buy", ref = buy ? q.bid : q.ask;
     const below = d.price < ref - gap, above = d.price > ref + gap;
     return d.kind === "sl" ? (buy ? below : above) : (buy ? above : below);
   }
-  function title(d) {
+  function label(d) {
     const q = man.q, dir = d.p.side === "buy" ? 1 : -1, pts = Math.round((d.price - d.p.open) * dir / q.point);
     const money = q.tick_value && q.tick_size ? (d.price - d.p.open) * dir / q.tick_size * q.tick_value * d.p.volume : null;
-    return `${d.kind.toUpperCase()} ${fmt(d.price, q.digits)}  ${pts >= 0 ? "+" : ""}${pts} pts${money != null ? `  ${signed(money)}` : ""}${check(d) ? "" : "  (not allowed here)"}`;
+    return `<span class="dk"><i style="background:${DOT_COLOR[d.kind]}"></i>${d.kind === "sl" ? "Stop loss" : "Take profit"} #${d.ticket}</span>
+      <div class="dt-grid"><span>Price</span><b>${fmt(d.price, q.digits)}</b><span>Points</span><b>${pts >= 0 ? "+" : ""}${pts}</b>${money != null ? `<span>At this level</span><b class="${cls(money)}">${signed(money)}</b>` : ""}</div>
+      ${check(d) ? "" : `<small class="down">Not allowed here</small>`}`;
+  }
+  function move(d) {                              // redraw the dragged dot at its new price
+    const D = man.dots, list = D.list.map(x => x.drag?.ticket === d.ticket && x.drag.kind === d.kind ? { ...x, price: d.price, t: x.time } : { ...x, t: x.time });
+    setDots(D, list);
+    const x = man.chart.timeScale().timeToCoordinate(d.time), y = man.series.priceToCoordinate(d.price);
+    if (x != null && y != null) showDotTip(D, label(d), x, y);
   }
   wrap.addEventListener("pointermove", e => {
     if (man.drag) {
-      const q = man.q, raw = man.series.coordinateToPrice(yOf(e)); if (raw == null) return;
-      man.drag.price = +(Math.round(raw / q.point) * q.point).toFixed(q.digits);
-      man.drag.line.applyOptions({ price: man.drag.price, title: title(man.drag), color: check(man.drag) ? man.drag.color : "#8c9098" });
+      const q = man.q, raw = man.series.coordinateToPrice(xy(e)[1]); if (raw == null) return;
+      const price = +(Math.round(raw / q.point) * q.point).toFixed(q.digits);
+      if (price !== man.drag.price) { man.drag.price = price; move(man.drag); }
       return;
     }
-    wrap.classList.toggle("grab-line", !!(man.backend && lineAt(yOf(e))));
+    wrap.classList.toggle("grab-line", !!dotAt(e));
   });
   wrap.addEventListener("pointerdown", e => {    // capture phase: runs before the chart, so it doesn't pan
     if (e.button !== 0 || !man.backend || !man.q) return;
-    const hit = lineAt(yOf(e)); if (!hit) return;
-    const p = man.pos.find(x => x.ticket === hit.meta.ticket); if (!p) return;
+    const hit = dotAt(e); if (!hit) return;
+    const p = man.pos.find(x => x.ticket === hit.drag.ticket); if (!p) return;
     e.preventDefault(); e.stopPropagation();
-    man.drag = { ...hit.meta, p, line: hit.line, color: hit.color, from: hit.price, price: hit.price };
-    man.chart.applyOptions({ handleScroll: false, handleScale: false });
-    wrap.setPointerCapture(e.pointerId); wrap.classList.add("dragging");
+    const ps = man.chart.priceScale("right");
+    man.drag = { ...hit.drag, p, time: hit.time, from: hit.price, price: hit.price, auto: ps.options().autoScale };
+    man.dots.drag = man.drag;
+    ps.applyOptions({ autoScale: false }); man.chart.applyOptions({ handleScroll: false, handleScale: false });
+    wrap.setPointerCapture(e.pointerId); wrap.classList.add("dragging"); move(man.drag);
   }, true);
   const drop = async e => {
     const d = man.drag; if (!d) return;
-    man.drag = null; wrap.classList.remove("dragging");
+    man.drag = null; man.dots.drag = null; man.dots.tip.hidden = true; wrap.classList.remove("dragging");
     man.chart.applyOptions({ handleScroll: true, handleScale: true });
+    if (d.auto) man.chart.priceScale("right").applyOptions({ autoScale: true });
     try { wrap.releasePointerCapture(e.pointerId); } catch (err) {}
-    const back = () => { man.lineSig = ""; drawManLines(); };
+    const back = () => { man.dots.sig = ""; drawManLines(); };
     if (e.type === "pointercancel" || Math.abs(d.price - d.from) < man.q.point / 2) return back();
     if (!check(d)) { toast(`A ${d.p.side}'s ${d.kind === "sl" ? "stop loss" : "take profit"} can't go there: it has to sit ${(d.kind === "sl") === (d.p.side === "buy") ? "below" : "above"} the price${man.q.stops_level ? `, at least ${man.q.stops_level} points away` : ""}.`, true); return back(); }
     const body = { ticket: d.ticket, sl: d.kind === "sl" ? d.price : (d.p.sl || 0), tp: d.kind === "tp" ? d.price : (d.p.tp || 0) };
@@ -1667,8 +1721,8 @@ function renderConn() {
   wrap.addEventListener("pointerup", drop, true); wrap.addEventListener("pointercancel", drop, true);
 })();
 
-/* keyboard shortcuts (Settings > Manual trading, this PC): B buy, S sell, Shift+X close all, Esc cancel, +/- lots.
-   They press the same buttons, so the two-click confirm, one-click and the real-money check all still apply. */
+/* keyboard shortcuts (Keys page): B buy, S sell, Shift+X close all, +/- lots. They press the same buttons, so they act
+   at once too, and the real-money check still applies. */
 const pref = (k, dflt) => { try { const v = localStorage.getItem(k); return v == null ? dflt : v === "1"; } catch (e) { return dflt; } };
 const setPref = (k, on) => { try { localStorage.setItem(k, on ? "1" : "0"); } catch (e) {} };
 document.addEventListener("click", e => {          // links that open a Settings section
@@ -1685,7 +1739,7 @@ async function loadManAuto(first = false) {
   $$("#man-be-pts, #man-trail-pts").forEach(i => i.disabled = !on);
   $("#man-auto-note").textContent = on ? "0 = off. The app moves the stop for you, even with this tab closed." : "Break-even and trailing stops wait for their backend (Chat A is building it).";
   if (on && first) { $("#man-be-pts").value = man.auto.defaults?.be_points || 0; $("#man-trail-pts").value = man.auto.defaults?.trail_points || 0; }
-  if (on) { man.lineSig = ""; drawManLines(); }
+  if (on) drawManLines();
 }
 function autoCell(tk) {
   const a = man.auto?.tickets?.[tk]; if (!a || (!a.be_points && !a.trail_points)) return `<span class="muted">–</span>`;
@@ -1701,7 +1755,7 @@ $("#bt-table").addEventListener("click", e => { const r = e.target.closest("tr")
    From /api/events when the backend has it; until then a close is guessed from positions that vanish next to their
    TP or SL (closes you made from this app are skipped). */
 const selfClosed = new Set();
-const alertsState = { since: null, ok: null, prev: null, titleT: null };
+const alertsState = { since: null, ok: null, prev: null, titleT: null, retryAt: 0 };
 const ALERT = {
   tp: { head: "Take profit hit", cls: "tp" },
   sl: { head: "Stop loss hit", cls: "sl" },
@@ -1732,8 +1786,8 @@ const WATCHDOG = {
   agent_stuck: { title: "Bot looks stuck", kind: "err", sound: "watchdog" }, mt5_down: { title: "MT5 is down", kind: "err", sound: "feedLost" },
   mt5_up: { title: "MT5 is back", kind: "ok" },
 };
-async function pollEvents() {
-  if (alertsState.ok === false) return;
+async function pollEvents() {                    // after a 404 (an older server) it tries again every 30 s, not never
+  if (alertsState.ok === false && Date.now() < alertsState.retryAt) return;
   try {
     const r = await api(`/api/events${alertsState.since != null ? `?since=${alertsState.since}` : ""}`);
     alertsState.ok = true;
@@ -1753,7 +1807,7 @@ async function pollEvents() {
       } else showAlert(ev);
     });
     alertsState.since = r.last_id;
-  } catch (e) { if (e.status === 404) alertsState.ok = false; }
+  } catch (e) { if (e.status === 404) { alertsState.ok = false; alertsState.retryAt = Date.now() + 30000; } }
 }
 function guessCloses(ps) {                         // fallback while /api/events isn't there
   const now = new Map(ps.map(p => [p.ticket, p])), prev = alertsState.prev; alertsState.prev = now;
@@ -1770,7 +1824,7 @@ setInterval(pollEvents, 3000); pollEvents();
 /* ---------- review: you vs the bot, trade replay, weekly summary ----------
    /api/stats/compare when the backend has it; until then the same numbers are worked out here from the bot's ledger
    and /api/manual/history. Times are broker server time, like the charts. */
-const rv = { days: 30, mode: "paper", who: "all", trades: [], sel: null, chart: null, series: null, lines: [], curve: null, week: null, pending: null, busy: false };
+const rv = { days: 30, mode: "paper", who: "all", trades: [], sel: null, chart: null, series: null, dots: null, curve: null, week: null, pending: null, busy: false };
 const WHO = { bot: "Bot", hermes: "Hermes", you: "You" };
 const REASON = { tp: "Take profit", sl: "Stop loss", manual: "Closed by hand", so: "Stop out", early: "Bot closed early", model: "Bot closed early", kill: "Kill switch" };
 function srvOffset() {                           // broker server time = New York time + 7 h
@@ -1899,13 +1953,10 @@ async function showReplay(t) {
   if (rv.sel !== t.key) return;
   rv.series.applyOptions({ priceFormat: { type: "price", precision: d.digits, minMove: d.point } });
   rv.series.setData(d.bars.map(pickBar));
-  rv.lines.forEach(l => rv.series.removePriceLine(l)); rv.levels = [t.open, t.sl, t.tp, t.close].filter(v => v);
-  const ln = (price, color, title, lineStyle) => price ? rv.series.createPriceLine({ price, color, lineWidth: 1, lineStyle, axisLabelVisible: true, title }) : null;
-  rv.lines = [ln(t.open, t.src === "bot" ? "#89cff0" : "#c9a24a", "entry", 2), ln(t.sl, "#e0574f", "SL", 0), ln(t.tp, "#3fb68b", "TP", 0), ln(t.close, "#8c9098", "exit", 1)].filter(Boolean);
-  const snap = x => x - (x % 60), marks = [];
-  if (t.openT) marks.push({ time: snap(t.openT), position: t.side === "buy" ? "belowBar" : "aboveBar", color: t.side === "buy" ? "#3fb68b" : "#e0574f", shape: t.side === "buy" ? "arrowUp" : "arrowDown", text: `${t.side} ${t.volume}` });
-  if (t.closeT) marks.push({ time: snap(t.closeT), position: t.side === "buy" ? "aboveBar" : "belowBar", color: t.profit >= 0 ? "#3fb68b" : "#e0574f", shape: "circle", text: signed(t.profit) });
-  rv.series.setMarkers(marks.sort((a, b) => a.time - b.time));
+  rv.levels = [t.open, t.close].filter(v => v);   // dots: yellow where it opened, green/red/grey where it closed
+  rv.dots ||= dotSet(rv.chart, rv.series, $("#rv-chart"));
+  const tip = tradeTip({ side: t.side, lots: t.volume, owner: t.owner, mode: t.mode, entry: t.open, sl: t.sl, tp: t.tp, exit: t.close, why: REASON[t.reason] || t.reason, pl: t.profit }, d.digits);
+  setDots(rv.dots, [{ t: t.openT, price: t.open, kind: "entry", tip }, { t: t.closeT, price: t.close, kind: exitKind(t.reason), tip }]);
   try { rv.chart.timeScale().setVisibleRange({ from: (t.openT || t.closeT) - 25 * 60, to: (t.closeT || t.openT) + 25 * 60 }); } catch (e) { rv.chart.timeScale().fitContent(); }
 }
 function openReplay(src, id) { rv.who = "all"; $$("#rv-who .chip").forEach(x => x.classList.toggle("active", x.dataset.w === "all")); rv.pending = `${src}-${id}`; showTab("review"); }
@@ -2108,19 +2159,13 @@ function syncSaved() {                           // runs when settings arrive: t
    while you type in a box or while a dialog is open. ---------- */
 const KEY_GROUPS = {
   manual: { label: "Trading on the Manual tab", on: false,
-    desc: "These place and close orders. Buy, Sell and the close buttons still ask twice unless one-click is on, and on a real account the first order still asks you to type REAL." },
+    desc: "These place and close orders on the first press, with nothing to confirm. On a real account the first order of the session asks you to type REAL." },
   app: { label: "Moving around", on: true, desc: "Switch tabs, realign charts, step through replays, mute. Safe to leave on." },
 };
 const TAB_NAME = { dash: "Market", manual: "Manual", agent: "Agent", review: "Review", train: "Train", quiz: "Quiz", chat: "Hermes", keys: "Keys", sounds: "Sounds", settings: "Settings" };
 function pressBtn(sel) {
   const el = $(sel); if (!el || el.disabled) return;
   el.click(); if (el.animate && motionOK()) el.animate([{ transform: "scale(.96)" }, { transform: "none" }], { duration: 160 });
-}
-function cancelArmed() {                         // Esc on the Manual tab: nothing waits for a second click any more
-  disarm();
-  $$("#tab-manual .bulk-btns .btn.armed").forEach(b => { b.classList.remove("armed"); b._html = null; });
-  clearTimeout(man.bulkT); if (man.chipArm != null) { clearTimeout(man.chipT); man.chipArm = null; }
-  loadManPositions();
 }
 function cycleSym(d) {
   const list = state.settings?.symbols_watch || []; if (list.length < 2) return;
@@ -2137,7 +2182,6 @@ const KEY_ACTIONS = [
   { id: "man.closeAll", group: "manual", tabs: ["manual"], label: "Close all", short: "Close all", key: "Shift+X", run: () => pressBtn('#tab-manual [data-bulk="all"]') },
   { id: "man.closeProfit", group: "manual", tabs: ["manual"], label: "Close profitable", short: "Close +", key: "Shift+P", run: () => pressBtn('#tab-manual [data-bulk="profit"]') },
   { id: "man.closeLoss", group: "manual", tabs: ["manual"], label: "Close negative", short: "Close −", key: "Shift+N", run: () => pressBtn('#tab-manual [data-bulk="loss"]') },
-  { id: "man.cancel", group: "manual", tabs: ["manual"], label: "Cancel what's waiting for a second click", short: "Cancel", key: "Escape", run: cancelArmed },
   { id: "man.lotsUp", group: "manual", tabs: ["manual"], label: "One lot step more", short: "Lots +", key: "+", repeat: true, run: () => setVol(+$("#man-vol").value + volStep()) },
   { id: "man.lotsDown", group: "manual", tabs: ["manual"], label: "One lot step less", short: "Lots −", key: "-", repeat: true, run: () => setVol(+$("#man-vol").value - volStep()) },
   { id: "man.nextSym", group: "manual", tabs: ["manual"], label: "Next symbol", short: "Next sym", key: "]", run: () => cycleSym(1) },
@@ -2199,7 +2243,7 @@ document.addEventListener("keydown", e => {        // the one place shortcuts ru
 });
 function renderKeysHint() {                      // the line under the order ticket shows the keys as they are now
   const el = $("#man-keys"); if (!el) return;
-  const show = ["man.buy", "man.sell", "man.closeAll", "man.cancel", "man.lotsUp", "man.lotsDown"].map(actById).filter(a => bindOf(a));
+  const show = ["man.buy", "man.sell", "man.closeAll", "man.lotsUp", "man.lotsDown"].map(actById).filter(a => bindOf(a));
   setHTML(el, keys.data.groups.manual
     ? `${show.map(a => `<span class="kh">${keyHTML(bindOf(a))} ${esc(a.short.toLowerCase())}</span>`).join("")} <a href="#" data-goto="keys">change</a>`
     : `Trading keys are off. <a href="#" data-goto="keys">Turn them on or change them</a>`);
@@ -3018,8 +3062,13 @@ async function loadQuiz() {
     showQuestion(m, "Latest mistake", m);
   }
   // hardest
-  $("#quiz-hard tbody").innerHTML = (st.hardest || []).map(h => `<tr data-id="${h.id}"><td>${h.id}</td><td>${h.setup_name}</td><td>${ACT[h.answer]}</td><td>${h.right}/${h.asked}</td></tr>`).join("")
+  $("#quiz-hard tbody").innerHTML = (st.hardest || []).map(h => `<tr data-id="${h.id}"${isTrapQ(h) ? ` class="trap" title="A trap: it looks like a winner at entry, so drilling it only memorises the chart"` : ""}><td>${h.id}</td><td>${h.setup_name}</td><td>${ACT[h.answer]}</td><td>${h.right}/${h.asked}</td></tr>`).join("")
     || `<tr><td colspan="4" class="muted">Shows up once the quiz runs.</td></tr>`;
+  const grind = (st.hardest || []).filter(h => !isTrapQ(h)), fh = $("#quiz-focus-hard");   // traps are left out of "Work on these"
+  fh.disabled = !grind.length;
+  fh.title = !(st.hardest || []).length ? "" : grind.length ? `Drills ${grind.length === 1 ? "the hardest real setup" : `the ${grind.length} hardest real setups`}${grind.length < st.hardest.length ? ` (${st.hardest.length - grind.length} trap${st.hardest.length - grind.length > 1 ? "s" : ""} left out)` : ""}`
+    : "All of these are traps. Traps look like winners at entry; training on them only memorises.";
+  $("#quiz-hard-hint").hidden = grind.length === (st.hardest || []).length;
   document.querySelectorAll("#quiz-hard tbody tr[data-id]").forEach(tr => tr.onclick = async () => { quiz.viewing = +tr.dataset.id; showQuestion(await api(`/api/quiz/question/${tr.dataset.id}`), `Question ${tr.dataset.id}`); });
   // exam
   const ex = st.exam || (!r.job_running ? pol?.exam : null);
@@ -3047,7 +3096,8 @@ document.addEventListener("click", e => { if (e.target.closest("[data-quiz-build
 $("#quiz-start").onclick = () => startQuiz({}, "Starting over with a fresh agent. Points are its reward.");
 $("#quiz-resume").onclick = () => startQuiz({ resume: true }, "Continuing where it left off.");
 $("#quiz-focus").onclick = () => startQuiz({ focus: [...quiz.picked] }, `Working on ${quiz.picked.size.toLocaleString()} picked question(s).`);
-$("#quiz-focus-hard").onclick = () => { const ids = (quiz.st.hardest || []).map(h => h.id); if (ids.length) startQuiz({ focus: ids }, `Working on the ${ids.length} hardest.`); };
+function isTrapQ(h) { return h.trap === true || h.grind === false || /\(trap\)\s*$/.test(h.setup_name || ""); }
+$("#quiz-focus-hard").onclick = () => { const ids = (quiz.st.hardest || []).filter(h => !isTrapQ(h)).map(h => h.id); if (ids.length) startQuiz({ focus: ids }, ids.length === 1 ? "Working on the hardest real setup." : `Working on the ${ids.length} hardest real setups.`); };
 $("#quiz-stop").onclick = () => api("/api/quiz/control", { method: "POST", body: { stop: true } });
 document.querySelectorAll("#quiz-speed button").forEach(b => b.onclick = () => api("/api/quiz/control", { method: "POST", body: { speed: +b.dataset.speed } }).then(loadQuiz));
 addEventListener("resize", () => state.tab === "quiz" && drawBoard());

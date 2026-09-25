@@ -1059,4 +1059,20 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Chat A's test suite: 26 passed before pushing. Browser-tested in the sandbox (backtest report and watchdog events
   mocked: no model or history there; notes and the full backup against the real routes), 0 errors.
 
+### 2026-09-25: dots on the charts, Manual without confirms, the bot's "why", trading hours
+- Fixed: the text under Start agent read one word per line. The new notification cards had taken the `.note` class
+  that small status texts already used; the cards are `.ntf` now.
+- Manual tab acts on the first click (user's request): Buy/Sell, bulk close (with a total-P/L notification), chip ×,
+  Cancel all. The One-click switch, the spread "send anyway" and the Esc "cancel" key are gone. Real accounts still
+  ask to type REAL once per session (also before a close).
+- Dots instead of lines on the Market, Manual and Review charts: yellow entry, green TP, red SL, grey other close.
+  Open trades show all three on the entry candle; closed ones show entry + exit. Hover a dot for owner, side, lots,
+  entry, SL, TP, P/L. On Manual, drag a red/green dot to move the SL/TP (the axis holds still; the tip shows points
+  and money). Hovering Buy/Sell shows faded preview dots.
+- Bot card: "Needs 7% to enter" (practice adds "its best 10% start at 12%"), a "Last hour" line with the top skip in
+  amber. Slider hint while the agent runs. Kill is "Hold to flatten & reset agent" and clears the card at once.
+- Settings > Trading: trading hours (server time). Settings > About: version, update message and notes (also the
+  logo's tooltip). Quiz: trap rows greyed and left out of Work on these. Events retry every 30 s after a 404.
+- Tests: 43 passed. Browser-tested in the sandbox (bot trades, history and kill mocked), 0 page errors.
+
 <!-- Chat B: add new entries above this line -->

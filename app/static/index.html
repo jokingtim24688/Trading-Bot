@@ -122,9 +122,9 @@
           <div id="positions" class="positions"><p class="empty">Loading…</p></div>
         </div>
 
-        <button id="kill" class="kill" aria-label="Hold to flatten the agent and stop it">
+        <button id="kill" class="kill" aria-label="Hold to flatten and reset the agent: stops it and closes its trades">
           <span class="kill-fill"></span>
-          <span class="kill-label">Hold to flatten agent</span>
+          <span class="kill-label">Hold to flatten &amp; reset agent</span>
         </button>
       </aside>
     </div>
@@ -134,12 +134,11 @@
   <section id="tab-manual" class="tab">
     <div id="man-backend" class="empty-state man-banner" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>
       <div><b>Placing orders needs its backend</b>Chat A is building it from the spec in TWO_CHATS.md. Until then you can already watch prices and close positions (one at a time or in bulk) from here.</div></div>
-    <div id="man-real" class="real-banner" hidden><b>Real account</b><span>Every order from this tab uses real money on <span id="man-real-acct"></span>. The first order asks you to type REAL.</span></div>
+    <div id="man-real" class="real-banner" hidden><b>Real account</b><span>Every order from this tab uses real money on <span id="man-real-acct"></span>. The first order or close of the session asks you to type REAL; after that every click acts at once.</span></div>
     <div class="man-grid">
       <div class="man-left">
         <div class="panel ticket">
-          <div class="panel-head"><h3>New order</h3>
-            <label class="switch" title="On: Buy and Sell send the order straight away. Off: click twice to confirm."><input type="checkbox" id="man-oneclick"><span>One-click trading</span></label></div>
+          <div class="panel-head"><h3>New order</h3><span class="muted small">Buy and Sell send on the first click</span></div>
           <div class="chips" id="man-symbols"></div>
           <div class="vol-row">
             <span class="muted small">Lots</span>
@@ -192,13 +191,13 @@
           <div class="trade-chips" id="man-open"></div>
         </div>
         <div class="panel man-chart-panel">
-          <div class="chart-head"><div class="quote"><span id="man-sym" class="man-sym">—</span><span class="tf">M1</span><span class="muted small">drag an SL or TP line to move it; double-click to realign</span></div>
+          <div class="chart-head"><div class="quote"><span id="man-sym" class="man-sym">—</span><span class="tf">M1</span><span class="muted small">drag a red (SL) or green (TP) dot to move it; double-click to realign</span></div>
             <span id="man-conn" class="conn" role="status"><i></i><span>Connecting…</span></span></div>
           <div class="man-chart-wrap"><div id="man-chart"></div></div>
           <div class="quote-row trade-bar">
-            <button class="side-btn sell" id="man-sell" type="button"><small>SELL</small><b class="num flashable" id="man-bid">—</b><em id="man-sell-note"></em></button>
+            <button class="side-btn sell" id="man-sell" type="button"><small>SELL</small><b class="num flashable" id="man-bid">—</b></button>
             <div class="spread"><span class="num" id="man-spread">—</span><small>spread</small></div>
-            <button class="side-btn buy" id="man-buy" type="button"><small>BUY</small><b class="num flashable" id="man-ask">—</b><em id="man-buy-note"></em></button>
+            <button class="side-btn buy" id="man-buy" type="button"><small>BUY</small><b class="num flashable" id="man-ask">—</b></button>
           </div>
         </div>
         <div class="panel">
@@ -377,6 +376,7 @@
           <div class="panel">
             <div class="panel-head"><h3>Hardest right now</h3><button id="quiz-focus-hard" class="btn xs">Work on these</button></div>
             <div class="table-wrap"><table id="quiz-hard"><thead><tr><th>#</th><th>Setup</th><th>Answer</th><th>Right</th></tr></thead><tbody></tbody></table></div>
+            <p id="quiz-hard-hint" class="muted small hard-hint" hidden>Traps (greyed) are left out of Work on these: traps look like winners at entry, so training on them only memorises.</p>
           </div>
           <div class="panel">
             <div class="panel-head"><h3>Ask it about the live market</h3><button id="quiz-ask" class="btn xs">What would you do now?</button></div>
@@ -533,6 +533,7 @@
         <a href="#set-telegram">Phone alerts<span class="dot"></span></a>
         <a href="#set-display">Display<span class="dot"></span></a>
         <a href="#set-backup">Backup<span class="dot"></span></a>
+        <a href="#set-about">About<span class="dot"></span></a>
       </nav>
       <form id="settings-form" class="settings">
         <fieldset class="panel" id="set-trading"><legend>Trading<small>what the bot trades and how it behaves</small></legend>
@@ -541,8 +542,11 @@
           <label>MT5 terminal path (optional)<input name="terminal_path" placeholder="C:\Program Files\MetaTrader 5\terminal64.exe"></label>
           <label>Point size of symbol<input name="point" type="number" step="any"></label>
           <label>History to download<span class="u" data-u="days"><input name="days_history" type="number"></span></label>
+          <label>Trading hours from (server time)<span class="u" data-u=":00"><input name="trade_hours_start" type="number" min="0" max="24" step="1"></span></label>
+          <label>Trading hours until (server time)<span class="u" data-u=":00"><input name="trade_hours_end" type="number" min="0" max="24" step="1"></span></label>
+          <span class="help">The bot only opens new trades in these hours; open trades are managed all the time. Applies from the next Start. 0 to 24 (or the same hour twice) means all day; a start later than the end runs overnight, e.g. 22 to 6.</span>
           <label class="check"><input type="checkbox" name="practice"> Practice mode on Paper and Replay</label>
-          <span class="help">Trades the model's best ~10% of readings instead of the confidence threshold, so Paper and Replay produce trades to learn from.</span>
+          <span class="help">Entries still use the Confidence threshold. The Bot trade card also shows where the model's best ~10% of readings start, to help you pick one.</span>
           <label class="check"><input type="checkbox" name="auto_promote_demo"> Move from Paper to Demo automatically when the Paper gate is passed</label>
           <label class="check"><input type="checkbox" name="use_learned"> Apply the rules the bot learned from its own trades</label>
           <span class="help">Blocks the hours, sides and setups that kept losing. See "What the bot has learned" on the Agent tab.</span>
@@ -645,6 +649,10 @@
           <label class="span-all">Backup folder (blank = data/backups/full; a OneDrive or USB folder survives a dead disk)<input name="backup_dir" spellcheck="false"></label>
           <div class="span-all bk-actions"><button class="btn" type="button" id="dbk-now">Back up everything now</button><span id="dbk-status" class="muted small"></span></div>
           <div class="span-all bk-list" id="dbk-list"></div>
+        </fieldset>
+        <fieldset class="panel" id="set-about"><legend>About<small>which version this copy runs, and its last update</small></legend>
+          <div class="span-all" id="ver-box"><p class="muted small">Reading the version…</p></div>
+          <span class="help span-all">Trading Bot.bat checks GitHub for a newer version every time it starts.</span>
         </fieldset>
         <div class="savebar glass" id="savebar">
           <span class="dirty" id="set-dirty"><i></i><span id="set-dirty-txt">All changes saved</span></span>

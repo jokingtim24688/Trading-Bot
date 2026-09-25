@@ -164,13 +164,34 @@
   TP/SL/close/be/trail when the main window isn't in front; page side `pop` (`popInit`, `popConfigure`,
   `#pop-screen`, `#pop-test`), feed alerts use `screen: !pop.feed`.
 - News / spread / quiz / Telegram (Chat A's routes): `loadNews`/`renderNews` (`#news-chip`, `#news-line`,
-  `#news-list`), spread: `.trade-bar .spread.wide` + `man.spreadArm` resend with `ignore_spread`; `loadQuizSplit`
+  `#news-list`), spread: `.trade-bar .spread.wide`, a refused order shows the limit (no send-anyway since 2026-09-25); `loadQuizSplit`
   (`#rv-quiz`, `#quiz-verdict`); Telegram `loadTelegram`, `#tg-detect`, `#tg-test`, `saveSettingsNow()`; settings
   checkbox groups (`news_impact`, `telegram_events`) are lists in `fillSettings`/`formValues`/`updateDirty`.
 - Backtest / watchdog / notes / full backup (Chat A's routes): `loadBacktest` (`#btx-card`, polls while running),
   `loadWatchdog` (`#wd-line`), `WATCHDOG` event kinds in `pollEvents` (+ `_WATCHDOG` in `app/main.py`), sound event
   `watchdog`; notes `man.notes`/`loadManNotes`, `#man-note`/`#man-tags` (order `note`/`tags`), `noteCell`, Positions
   "Note" editor, `rv-note` in replay; `loadDataBackups`/`#dbk-now`; `onSettingsOpen()` from `showTab`. Notification
-  exit: `.note.out` 0.9 s fade (`note-out`, `note-fade` under reduced motion), `removeNote` listens for the card's own
+  exit: `.ntf.out` 0.9 s fade (`note-out`, `note-fade` under reduced motion), `removeNote` listens for the card's own
   animationend only.
 
+## Dots, one-click Manual, bot card why (2026-09-25, Chat B)
+- Notification cards use `.ntf` / `.ntf-ic` / `.ntf-body` / `.ntf-life` (they used to share `.note` with the small
+  status texts like `#agent-msg`, which put that text in a 22 px grid column: one word per line).
+- Chart dots (Market, Manual, Review replay): `DOT_COLOR` (entry #e8c547, sl #e0574f, tp #3fb68b, exit #8c9098, faded
+  `p*` for the Buy/Sell preview), `dotSet(chart, series, el)` -> `{pool, list, tip}`, `setDots(D, dots)` (a dot is
+  `{t, price, kind, tip, drag}`; snaps to a loaded candle; one layer of line series per colour holds one point per candle,
+  so same-candle dots go to the next layer), `dotsAt(D, x, y)` (8 px hit test), `dotHover` + `showDotTip` (`.dot-tip`),
+  `tradeTip(o, digits)`, `exitKind(reason)`. Market: `drawBotOverlay()` from positions (`state.posList`, set in
+  `loadPositions`), paper/replay open bot trades and closed bot trades (`entry_time`/`exit_time`). Manual:
+  `drawManLines()` (positions, today's `man.hist`, preview); the drag IIFE hit-tests `drag` dots, freezes the price
+  axis while dragging, shows points/money in the tip, POSTs `/api/manual/modify` on drop. Review: `rv.dots` in
+  `showReplay`. No SL/TP price lines or setMarkers any more (prior-day lines stay).
+- Manual acts on the first click: no `man.arm`/`disarm`, no One-click switch, no spread send-anyway, bulk close /
+  chip × / Cancel all at once (bulk shows a notification with the total P/L). Only `realCheck()` (type REAL once per
+  session) guards real accounts, now also before closes. The `man.cancel` (Esc) key action is gone.
+- Bot card: `Needs X to enter` + `its best 10% start at` (`agent.top10`, practice), `lastHour(agent.last_hour)` (top
+  skip in `--warn`). `#thr-hint` adds "applies from the next candle" while the agent runs. Kill: "Hold to flatten &
+  reset agent", clears the card, `#agent-msg` and positions at once. Settings > Trading: `trade_hours_start/_end`.
+- Quiz: `isTrapQ(h)` greys trap rows in "Hardest right now"; Work on these drills only real setups (`#quiz-hard-hint`).
+- `pollEvents` retries every 30 s after a 404 (`alertsState.retryAt`). Settings > About (`#set-about`, `#ver-box`) +
+  the logo tooltip: `renderVersion(status.version)` with the update message (warning style when `ok` is false) and notes.

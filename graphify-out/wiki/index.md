@@ -96,4 +96,5 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: screen pop-ups above full-screen apps and while minimised (Win32 tool window, Python reads the events feed), screen picker.
 - 2026-09-24: news chip + pause settings, Manual spread limit with send-anyway, quiz second-opinion panel, Telegram phone-alert settings.
 - 2026-09-24: 0.9 s notification fade (also with reduced motion), backtest card + watchdog line on Agent, watchdog pop-ups, trade notes, full data backup.
+- 2026-09-25: price dots on all charts (hover + drag), Manual acts on the first click, bot card last-hour reasons, trading hours, kill reset, version in Settings > About; see app.md "Dots, one-click Manual, bot card why".
 <!-- Chat B: add new lines above this marker -->
