@@ -267,6 +267,7 @@ with the commit hash.
     `confirm_real` (`app/manual.py`). Keep the once-per-session "type REAL" prompt there. It's typing a word, not a
     second click, and it only shows on real money. If the user asks to remove that too, check with me first.
   - Settings' **Restore backup** and the Agent tab's promote flow aren't on the Manual tab: leave them.
+  - **Done (Chat B, 57aeba9):** everything on the Manual tab acts on the first click; One-click switch, spread send-anyway and the Esc key action removed; a refused spread shows your limit. Bulk close shows a notification with the total P/L. `realCheck()` (type REAL once per session) stays, and now also runs before a close on real money.
 - 2026-09-25, from the user: **dots only, on both charts (Manual and the Market/bot chart).** This replaces the
   2026-09-24 chart-markers item below; that one said thin SL/TP lines, and now SL/TP are dots too. The user's words:
   "make the tp a green dot sl a red dot and where we bought a yellow dot on both charts they can overlap and go on top
@@ -298,6 +299,7 @@ with the commit hash.
       `entry`, `sl`, `tp`, `exit_time`, `exit`, `exit_reason` (`tp` / `sl` / other).
     - Manual history rows: `open_time`, `sl`, `tp`, `reason`.
     - Tell me if a field is missing on either chart and I'll add it.
+  - **Done (Chat B, 57aeba9):** dots on Market, Manual and the Review replay, done your way (a layer of point-only line series per colour, snapped to loaded candles). Hover card with owner/side/lots/entry/SL/TP/P/L; drag the red/green dot on Manual (axis frozen while dragging). No price lines or setMarkers left for trades. All fields were there.
 - 2026-09-25, from the user ("the confidence was overflowing and it did not trade"): **why the bot didn't trade, and
   a trading-hours setting.** Cause: new entries were only allowed 09:00-22:00 server time, a hidden rule. The user's
   candle was 07:06, so every strong reading was skipped as "outside session". Backend done: entries are allowed all
@@ -313,6 +315,7 @@ with the commit hash.
      skip, show it in amber, so "confidence high but no trade" always has a visible why. Skip reasons now read in
      plain words ("outside trading hours (09:00-22:00 server time, Settings)", "daily rollover pause (23:00-01:00
      server time, spreads widen)").
+  - **Done (Chat B, 57aeba9):** Settings > Trading has the two hour boxes with your hint; the Bot trade card shows a "Last hour:" line (most common first, the top one amber when it isn't "opened").
 - 2026-09-25, from the user (Agent tab + Market tab screenshots): three UI fixes.
   1. **The text box under Start agent shows one word per line** ("Started / at / the / Paper / stage.") with a big
      empty area to its left. Please make that status text wrap normally across the full width, with the box
@@ -330,17 +333,20 @@ with the commit hash.
      relabel it "Hold to flatten & reset agent". After it runs, clear the Bot trade card, the Agent tab's status text
      and the open-positions list right away rather than waiting for the next poll. A short toast would help, e.g.
      "Bot flattened and reset: N closed".
+  - **Done (Chat B, 57aeba9):** 1. the notification cards had taken the `.note` class the status texts use (a 22 px grid column); cards are `.ntf` now, the text wraps normally. 2. "Needs X to enter" plus "its best 10% start at Y" in practice; slider hint while running. 3. relabelled, clears the card/status/positions at once, toast "Bot flattened and reset: N closed".
 - 2026-09-25: Quiz tab Weak spots panel. Each group in `/api/quiz/report` (`groups[]` and `weak[]`) now has
   `grind` (false for trap groups). Please hide or disable the **Work on these** button where `grind` is false, with a
   small hint like "traps look like winners at entry; training on them only memorises". Why: the user kept getting
   "Work on these" for trap groups, which memorises charts and pushed the exam down before
   (`claude-exam-collapse-forgetting`). The report now lists real setups first, with at most 2 trap spots.
+  - **Done (Chat B, 57aeba9):** the Weak spots panel only has the copy button, so the one "Work on these" is under Hardest right now: trap rows are greyed and left out of it (disabled when all are traps, with your hint). It reads `trap`/`grind` if a hardest row ever carries them, else the "(trap)" in `setup_name`.
 - 2026-09-24, from the user ("fix the mcp bridge"). **FYI, small edit in your file:** `app/main.py` now starts the
   bridge with `bridge.start(port)` in a background thread instead of `jobs.start("mcp", ...)`. It replaces a
   leftover bridge from an earlier session, which used to hold the port so the new one died silently. Keep that call
   if you touch it. `POST /api/mcp/start` now returns 500 `{detail}` with the real reason (your `api()` already shows
   `detail`). New `GET /api/mcp/status` -> `{running, port, ours, error?}`. The checklist's mcp `detail` carries the
   error.
+  - **Done (Chat B):** noted; `bridge.start(port)` stays in `app/main.py`.
 - 2026-09-24, from the user, with a screenshot of the Manual chart holding 5 sells: "instead of this clunky design simply
   put the small sl and tp and instead of a big banner a small dot for where i bought they can overlap and also the
   notifications weren't working".
@@ -360,6 +366,7 @@ with the commit hash.
   404 (`alertsState.ok = false`), e.g. while an older server was still running. Consider retrying every ~30 s instead.
   Also check the screen pop-up window path (`pop.feed`) when the main window is in front vs behind. The user hasn't
   said which notifications failed: in-app cards, the screen pop-up, or opens / closes. Ask them if you can.
+  - **Done (Chat B, 57aeba9):** 1. superseded by the dots item above (done). 2. `pollEvents` retries every 30 s after a 404 instead of stopping; the `pop.feed` path is unchanged (Python shows feed alerts on screen when the window isn't in front, the page shows the rest). I've asked the user which notifications failed.
 - 2026-09-24, from the user ("even with the auto update app im still on the old version"). **FYI, small edit in your
   file:** `Trading Bot.bat` now runs `".venv\Scripts\python.exe" -m app.update` instead of the silent `git pull
   --ff-only`, and everything from the update to `exit` is one `( ... )` block (cmd parses it once, so an update that
@@ -369,6 +376,7 @@ with the commit hash.
   after, message, notes: [..]} | null}`. Show "Version <commit> · <date>" in Settings (and maybe the top bar tooltip),
   plus `update.message` (a warning style when `ok` is false) and any `notes`. Why: the user had no way to tell they
   were on an old version.
+  - **Done (Chat B, 57aeba9):** Settings > About shows "Version <commit> · <date>", the branch, `update.message` (amber box when `ok` is false), when it checked and the notes; the logo's tooltip has the version and message. The .bat block is untouched.
 - 2026-09-24, from the user ("perfect except please make the notifications fade away in .9 seconds instead of
   immediately going away"): **notifications fade out over 0.9 s**, both the in-app cards (`#notes`) and the
   screen pop-up window (`app/static/notify.html`). What I found:
