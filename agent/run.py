@@ -23,6 +23,7 @@ from datetime import datetime, timezone  # noqa: E402
 from . import learn, ledger, score as scoring  # noqa: E402
 from .model import SignalModel  # noqa: E402
 from .practice import Practice  # noqa: E402
+import numpy as np  # noqa: E402  (after hardware.apply sets the thread counts)
 from .pro import SETUP_NAMES, active_setups, primary_setup  # noqa: E402
 from .risk import RiskGate, stake_plan  # noqa: E402
 from . import news  # noqa: E402
@@ -98,6 +99,16 @@ def main():
     practice = Practice() if args.practice and mode == "paper" else None
     if practice:
         print("practice mode: trading the model's top 10% setups (paper only)")
+        try:                                   # score the last day of closed candles now: no hour-long warm-up
+            from .practice import WINDOW
+            hist = data.m1_bars(cfg.history_bars + WINDOW)
+            f = build_features(hist, spec.point).iloc[:-1].tail(WINDOW).dropna()
+            if len(f):
+                pr = model.predict_proba(f)
+                n = practice.seed(np.maximum(pr[:, 0], pr[:, 2]))
+                print(f"practice mode: scored the last {n} closed candles, ready to trade", flush=True)
+        except Exception as e:                 # noqa: BLE001 - fall back to learning it live
+            print(f"practice mode: couldn't score recent candles ({e}); learning them live", flush=True)
 
     def say(bar_time, decision, reason=""):
         """One line per closed candle in the live log + data/agent_status.json for the Market tab."""

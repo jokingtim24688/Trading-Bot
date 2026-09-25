@@ -18,6 +18,13 @@ class Practice:
         self.top_pct = top_pct
         self.seen = deque(maxlen=WINDOW)
 
+    def seed(self, bests) -> int:
+        """Fill the window with readings from candles that already closed, so a fresh start can trade at once
+        instead of watching for an hour. Returns how many were added."""
+        vals = [float(v) for v in bests if np.isfinite(v)][-WINDOW:]
+        self.seen.extend(vals)
+        return len(vals)
+
     def decide(self, p_long: float, p_short: float):
         """Return (side, prob, cutoff) or (None, None, cutoff)."""
         best = max(p_long, p_short)

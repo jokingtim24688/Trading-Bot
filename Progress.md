@@ -756,6 +756,13 @@ Each chat writes only in its own section below, and adds new entries just above 
   the trap check visible. Trap spots say "Don't press Work on these" and why. Every group has `grind` (false for traps)
   so the app can hide the button. Checked on the sandbox quiz; 37 tests pass.
 
+### 2026-09-25: paper bot no longer idles for an hour after starting
+- The user's bot "wasn't doing anything": paper practice mode needs 60 readings (one per candle) before it trades,
+  and that count started from zero on every start, so every restart meant an hour of waiting.
+- `agent/run.py` now scores the last day of closed candles (up to 1,440) when it starts, and `Practice.seed()` loads
+  them, so it trades its top ~10% setups from the first new candle. If scoring fails it falls back to learning live.
+- 2 tests (`tests/test_practice.py`); 39 pass.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
