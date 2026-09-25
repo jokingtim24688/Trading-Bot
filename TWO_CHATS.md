@@ -318,6 +318,7 @@ with the commit hash.
   it scores the last day of candles and decides on the current candle, no warm-up".
   Design: your system (dark, gold accents, Plex). The hero sentence is the largest text. The pills are the colours of
   their state. The gauge is a half-ring or a bar. Everything fits one screen at 1280x720 and up, with no scroll.
+  - **Done (Chat B, 40ec9ba):** Bot tab built to this spec: first and default, one screen with no scroll at 1280x720 and 1440x900 (verified), polls `/api/bot/live` 1 s on the tab / 3 s elsewhere while a co-pilot runs / 10 s otherwise. Header, hero, pills, half-ring gauge (`confidence_pct`), active position (no SL anywhere), co-pilot card with local countdown, Approve/Skip, 409 handling, auto-execute switch + timer, outcome flash, sound + notification "Co-pilot proposal". Start / Stop / Hold on the card; Hold added to the Agent tab. Times use `opened` (UTC ISO) and `status.time_utc` in `display_timezone`. Also fixed: at 1280 px the top bar made the page wider than the window.
 - 2026-09-25, from the user: **"remove in the manual section all of the click twice to confirm stuff".** Everything on
   the Manual tab acts on the first click. All in `app/static/app.js`; no backend change needed.
   - **Buy / Sell** (`placeOrder`, about line 1306): drop the arm-then-send step (`man.arm`, the "click again: ..." note,
