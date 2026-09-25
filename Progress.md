@@ -802,6 +802,11 @@ Each chat writes only in its own section below, and adds new entries just above 
   full spec is in TWO_CHATS.md (For Chat B) and replaces the thin SL/TP lines idea. The backend already serves every
   field.
 
+### 2026-09-25: Manual tab without double-click confirms (handed to Chat B)
+- Every click-twice confirm on the Manual tab is UI-only (`app/static/app.js`): Buy/Sell arming, spread "send
+  anyway", bulk close, Cancel all, position close. Full list handed to Chat B. The real-money "type REAL" check stays
+  (backend `confirm_real`).
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

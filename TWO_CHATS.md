@@ -250,6 +250,23 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-09-25, from the user: **"remove in the manual section all of the click twice to confirm stuff".** Everything on
+  the Manual tab acts on the first click. All in `app/static/app.js`; no backend change needed.
+  - **Buy / Sell** (`placeOrder`, about line 1306): drop the arm-then-send step (`man.arm`, the "click again: ..." note,
+    `.armed`). The first click sends.
+    - The One-click switch (`#man-oneclick`, localStorage `oneClick`) becomes pointless: remove it from the UI.
+      Keybind descriptions that say "still ask twice" (about line 2111) need updating too.
+  - **Spread too wide** (about line 1339): no "click again to send anyway". Just show the refusal toast, e.g. "Spread
+    46 is over your limit of 80 points (Settings > Manual trading; 0 = no limit)".
+  - **Bulk close** buttons (Close profit / loss / buys / sells / all, about line 1486): close at once. Afterwards, show
+    a toast with what closed and its total P/L.
+  - **Cancel all** pending orders (about line 1519): at once.
+  - **Per-position close** (the chips / `man.chipArm`, and the row Close buttons): at once.
+  - **Esc cancels armed** (`cancelArmed`, about line 2119): nothing is armed any more, so drop it or make it a no-op.
+  - **Keep only the real-money check:** on a real (non-demo) account the backend still refuses an order without
+    `confirm_real` (`app/manual.py`). Keep the once-per-session "type REAL" prompt there. It's typing a word, not a
+    second click, and it only shows on real money. If the user asks to remove that too, check with me first.
+  - Settings' **Restore backup** and the Agent tab's promote flow aren't on the Manual tab: leave them.
 - 2026-09-25, from the user: **dots only, on both charts (Manual and the Market/bot chart).** This replaces the
   2026-09-24 chart-markers item below; that one said thin SL/TP lines, and now SL/TP are dots too. The user's words:
   "make the tp a green dot sl a red dot and where we bought a yellow dot on both charts they can overlap and go on top
