@@ -23,6 +23,11 @@ const NOTE_ICON = {
 try { if (localStorage.getItem("noteSecs") === "1.2") localStorage.setItem("noteSecs", "2"); } catch (e) {}   // 1.2 s was the old default
 const noteSecs = () => { try { const v = parseFloat(localStorage.getItem("noteSecs")); return v > 0 ? v : 2; } catch (e) { return 2; } };
 const appAway = () => document.hidden || !document.hasFocus();
+let notePtr = null;                               // where the pointer is, so a card that appears under it isn't held
+document.addEventListener("mousemove", e => { notePtr = { x: e.clientX, y: e.clientY }; }, { passive: true });
+function placeNotes() {                           // on the Bot tab the stack starts under its header bar
+  const h = $(".bl-head"); if (h && state.tab === "bot") document.documentElement.style.setProperty("--notes-top", `${Math.round(h.getBoundingClientRect().bottom + 10)}px`);
+}
 function notify({ title = "", body = "", html = "", kind = "info", amount = null, onClick = null, screen = true } = {}) {
   const box = $("#notes"); if (!box) return;
   const secs = noteSecs(), el = document.createElement("div");
@@ -33,8 +38,10 @@ function notify({ title = "", body = "", html = "", kind = "info", amount = null
   box.append(el);                                // the newest sits below the others
   while (box.querySelectorAll(".ntf:not(.out)").length > 6) removeNote(box.querySelector(".ntf:not(.out)"), true);
   let left = secs * 1000, t0 = performance.now(), timer = setTimeout(() => removeNote(el), left);
-  el.addEventListener("mouseenter", () => { clearTimeout(timer); left -= performance.now() - t0; el.classList.add("hold"); });
-  el.addEventListener("mouseleave", () => { t0 = performance.now(); el.classList.remove("hold"); timer = setTimeout(() => removeNote(el), Math.max(500, left)); });
+  // hovering holds a card, but not one that popped up under a pointer that was already there: that one fades as usual
+  const r = el.getBoundingClientRect(); let under = !!notePtr && notePtr.x >= r.left && notePtr.x <= r.right && notePtr.y >= r.top && notePtr.y <= r.bottom;
+  el.addEventListener("mousemove", () => { if (under || el.classList.contains("hold")) return; clearTimeout(timer); left -= performance.now() - t0; el.classList.add("hold"); });
+  el.addEventListener("mouseleave", () => { under = false; if (!el.classList.contains("hold")) return; t0 = performance.now(); el.classList.remove("hold"); timer = setTimeout(() => removeNote(el), Math.max(500, left)); });
   el.addEventListener("click", () => { clearTimeout(timer); onClick?.(); removeNote(el); });
   if (screen && appAway() && pref("screenNotes", true))   // not in front: the pop-up at the top right of the screen too
     window.pywebview?.api?.notify?.({ title, body: body || el.querySelector(".ntf-body span")?.textContent || "", kind, amount: amount == null ? null : signed(amount), secs })?.catch?.(() => {});
@@ -108,10 +115,11 @@ function showTab(name) {
   if (name !== "bot") closeSymPop();
   if (name === "settings" && state.settings && !$("#savebar").classList.contains("is-dirty")) { fillSettings(); updateDirty(); }
   state.tab = name;
+  document.body.classList.toggle("on-bot", name === "bot"); placeNotes();
   $$(".rail-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   $$(".tab").forEach(t => t.classList.toggle("active", t.id === `tab-${name}`));
   moveRailInd();
-  if (name === "dash" && state.chart && state.chartAuto && !state.autoT) realignChart(true);
+  if (name === "bot" && state.chart && state.chartAuto && !state.autoT) realignChart(true);
   if (name === "bot") openBot();
   if (name === "chat") { loadHistory(); loadFacts(); }
   if (name === "manual") openManual();
@@ -288,7 +296,7 @@ function wireChartAuto() {
   el.addEventListener("pointermove", e => { if (!e.buttons) return; scheduleSessions(); if (start && Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 3) chartTouched(); });
   addEventListener("pointerup", () => { start = null; });
   el.addEventListener("dblclick", () => realignChart());
-  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { moveRailInd(); scheduleSessions(); if (state.chartAuto && !state.autoT && state.tab === "dash") realignChart(true); }, 200); });
+  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { moveRailInd(); scheduleSessions(); if (state.chartAuto && !state.autoT && state.tab === "bot") realignChart(true); }, 200); });
 }
 /* ---------- replay: bot on downloaded history ---------- */
 state.replay = { view: false, running: false };
@@ -355,7 +363,7 @@ function queueReplayBars(r) {
 }
 function showReplayPrice(bar) {
   state.barRange = [rpAnim.first, bar.time];
-  $("#q-sym").textContent = `${rpAnim.symbol} · replay`; $("#q-bid").textContent = fmt(bar.close, state.digits);
+  $("#q-sym").textContent = "Replay"; $("#q-bid").textContent = fmt(bar.close, state.digits); $("#q-spr").textContent = "–";
 }
 function replayFrame(now) {
   const dt = rpAnim.lastFrame ? Math.min(0.1, (now - rpAnim.lastFrame) / 1000) : 0.016;
@@ -445,18 +453,20 @@ function dotHover(D, pt) {
 function tradeTip(o, dg) {                        // owner, side, lots, entry, SL, TP, P/L (and the exit for closed trades)
   const f = v => v ? Number(v).toFixed(dg) : "none";
   return `<b class="${o.side === "buy" ? "up" : "down"}">${o.side === "buy" ? "▲ Buy" : "▼ Sell"} ${o.lots ?? ""}</b> <span class="tag ${o.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[o.owner] || "You"}</span>${o.mode ? ` <span class="muted">${o.mode}</span>` : ""}
-    <div class="dt-grid"><span>Entry</span><b>${f(o.entry)}</b><span>SL</span><b>${f(o.sl)}</b><span>TP</span><b>${f(o.tp)}</b>${o.exit ? `<span>Exit</span><b>${f(o.exit)}${o.why ? ` <small>${esc(o.why)}</small>` : ""}</b>` : ""}${o.pl != null ? `<span>P/L</span><b class="${cls(o.pl)}">${signed(o.pl)}</b>` : ""}</div>`;
+    <div class="dt-grid"><span>Entry</span><b>${f(o.entry)}</b>${o.noSL ? "" : `<span>SL</span><b>${f(o.sl)}</b>`}<span>TP</span><b>${f(o.tp)}</b>${o.exit ? `<span>Exit</span><b>${f(o.exit)}${o.why ? ` <small>${esc(o.why)}</small>` : ""}</b>` : ""}${o.pl != null ? `<span>P/L</span><b class="${cls(o.pl)}">${signed(o.pl)}</b>` : ""}</div>`;
 }
 const exitKind = r => r === "tp" ? "tp" : r === "sl" || r === "stop_out" || r === "so" ? "sl" : "exit";
+function setBid(bid, ask, digits, point) {         // the Bot header's price badge: bid and spread in points
+  const qb = $("#q-bid"), prev = state.lastBidShown;
+  $("#q-sym").textContent = ""; qb.textContent = fmt(bid, digits);
+  if (prev != null && bid !== prev) flash(qb, bid > prev ? 1 : -1);
+  state.lastBidShown = bid;
+  if (ask != null) $("#q-spr").textContent = Math.round((ask - bid) / (point || 10 ** -digits));
+}
 function showQuote(d) {
   state.digits = d.digits; state.lastBid = d.bid;
-  const qb = $("#q-bid"), prevBid = state.lastBidShown;
-  $("#q-sym").textContent = d.symbol; qb.textContent = fmt(d.bid, d.digits);
-  if (prevBid != null && d.bid !== prevBid) flash(qb, d.bid > prevBid ? 1 : -1);
-  state.lastBidShown = d.bid;
-  $("#q-spr").textContent = Math.round((d.ask - d.bid) / d.point);
+  setBid(d.bid, d.ask, d.digits, d.point);
   $("#chart-msg").classList.add("hidden");
-  if (!$("#sz-entry").value) $("#sz-entry").placeholder = fmt(d.bid, d.digits).replace(/,/g, "");
   if (d.bars.length) state.latestTime = Math.max(state.latestTime || 0, d.bars[d.bars.length - 1].time);
 }
 function applyWindow(shift = 0) {                // hand the window to the chart and keep the view where it was
@@ -612,8 +622,8 @@ function onChartRange(r) {                       // called while scrolling; load
   if (r.from < HIST.MARGIN) loadOlder();
   else if (!W.live && r.to > W.bars.length - HIST.MARGIN) loadNewer();
 }
-function renderChips() {
-  const box = $("#symbols"); box.innerHTML = "";
+function renderChips() {                         // the old Market symbol chips (gone: the Bot header's switcher picks the symbol)
+  const box = $("#symbols"); if (!box) return; box.innerHTML = "";
   (state.settings.symbols_watch || []).forEach(sym => {
     const b = document.createElement("button"); b.className = "chip" + (sym === state.symbol ? " active" : ""); b.textContent = sym;
     b.onclick = () => selectSymbol(sym);
@@ -624,7 +634,7 @@ function renderChips() {
 function selectSymbol(sym) {
   if (sym === state.symbol) return;
   state.symbol = sym; renderChips(); state.series && state.series.setData([]);
-  state.realignNext = true; state.lastBidShown = null; state.win = newWin(); loadBars(); sizeTrade();
+  state.realignNext = true; state.lastBidShown = null; state.win = newWin(); loadBars();
 }
 
 /* ---------- the bot's own trades: card, chart overlay, history, alerts ---------- */
@@ -645,9 +655,8 @@ async function pollBot() {
     for (const t of d.recent) {
       const before = state.bot.known.get(t.id);
       if (before === undefined && t.status === "open") {
-        notify({ kind: "info", title: `Bot ${t.side === "buy" ? "bought" : "sold"} ${t.lots} ${t.symbol} (${t.mode})`, body: `at ${px(t.entry, t.symbol)}, stop ${px(t.sl, t.symbol)}, target ${px(t.tp, t.symbol)}`, onClick: () => showTab("dash") });
+        notify({ kind: "info", title: `Bot ${t.side === "buy" ? "bought" : "sold"} ${t.lots} ${t.symbol} (${t.mode})`, body: `at ${px(t.entry, t.symbol)}, stop ${px(t.sl, t.symbol)}, target ${px(t.tp, t.symbol)}`, onClick: () => showTab("bot") });
         playEvent("botOpen");
-        $("#bot-card").classList.remove("live"); void $("#bot-card").offsetWidth; $("#bot-card").classList.add("live");
         tradeMoment();
       } else if (before === "open" && t.status === "closed") {
         if (!(alertsState.ok && (t.mode === "demo" || t.mode === "real")))
@@ -672,81 +681,27 @@ const ICON = {
   list: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"/></svg>`,
 };
 
-function lastHour(h) {                           // "Last hour: 40 outside trading hours · 12 waiting · 3 opened"; a top skip reads amber
-  const list = Object.entries(h || {}).filter(([, n]) => n > 0).sort((x, y) => y[1] - x[1]); if (!list.length) return "";
-  return `<p class="small last-hour">Last hour: ${list.map(([k, n], i) => `<span class="${i === 0 && k !== "opened" ? "warn" : ""}">${n} ${esc(k)}</span>`).join(" · ")}</p>`;
-}
-function renderBotCard() {
+function renderBotCard() {                        // top bar: the bot's money today in the stage it is working at
   const d = state.bot.data; if (!d) return;
-  const box = $("#bot-now"), open = d.open.filter(t => (t.mode === "replay") === !!state.replay?.view);
-  const cap = m => m[0].toUpperCase() + m.slice(1);
-  setHTML($("#bot-today"), Object.entries(d.stats).filter(([m, s]) => m !== "replay" && (s.closed || s.open))
-    .map(([m, s]) => `<span title="${pts(s.today_score)} points today">${cap(m)} today <b class="${cls(s.today_pnl)}">${signed(s.today_pnl)}</b></span>`).join(""));
-  // top bar: the bot's money today in the stage it is working at
   const sm = d.stats[state.mode] || {}, top = $("#bot-today-top");
   $("#today-label").textContent = `Bot today · ${state.mode}`;
   setNum(top, sm.today_pnl ?? 0, signed); top.className = `num flashable ${cls(sm.today_pnl)}`;
-  if (!open.length) {
-    state.bot.cardMax ??= d.recent.reduce((mx, t) => Math.max(mx, t.id), 0);   // so the next entry animates in
-    $("#bot-card").classList.remove("live");
-    const rp = state.replay?.view && state.replay.last?.total ? state.replay.last : null;
-    const a = rp ? { ...rp, mode: "replay", bar: (rp.bar_time_utc || "").slice(11, 16) } : d.agent;
-    const pct = v => v == null ? "–" : `${v < 0.1 ? (v * 100).toFixed(1) : Math.round(v * 100)}%`;
-    const need = a ? (a.need ?? a.threshold) : 1;
-    setHTML(box, a ? `<div class="watch">
-        <div class="watch-head"><span class="live-dot"></span><strong>Watching ${state.settings?.symbol || ""} · ${a.mode || ""}</strong><span class="muted small">${a.bar ? "candle " + a.bar : ""}</span></div>
-        ${a.p_buy != null ? `<div class="conf"><span>Buy</span><div class="bar"><i style="width:${Math.min(100, a.p_buy / Math.max(need, .001) * 100)}%"></i></div><span class="num">${pct(a.p_buy)}</span></div>
-        <div class="conf"><span>Sell</span><div class="bar"><i style="width:${Math.min(100, a.p_sell / Math.max(need, .001) * 100)}%"></i></div><span class="num">${pct(a.p_sell)}</span></div>
-        <p class="muted small" style="margin:4px 0 0">Needs ${pct(need)} to enter · ${a.open ?? 0}/${a.max_open ?? "–"} open${a.practice && typeof a.top10 === "number" ? ` · its best 10% start at ${pct(a.top10)}` : ""}</p>` : ""}
-        ${a.setups?.length ? `<div class="setups"><span class="muted small">Pro read:</span>${a.setups.map(x => `<span class="setup-chip">${x}</span>`).join("")}</div>` : ""}
-        <p class="small" style="margin:8px 0 0"><b>${a.decision}</b>${a.reason ? ` · <span class="muted">${a.reason}</span>` : ""}</p>${lastHour(a.last_hour)}</div>`
-      : `<div class="empty-state compact">${ICON.bot}<div><b>The bot isn't running</b>Start it on the Agent tab. When it enters you get an alert, and its entry, stop and target are drawn on the chart.</div><button class="btn xs" data-goto="agent">Open Agent</button></div>`);
-    return;
-  }
-  $("#bot-card").classList.add("live");
-  const now = state.replay?.view ? state.replay.last : d.agent;
-  const proRead = now?.setups?.length ? `<div class="setups" style="margin:0 0 8px"><span class="muted small">Pro read:</span>${now.setups.map(x => `<span class="setup-chip">${x}</span>`).join("")}</div>` : "";
-  const firstCard = state.bot.cardMax == null, cardMax = state.bot.cardMax ?? Infinity;
-  state.bot.cardMax = Math.max(state.bot.cardMax ?? 0, ...open.map(t => t.id));
-  const prevPl = state.bot.pl || {}; state.bot.pl = Object.fromEntries(open.map(t => [t.id, t.pnl]));
-  setHTML(box, proRead + open.slice().reverse().map(t => {
-    const risk = Math.abs(t.entry - t.sl0), rNow = t.price != null && risk ? ((t.side === "buy" ? t.price - t.entry : t.entry - t.price) / risk) : null;
-    return `<div class="bt2${!firstCard && t.id > cardMax ? " enter" : ""}">
-      <div class="bt2-head"><span class="bt2-side"><span class="dir ${t.side}">${t.side === "buy" ? "▲ BUY" : "▼ SELL"}</span>${t.symbol}<span class="who">BOT</span></span>
-        <span class="bt2-pl"><b class="flashable ${cls(t.pnl)}" data-pl="${t.id}">${signed(t.pnl)}</b><small>${rNow != null ? `${rNow >= 0 ? "+" : ""}${rNow.toFixed(2)}R now` : ""}</small></span></div>
-      <dl class="bt2-meta"><dt>Lots</dt><dd>${t.lots}</dd><dt>Mode</dt><dd>${t.mode}</dd><dt>Conf.</dt><dd>${t.prob ? Math.round(t.prob * 100) + "%" : "–"}</dd><dt>Trade</dt><dd>#${t.id}</dd>
-        ${t.setup ? `<dt>Setup</dt><dd class="wide">${d.setup_names?.[t.setup] || t.setup}</dd>` : ""}</dl>
-      <div class="bt2-levels"><div><span>Entry</span><b>${px(t.entry, t.symbol)}</b></div><div class="sl"><span>Stop</span><b>${px(t.sl, t.symbol)}</b></div><div class="tp"><span>Target</span><b>${px(t.tp, t.symbol)}</b></div></div>
-      <div class="bt2-foot"><span>opened ${(t.open_utc || "").slice(11, 16)} UTC</span>
-        <span class="row gap"><button class="btn xs" data-follow="${t.id}" title="Put the bot's stop into the sizer to size your own copy">Size mine</button><button class="btn xs" data-copy="${t.id}">Copy levels</button></span></div></div>`;
-  }).join(""));
-  open.forEach(t => { const p0 = prevPl[t.id]; if (p0 != null && t.pnl != null && t.pnl !== p0) flash(box.querySelector(`[data-pl="${t.id}"]`), t.pnl > p0 ? 1 : -1); });
 }
-$("#bot-now").addEventListener("click", async e => {
-  const f = e.target.closest("[data-follow]"), c = e.target.closest("[data-copy]");
-  const t = state.bot.data?.open.find(x => x.id == (f || c)?.dataset[f ? "follow" : "copy"]); if (!t) return;
-  if (f) {
-    selectSymbol(t.symbol); $("#sz-entry").value = ""; $("#sz-stop").value = px(t.sl, t.symbol); sizeTrade();
-    toast("Sizer filled with the bot's stop. Entry uses the current price; adjust the risk slider for your size.");
-  } else {
-    const txt = `${t.symbol} ${t.side.toUpperCase()} entry ${px(t.entry, t.symbol)} SL ${px(t.sl, t.symbol)} TP ${px(t.tp, t.symbol)}`;
-    try { await navigator.clipboard.writeText(txt); toast("Copied: " + txt); } catch (err) { toast(txt); }
-  }
-});
 
-function drawBotOverlay() {                     // dots for open positions, the bot's paper/replay trades and its recent closes
-  if (!state.series) return;
-  state.dots ||= dotSet(state.chart, state.series, $("#chart"));
+function drawBotOverlay() {                     // the Bot tab's chart: the bot's own trades only. No stop loss on this tab:
+  if (!state.series) return;                    // open trades get the yellow entry and green TP dots; a closed one its entry and
+  state.dots ||= dotSet(state.chart, state.series, $("#chart"));   // one exit dot, green at TP and grey for every other close
   const d = state.bot.data, view = !!state.replay?.view, inView = t => (t.mode === "replay") === view, dg = state.digits ?? 2, dots = [];
-  const trio = (t, entry, sl, tp, tip) => dots.push({ t, price: entry, kind: "entry", tip }, { t, price: sl, kind: "sl", tip }, { t, price: tp, kind: "tp", tip });
-  if (!view) (state.posList || []).filter(p => p.symbol === state.symbol).forEach(p =>
-    trio(p.time, p.open, p.sl, p.tp, tradeTip({ side: p.side, lots: p.volume, owner: p.owner, entry: p.open, sl: p.sl, tp: p.tp, pl: p.profit }, dg)));
+  const duo = (t, entry, tp, tip) => dots.push({ t, price: entry, kind: "entry", tip }, { t, price: tp, kind: "tp", tip });
+  const why = r => r === "tp" ? "Take profit" : ["sl", "stop_out", "so"].includes(r) ? "closed" : REASON[r] || r || "closed";
+  if (!view) (state.posList || []).filter(p => p.symbol === state.symbol && p.owner === "bot").forEach(p =>
+    duo(p.time, p.open, p.tp, tradeTip({ side: p.side, lots: p.volume, owner: "bot", entry: p.open, tp: p.tp, pl: p.profit, noSL: true }, dg)));
   if (d) {
     d.open.filter(t => t.symbol === state.symbol && inView(t) && (t.mode === "paper" || t.mode === "replay")).forEach(t =>   // demo/real ones are MT5 positions above
-      trio(t.entry_time ?? t.open_bar, t.entry, t.sl, t.tp, tradeTip({ side: t.side, lots: t.lots, owner: "bot", mode: t.mode, entry: t.entry, sl: t.sl, tp: t.tp, pl: t.pnl }, dg)));
+      duo(t.entry_time ?? t.open_bar, t.entry, t.tp, tradeTip({ side: t.side, lots: t.lots, owner: "bot", mode: t.mode, entry: t.entry, tp: t.tp, pl: t.pnl, noSL: true }, dg)));
     d.recent.filter(t => t.symbol === state.symbol && inView(t) && t.status === "closed").forEach(t => {
-      const tip = tradeTip({ side: t.side, lots: t.lots, owner: "bot", mode: t.mode, entry: t.entry, sl: t.sl, tp: t.tp, exit: t.exit, why: REASON[t.exit_reason] || t.exit_reason, pl: t.pnl }, dg);
-      dots.push({ t: t.entry_time ?? t.open_bar, price: t.entry, kind: "entry", tip }, { t: t.exit_time ?? t.close_bar, price: t.exit, kind: exitKind(t.exit_reason), tip });
+      const tip = tradeTip({ side: t.side, lots: t.lots, owner: "bot", mode: t.mode, entry: t.entry, tp: t.tp, exit: t.exit, why: why(t.exit_reason), pl: t.pnl, noSL: true }, dg);
+      dots.push({ t: t.entry_time ?? t.open_bar, price: t.entry, kind: "entry", tip }, { t: t.exit_time ?? t.close_bar, price: t.exit, kind: t.exit_reason === "tp" ? "tp" : "exit", tip });
     });
   }
   setDots(state.dots, dots);
@@ -871,47 +826,17 @@ $("#bt-cal").addEventListener("mouseover", e => {
 });
 $("#bt-cal").addEventListener("mouseleave", () => { const t = $("#bt-cal .cal-tip"); if (t) t.hidden = true; });
 
-/* ---------- sizing ---------- */
-let szTimer;
-function sizeTrade() {
-  clearTimeout(szTimer);
-  szTimer = setTimeout(async () => {
-    const entry = parseFloat($("#sz-entry").value || $("#sz-entry").placeholder), stop = parseFloat($("#sz-stop").value), risk = $("#sz-risk").value;
-    $("#sz-risk-txt").textContent = `${risk}%`;
-    if (!entry || !stop || entry === stop) { $("#sz-lots").textContent = "—"; $("#sz-detail").textContent = "enter a stop price"; return; }
-    try {
-      const r = await api(`/api/size?symbol=${encodeURIComponent(state.symbol)}&entry=${entry}&stop=${stop}&risk=${risk}`);
-      $("#sz-lots").textContent = r.lots ? r.lots : "0";
-      $("#sz-detail").textContent = r.lots ? `risks ${fmt(r.risk_money)} of ${fmt(r.equity)}` : `min lot would risk more than ${risk}%, so skip or widen risk`;
-    } catch (e) { $("#sz-detail").textContent = e.message; }
-  }, 250);
-}
-["#sz-entry", "#sz-stop", "#sz-risk"].forEach(s => $(s).addEventListener("input", sizeTrade));
 
 /* ---------- positions ---------- */
 async function loadPositions() {
   try {
-    const ps = await getPositions(), box = $("#positions");
-    $("#pos-count").textContent = ps.length ? `${ps.length} open` : ""; $("#open-count").textContent = ps.length;
-    const seen = state.posSeen; state.posSeen = new Set(ps.map(p => p.ticket));
-    guessCloses(ps); state.posList = ps; drawBotOverlay();
-    if (!ps.length) { setHTML(box, `<div class="empty-state compact">${ICON.list}<div><b>Nothing open</b>Positions from the bot, Hermes or your own MT5 trades show up here.</div></div>`); return; }
-    setHTML(box, ps.map(p => `<div class="pos ${p.side}${seen && !seen.has(p.ticket) ? " enter" : ""}">
-      <span><strong>${p.symbol}</strong><span class="tag ${p.owner}">${{ bot: "Bot", hermes: "Hermes", you: "You" }[p.owner] || "You"}</span> <span class="${p.side === "buy" ? "up" : "down"}">${p.side === "buy" ? "▲" : "▼"}</span> <span class="muted">${p.side} ${p.volume}</span></span>
-      <button class="btn xs" data-close="${p.ticket}">Close</button>
-      <span class="num small muted">SL ${p.sl || "none"}  TP ${p.tp || "none"}</span>
-      <span class="num small"><span class="pl ${p.profit >= 0 ? "up" : "down"}">${p.profit >= 0 ? "+" : ""}${fmt(p.profit)}</span> <span class="muted">from ${p.open}</span></span></div>`).join(""));
+    const ps = await getPositions();
+    $("#open-count").textContent = ps.length;
+    guessCloses(ps); state.posList = ps; drawBotOverlay(); renderOthers();
   } catch (e) { /* offline handled by account badge */ }
 }
-$("#positions").addEventListener("click", async e => {
-  const t = e.target.closest("[data-close]"); if (!t) return;
-  t.disabled = true;
-  try { const r = await api(`/api/positions/${t.dataset.close}/close`, { method: "POST" }); toast(r.retcode === 10009 ? "Position closed" : `Close result: ${r.comment}`); }
-  catch (err) { toast(err.message, true); }
-  loadPositions();
-});
 
-/* ---------- kill switch (hold 1.2 s): the same button on the Market, Agent and Bot tabs ---------- */
+/* ---------- kill switch (hold 1.2 s): the same button on the Bot and Agent tabs ---------- */
 $$(".kill").forEach(k => {
   let h;
   const cancel = () => { clearTimeout(h); k.classList.remove("holding"); };
@@ -1267,7 +1192,7 @@ $$("#set-nav a").forEach(a => a.onclick = e => {
 
 function initFromSettings(keepSymbol = false) {
   const s = state.settings;
-  if (!keepSymbol || !(s.symbols_watch || []).includes(state.symbol)) state.symbol = s.symbols_watch?.[0] || s.symbol;
+  state.symbol = s.symbol;                        // one symbol: the Bot tab's chart shows what the bot trades
   renderChips(); fillSettings();
   bindSlider("#thr", "threshold", "", 2); bindSlider("#stake", "stake_pct", "% of balance", 2);
   if (!initFromSettings.bound) { $("#stake").addEventListener("change", () => setTimeout(loadPlan, 300)); initFromSettings.bound = true; }
@@ -2176,7 +2101,7 @@ const KEY_GROUPS = {
     desc: "These place and close orders on the first press, with nothing to confirm. On a real account the first order of the session asks you to type REAL." },
   app: { label: "Moving around", on: true, desc: "Switch tabs, realign charts, step through replays, mute. Safe to leave on." },
 };
-const TAB_NAME = { bot: "Bot", dash: "Market", manual: "Manual", agent: "Agent", review: "Review", train: "Train", quiz: "Quiz", chat: "Hermes", keys: "Keys", sounds: "Sounds", settings: "Settings" };
+const TAB_NAME = { bot: "Bot", manual: "Manual", agent: "Agent", review: "Review", train: "Train", quiz: "Quiz", chat: "Hermes", keys: "Keys", sounds: "Sounds", settings: "Settings" };
 function pressBtn(sel) {
   const el = $(sel); if (!el || el.disabled) return;
   el.click(); if (el.animate && motionOK()) el.animate([{ transform: "scale(.96)" }, { transform: "none" }], { duration: 160 });
@@ -2186,7 +2111,7 @@ function cycleSym(d) {
   manPick(list[(list.indexOf(man.symbol) + d + list.length) % list.length]);
 }
 function realignHere() {
-  if (state.tab === "dash") realignChart(true);
+  if (state.tab === "bot") realignChart(true);
   else if (state.tab === "manual" && man.chart) { man.chart.priceScale("right").applyOptions({ autoScale: true }); man.chart.timeScale().scrollToRealTime(); }
   else if (state.tab === "review" && rv.chart) { const t = rv.trades.find(x => x.key === rv.sel); if (t) showReplay(t); }
 }
@@ -2203,9 +2128,9 @@ const KEY_ACTIONS = [
   { id: "man.market", group: "manual", tabs: ["manual"], label: "Order type: market", short: "Market", key: null, run: () => pressBtn('#man-type [data-type="market"]') },
   { id: "man.limit", group: "manual", tabs: ["manual"], label: "Order type: limit", short: "Limit", key: null, run: () => pressBtn('#man-type [data-type="limit"]') },
   { id: "man.stop", group: "manual", tabs: ["manual"], label: "Order type: stop", short: "Stop", key: null, run: () => pressBtn('#man-type [data-type="stop"]') },
-  ...Object.entries({ bot: "`", dash: "1", manual: "2", agent: "3", review: "4", train: "5", quiz: "6", chat: "7", keys: "8", sounds: "9", settings: "0" })
+  ...Object.entries({ bot: "1", manual: "2", agent: "3", review: "4", train: "5", quiz: "6", chat: "7", keys: "8", sounds: "9", settings: "0" })
     .map(([t, k]) => ({ id: `tab.${t}`, group: "app", label: `Go to ${TAB_NAME[t]}`, short: TAB_NAME[t], key: k, run: () => showTab(t) })),
-  { id: "chart.realign", group: "app", tabs: ["dash", "manual", "review"], label: "Realign the chart", short: "Realign", key: "R", run: realignHere },
+  { id: "chart.realign", group: "app", tabs: ["bot", "manual", "review"], label: "Realign the chart", short: "Realign", key: "R", run: realignHere },
   { id: "log", group: "app", tabs: ["agent"], label: "Open or close the live log", short: "Log", key: "L", run: () => $("#log-drawer").classList.contains("open") ? closeLog() : openLog() },
   { id: "review.next", group: "app", tabs: ["review"], label: "Next trade in the replay list", short: "Next", key: "ArrowDown", repeat: true, run: () => stepReplay(1) },
   { id: "review.prev", group: "app", tabs: ["review"], label: "Previous trade in the replay list", short: "Prev", key: "ArrowUp", repeat: true, run: () => stepReplay(-1) },
@@ -2242,7 +2167,14 @@ function keysDefaults() {
   return { bindings: Object.fromEntries(KEY_ACTIONS.map(a => [a.id, a.key])),
            groups: { manual: pref("manKeys", KEY_GROUPS.manual.on), app: KEY_GROUPS.app.on } };   // manKeys: the old Manual-tab switch
 }
-keys.normalize = d => { const def = keysDefaults(); return { bindings: { ...def.bindings, ...(d?.bindings || {}) }, groups: { ...def.groups, ...(d?.groups || {}) } }; };
+keys.normalize = d => {
+  const def = keysDefaults(), saved = { ...(d?.bindings || {}) };
+  if ("tab.dash" in saved) {                      // the Market tab became the Bot tab: its key now opens Bot
+    if (saved["tab.dash"] && (!("tab.bot" in saved) || saved["tab.bot"] === "`")) saved["tab.bot"] = saved["tab.dash"];
+    delete saved["tab.dash"];
+  }
+  return { bindings: { ...def.bindings, ...saved }, groups: { ...def.groups, ...(d?.groups || {}) } };
+};
 keys.adopt = d => { keys.data = keys.normalize(d); renderKeys(); renderKeysHint(); };
 keys.data = keys.normalize(saved.load("keybinds"));
 const bindOf = a => keys.data.bindings[a.id] ?? null;
@@ -2895,7 +2827,7 @@ const OUTCOME = {
   sending: { cls: "idle", text: "Sending the order…", icon: '<path d="M4 12l16-8-6 16-2.5-6.5z"/>' },
 };
 const bl = { d: null, busy: false, t: 0, tz: "", hold: {}, prop: null, deadline: 0, tick: null, outcome: null, outT: null,
-             seen: new Set(), shown: new Set(), sending: null, price: null, err: null };
+             seen: new Set(), shown: new Set(), sending: null, err: null };
 const pctRaw = v => v == null ? "–" : `${(v * 100).toFixed(1)}%`;
 const blDigits = (sym, v) => sym === bl.d?.symbol && bl.d?.heartbeat?.feed?.digits != null ? bl.d.heartbeat.feed.digits : Math.abs(v || 0) < 20 ? 5 : 2;
 const pcZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "This PC"; } catch (e) { return "This PC"; } };
@@ -2909,8 +2841,7 @@ const inZone = (date, opts = { hour: "numeric", minute: "2-digit" }) => tzFmt(op
 function renderClock() {
   const el = $("#bl-clock"), now = new Date();
   const abbr = tzFmt({ timeZoneName: "short" }).formatToParts(now).find(p => p.type === "timeZoneName")?.value || "";
-  const txt = `${bl.tz || pcZone()}${abbr ? ` (${abbr})` : ""} — ${inZone(now, { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
-  if (el.textContent !== txt) el.textContent = txt;
+  setHTML(el, `<span class="z">${esc(bl.tz || pcZone())}${abbr ? ` (${esc(abbr)})` : ""}</span><span class="t">— ${inZone(now, { hour: "numeric", minute: "2-digit", second: "2-digit" })}</span>`);
 }
 function fillTz() {
   const sel = $("#bl-tz"), list = !bl.tz || TZ_LIST.includes(bl.tz) ? TZ_LIST : [bl.tz, ...TZ_LIST];
@@ -2941,12 +2872,9 @@ function renderBotLive() {
   const d = bl.d; if (!d) return;
   // header: symbol + live price, heartbeat, points, mode, clock
   $("#bl-sym").textContent = d.symbol || "—";
-  const f = d.heartbeat?.feed || {}, pe = $("#bl-price");
-  if (f.price != null) {
-    const txt = fmt(f.price, f.digits ?? 2);
-    if (pe.textContent !== txt) { const prev = bl.price; pe.textContent = txt; if (prev != null && f.price !== prev) flash(pe, f.price > prev ? 1 : -1); }
-    bl.price = f.price;
-  } else pe.textContent = "—";
+  const f = d.heartbeat?.feed || {};
+  if (d.symbol && d.symbol !== state.symbol && !state.replay?.view) selectSymbol(d.symbol);   // one symbol: the chart follows the bot
+  if (f.bid != null && d.symbol === state.symbol && !state.replay?.view) setBid(f.bid, f.ask, f.digits ?? 2);
   ["broker", "ai", "feed"].forEach(k => {
     const h = d.heartbeat?.[k] || {}, el = $(`#bl-hb [data-hb="${k}"]`);
     el.className = `hb ${h.ok ? "ok" : "bad"}`; el.title = `${{ broker: "Broker", ai: "Hermes AI", feed: "Data Feed" }[k]}: ${h.text || "unknown"}`;
@@ -2998,24 +2926,29 @@ function lastHourBar(h) {                        // what it did on each of the l
     <div class="lh-bar" role="img" aria-label="${esc(items.map(x => `${x.n} ${x.k}`).join(", "))}">${items.map(x => `<i style="flex:${x.n};background:${x.c}" title="${x.n} ${esc(x.k)}"></i>`).join("")}</div>
     <div class="lh-legend">${items.map((x, i) => `<span class="${i === 0 && x.k !== "opened" ? "top" : ""}"><i style="background:${x.c}"></i>${x.n} ${esc(x.k)}</span>`).join("")}</div></div>`;
 }
+function renderOthers() {                         // your own and Hermes' trades live on the Manual tab: just a count here (no stop loss)
+  const a = $("#bl-others"); if (!a) return;
+  const o = (state.posList || []).filter(p => p.owner !== "bot"), who = [...new Set(o.map(p => p.owner === "hermes" ? "Hermes'" : "yours"))].join(" and ");
+  a.hidden = !o.length; a.textContent = o.length ? `${o.length} other open trade${o.length > 1 ? "s" : ""} (${who}) on the Manual tab` : "";
+}
 function renderBotPositions(ps, run) {             // side + symbol, entry, TP, progress to TP and live points; no stop loss
-  const box = $("#bl-pos"), max = window.innerHeight < 800 ? 2 : 3, show = ps.slice(0, max), ids = show.map(t => t.id).join(",") + `|${ps.length}`;
-  $("#bl-pos-count").textContent = ps.length > 1 ? `${ps.length} open` : "";
+  const box = $("#bl-pos"), max = Math.max(1, Math.floor((box.clientWidth || 600) / 250)), show = ps.slice(0, ps.length > max ? max - 1 : max);
+  const ids = show.map(t => t.id).join(",") + `|${ps.length}`;
+  $("#bl-pos-count").textContent = ps.length ? `${ps.length} open` : "";
   if (!ps.length) {
     box._ids = null;
-    setHTML(box, `<div class="empty-state compact">${ICON.bot}<div><b>No open trade</b>${run ? "When the bot enters, the trade shows here with its way to take profit." : "Start the bot and its trades show here."}</div></div>`);
+    setHTML(box, `<p class="bl-none">${run ? "No bot trade open. When it enters, the trade shows here with its way to take profit." : "No bot trade open. Start the bot and its trades show here."}</p>`);
     return;
   }
-  const foot = t => `${t.progress_pct == null ? "waiting for a price" : `${Math.round(t.progress_pct)}% of the way to TP`}`;
-  if (box._ids !== ids) {                          // new set of trades: build the rows once, then only update them
+  const foot = t => t.progress_pct == null ? "waiting for a price" : `${Math.round(t.progress_pct)}% of the way to TP`;
+  if (box._ids !== ids) {                          // new set of trades: build the cards once, then only update them
     box._ids = ids; box._html = null;
     box.innerHTML = show.map(t => { const dg = blDigits(t.symbol, t.entry), op = t.opened ? inZone(new Date(t.opened)) : "";
-      return `<div class="bpos" data-id="${t.id}"><div class="bpos-top"><span class="dir ${t.side === "buy" ? "buy" : "sell"}">${t.side === "buy" ? "▲ BUY" : "▼ SELL"}</span><b>${esc(t.symbol)}</b><span class="tag">${esc(t.mode || "")}</span>
+      return `<div class="bpos" data-id="${t.id}" title="${esc(`${t.lots} lots${op ? `, opened ${op}` : ""}`)}"><div class="bpos-top"><span class="dir ${t.side === "buy" ? "buy" : "sell"}">${t.side === "buy" ? "▲ BUY" : "▼ SELL"}</span><b>${esc(t.symbol)}</b><span class="tag">${esc(t.mode || "")}</span>
         <span class="bpos-pts"></span></div>
-        <div class="bpos-lv"><span>Entry ${fmt(t.entry, dg)}</span><span class="tp">TP ${fmt(t.tp, dg)}</span></div>
         <div class="bpos-bar" role="progressbar" aria-label="Progress to take profit" aria-valuemin="0" aria-valuemax="100"><i></i></div>
-        <div class="bpos-foot"><span class="bpos-prog"></span><span>${t.lots} lots${op ? ` · opened ${esc(op)}` : ""}</span></div></div>`; }).join("")
-      + (ps.length > max ? `<p class="bl-more"><a href="#" data-goto="dash">+${ps.length - max} more open: see the Market tab</a></p>` : "");
+        <div class="bpos-lv"><span>${fmt(t.entry, dg)}</span><span class="bpos-prog"></span><span class="tp">TP ${fmt(t.tp, dg)}</span></div></div>`; }).join("")
+      + (ps.length > show.length ? `<a class="bl-more" href="#" data-goto="agent" title="Every bot trade is listed on the Agent tab">+${ps.length - show.length} more</a>` : "");
   }
   show.forEach(t => {
     const row = box.querySelector(`.bpos[data-id="${t.id}"]`); if (!row) return;
@@ -3157,10 +3090,11 @@ $("#bl-sym-btn").onclick = async e => {
 $("#bl-sym-pop").addEventListener("click", async e => {
   const b = e.target.closest("[data-sym]"); if (!b || b.disabled) return;
   const sym = b.dataset.sym; closeSymPop(); if (sym === bl.d?.symbol) return;
-  $("#bl-sym").textContent = sym; bl.price = null; $("#bl-price").textContent = "—";
+  $("#bl-sym").textContent = sym;
   try {
     const r = await api("/api/bot/symbol", { method: "POST", body: { symbol: sym } });
     if (state.settings) state.settings.symbol = r.symbol;
+    selectSymbol(r.symbol);
     notify({ kind: r.open_on_previous ? "info" : "ok", title: `Switched to ${r.symbol}`, body: r.note || "" });
   } catch (err) { toast(err.message, true); }
   loadBotLive();
@@ -3181,13 +3115,13 @@ moveRailInd(); document.fonts?.ready.then(moveRailInd);
 const seen = () => !document.hidden;
 let bgTick = 0;
 pollStatus().then(() => { pollAccount(); loadPositions(); brainStatus(); pollBot(); });
-openBot();
+openBot(); document.body.classList.add("on-bot"); requestAnimationFrame(placeNotes); addEventListener("resize", placeNotes);
 setInterval(() => { bgTick++; if (seen() || bgTick % 2 === 0) pollBot(); }, 2000);            // hidden: every 4 s
 loadProgress(); setInterval(() => { if (seen() || bgTick % 6 === 0) loadProgress(); }, 5000);   // hidden: stage moves still get noticed
 setInterval(() => seen() && pollStatus(), 2000);
 setInterval(pollAccount, 2000);
-setInterval(() => { if (seen() && state.tab === "dash" && !state.replay.view) loadBars(); loadPositions(); }, 3000);   // positions feed the top bar and alerts
-setInterval(() => seen() && state.tab === "dash" && state.replay.view && loadReplay(), 400);
+setInterval(() => { if (seen() && state.tab === "bot" && !state.replay.view) loadBars(); loadPositions(); }, 3000);   // positions feed the top bar and alerts
+setInterval(() => seen() && state.tab === "bot" && state.replay.view && loadReplay(), 400);
 setInterval(() => seen() && state.tab === "agent" && (pollAgentLog(), loadJournal()), 2000);
 setInterval(() => seen() && state.tab === "agent" && loadPlan(), 10000);
 setInterval(() => seen() && state.tab === "train" && pollTrainLog(), 1500);
@@ -3196,7 +3130,7 @@ setInterval(() => seen() && brainStatus(), 15000);
 document.addEventListener("visibilitychange", () => {   // back in front: everything catches up at once
   if (document.hidden) return;
   pollStatus(); pollAccount(); loadPositions(); pollBot(); loadProgress(); brainStatus(); renderSessions(); renderMute();
-  if (state.tab === "dash" && !state.replay.view) loadBars();
+  if (state.tab === "bot" && !state.replay.view) loadBars();
   if (state.tab === "manual") openManual();
   if (state.tab === "bot") loadBotLive();
 });

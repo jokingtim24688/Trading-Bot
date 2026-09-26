@@ -1085,7 +1085,11 @@ html.reduce-motion .ntf.out { animation-duration: .9s !important; }
 .bl-sym-btn:hover, .bl-sym-btn[aria-expanded="true"] { background: rgba(255,255,255,.05); }
 .bl-sym-btn svg { width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .22s var(--ease-out); }
 .bl-sym-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
-.bl-price { font: 500 15px var(--mono); padding: 3px 10px; border-radius: 6px; background: var(--raised); border: 1px solid var(--line); }
+.bl-price { display: inline-flex; align-items: baseline; gap: 8px; padding: 3px 10px; border-radius: 6px; background: var(--raised); border: 1px solid var(--line); white-space: nowrap; }
+.bl-price b { font: 500 15px var(--mono); padding: 0 2px; border-radius: 3px; }
+.bl-price small { font-size: 11px; color: var(--muted); }
+.bl-qsym { font: 600 11px var(--sans); color: var(--gold); }
+.bl-qsym:empty { display: none; }
 .bl-pop { position: absolute; left: -6px; top: calc(100% + 10px); z-index: 30; min-width: 270px; max-height: 60vh; overflow: auto; padding: 6px; border-radius: var(--r-md); display: grid; gap: 1px; transform-origin: top left; animation: pop-in .2s var(--ease-out) both; }
 .bl-pop[hidden] { display: none; }
 .bl-pop.glass { background: #181c22; backdrop-filter: none; -webkit-backdrop-filter: none; }   /* a list of text: solid, not see-through */
@@ -1101,7 +1105,9 @@ html.reduce-motion .ntf.out { animation-duration: .9s !important; }
 .bl-clock-face { position: relative; display: inline-flex; flex-direction: row; align-items: center; gap: 8px; max-width: 100%; padding: 5px 10px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--bg-2); color: var(--text); font: 500 13px var(--mono); cursor: pointer; transition: border-color var(--t-fast); }
 .bl-clock-face:hover, .bl-clock-face:focus-within { border-color: #3a424c; }
 .bl-clock-face:focus-within { outline: 2px solid rgba(201,162,74,.5); outline-offset: 2px; }
-.bl-clock-face span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-clock-face span { display: inline-flex; gap: 6px; min-width: 0; white-space: nowrap; }
+.bl-clock-face .z { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* a long zone name shortens; the time never does */
+.bl-clock-face .t { flex: none; }
 .bl-clock-face svg { flex: none; width: 15px; height: 15px; fill: none; stroke: var(--muted); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .bl-clock-face select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font: 13px var(--sans); }
 .bl-clock small { font-size: 11px; color: var(--muted); padding-left: 2px; }
@@ -1204,9 +1210,7 @@ html.reduce-motion .ntf.out { animation-duration: .9s !important; }
 .bl-prop.leaving { animation: prop-out .45s var(--ease-out) forwards; }
 @keyframes prop-out { to { opacity: 0; transform: translate3d(0, -6px, 0); } }
 /* while a proposal waits, the rest of the card steps back so everything still fits one screen */
-.bl-main.has-prop .bl-headline { font-size: clamp(17px, 1.6vw, 23px); margin-top: 6px; }
 .bl-main.has-prop .bl-copilot { display: none; }   /* its switch + timer moved under the proposal's buttons */
-@media (max-height: 820px) { .bl-main.has-prop .bl-reason, .bl-main.has-prop .bl-last { display: none; } }
 /* AI confidence gauge */
 .bl-gauge { display: grid; justify-items: center; padding: 14px 18px 14px; }
 .bl-gauge .panel-head { width: 100%; }
@@ -1248,4 +1252,72 @@ html.reduce-motion .ntf.out { animation-duration: .9s !important; }
   .sessions { gap: 12px; }
   .acct { gap: 14px; }
   .acct-chip span { max-width: 150px; }
+}
+
+/* ---------- Bot tab with the Market merged in: the chart on the left (the bot's open trades in a strip under it), the
+   live card on the right. The co-pilot proposal lies over the top of the chart while it waits. ---------- */
+.bl-body { grid-template-columns: minmax(0, 1fr) clamp(330px, 33%, 460px); }
+.bl-left { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 12px; min-height: 0; }
+#tab-bot .chart-panel { height: auto; min-height: 0; }
+.bl-chart .chart-head { margin-bottom: 6px; }
+.dot-key { display: inline-flex; gap: 12px; margin-left: 8px; font-size: 11.5px; color: var(--muted); cursor: help; }
+.dot-key span { display: inline-flex; align-items: center; gap: 5px; }
+.dot-key i { width: 8px; height: 8px; border-radius: 50%; }
+.k-entry { background: #e8c547; } .k-tp { background: var(--up); } .k-exit { background: #8c9098; }
+.bl-chart .bl-prop { position: absolute; z-index: 8; top: 48px; left: 14px; right: 14px; max-width: 700px; margin: 0 auto; background-color: #17191d; box-shadow: 0 22px 60px rgba(0,0,0,.6); }
+.bl-chart .bl-prop.ok { background: linear-gradient(rgba(63,182,139,.1), rgba(63,182,139,.1)), #161b1a; }
+.bl-chart .bl-prop.err { background: linear-gradient(rgba(224,87,79,.1), rgba(224,87,79,.1)), #1c1717; }
+.bl-chart .bl-prop.idle { background: #1b1f25; }
+/* the bot's open trades: a strip of small cards (entry, progress to TP, points; no stop loss) */
+.bl-trades { display: flex; align-items: center; gap: 16px; padding: 10px 14px; min-width: 0; }
+.bl-trades-head { display: grid; gap: 2px; flex: none; width: 140px; }
+.bl-trades-head b { font: 600 12.5px var(--sans); }
+.bl-others { font-size: 11px; line-height: 1.3; color: var(--muted); }
+.bl-others[hidden] { display: none; }
+.bl-trades .bl-pos { flex: 1; min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(210px, 290px); justify-content: start; align-items: stretch; gap: 10px; overflow: hidden; }
+.bl-trades .bpos { gap: 6px; padding: 8px 12px; }
+.bl-trades .bpos-pts { font-size: 15px; }
+.bl-trades .bpos-bar { height: 6px; }
+.bl-trades .bpos-lv { font-size: 11px; }
+.bpos-prog { color: var(--muted); font-family: var(--sans); }
+.bl-none { margin: 0; font-size: 12.5px; color: var(--muted); }
+.bl-trades .bl-more { align-self: center; font-size: 12px; color: var(--muted); white-space: nowrap; }
+/* the live card: a column now */
+.bl-main { gap: 14px; padding: 18px 18px 14px; }
+.bl-headline { margin-top: 8px; font-size: clamp(17px, min(1.5vw, 3.1vh), 27px); }
+.bl-reason { margin-top: 6px; font-size: 12.5px; }
+.bl-pills { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cpill { padding: 9px 11px 10px 34px; } .cpill svg { left: 10px; top: 10px; width: 16px; height: 16px; }
+.bl-main .bl-gauge { display: grid; grid-template-columns: 116px minmax(0, 1fr); align-items: center; justify-items: stretch; gap: 14px; padding: 0; }
+.bl-main .gauge { max-width: 116px; margin: 0; }
+.bl-main .g-num { font-size: 46px; }
+.bl-gauge-txt { display: grid; gap: 1px; min-width: 0; }
+.bl-gauge-txt b { font: 600 12.5px var(--sans); }
+.bl-main .bl-conf-sub { margin: 3px 0 0; text-align: left; }
+.bl-main .bl-copilot { padding: 8px 12px; gap: 6px 12px; }
+.bl-main #bl-copilot-txt { flex-basis: 100%; }
+.bl-ctl { flex-wrap: wrap; gap: 8px; }
+.bl-ctl .btn { min-width: 0; padding: 8px 14px; }
+.bl-ctl .kill { flex: 1; min-width: 0; margin: 0; height: 38px; padding: 0 12px; }
+.bl-ctl-msg { flex-basis: 100%; }
+.bl-ctl-msg:empty { display: none; }
+@media (max-height: 780px) {
+  .bl-main { gap: 11px; padding: 14px 16px 12px; }
+  .bl-reason { display: none; }
+  .lh-legend { font-size: 11px; }
+  .bl-trades { padding: 8px 12px; }
+}
+/* on the Bot tab the notifications start under the header, so they never cover the mode switch or the symbol */
+body.on-bot .notes { top: var(--notes-top, 170px); }
+#tab-bot .chart-wrap { overflow: hidden; }   /* the session-band layer can't spill out of the chart while it resizes */
+.bl-main .bl-copts { flex-wrap: nowrap; gap: 10px; font-size: 12px; }
+.bl-main .bl-copts .switch span { white-space: nowrap; }
+.bl-main .bl-timer .bl-timer-txt { display: none; }   /* the column is narrow: the select alone ("30 s") sits next to the switch */
+@media (max-height: 780px) {
+  .bl-headline { font-size: clamp(15px, 1.35vw, 19px); }
+  .cpill { padding: 7px 10px 8px 32px; } .cpill svg { top: 8px; }
+  .bl-main .bl-gauge { grid-template-columns: 100px minmax(0, 1fr); } .bl-main .gauge { max-width: 100px; }
+  .lh-head small { display: none; }
+  .bl-main #bl-copilot-txt { display: none; }
+  .bl-ctl .btn, .bl-ctl .kill { height: 34px; padding-top: 0; padding-bottom: 0; }
 }

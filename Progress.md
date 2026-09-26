@@ -1146,4 +1146,22 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Tests: 48 passed. Browser-tested in the sandbox: the whole co-pilot flow with mocked proposals (approve, skip, 409,
   timer out, expired), mode, symbol, time zone, stopped state; Start / Stop / Hold against the real sandbox backend.
 
+### 2026-09-26: the Market tab is now part of the Bot tab (your request via Chat A)
+- One tab, **Bot**: the live chart (Auto, Replay and its bar) fills the left, the bot's open trades sit in a strip under
+  it, and the live card is a column on the right (hero sentence, pills, confidence gauge, last hour, co-pilot options,
+  Start / Stop / Hold). A co-pilot proposal lies over the top of the chart while it waits.
+- One symbol: the header's switcher drives the bot and the chart; the bid and spread moved into the header badge
+  ("Replay" shows there during a replay).
+- No stop loss anywhere on the tab, chart included: only the bot's trades are drawn, with yellow entry and green TP
+  dots; closed trades show a green exit at TP and a grey one for any other close, stop hits included. Manual and
+  Review keep their red SL dots.
+- Gone with the Market tab: the Bot trade card, the Open positions list (a count of your and Hermes' trades links to
+  the Manual tab), the Size-a-trade calculator (Manual's "Size from stop" does the same) and the second Hold button.
+  The "1" key opens Bot; a saved Market key now opens Bot too.
+- Fixed (Chat A found it): a notification could cover the Full Auto / Co-pilot switch and stay up forever while the
+  pointer sat on it. On the Bot tab notifications now start under the header, and one that pops up under a still
+  pointer fades as usual.
+- Tests: 49 passed. Browser-tested at 1280x720 and 1440x900 (no scrolling, nothing cut off, also with the replay bar
+  open), 0 page errors.
+
 <!-- Chat B: add new entries above this line -->

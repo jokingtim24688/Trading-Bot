@@ -23,8 +23,7 @@
       <rect x="23" y="6" width="4" height="11" rx="1" fill="var(--gold)"/><line x1="25" y1="3" x2="25" y2="20" stroke="var(--gold)" stroke-width="1.5"/>
     </svg>
   </div>
-  <button class="rail-btn active" data-tab="bot" title="Bot: what it's doing right now, co-pilot and full auto"><svg viewBox="0 0 24 24"><path d="M3.5 16a8.5 8.5 0 0 1 17 0"/><path d="M12 16l4.2-5"/><circle cx="12" cy="16" r="1.4"/><path d="M6.2 16h-.01M17.8 16h-.01"/></svg><span>Bot</span></button>
-  <button class="rail-btn" data-tab="dash" title="Dashboard"><svg viewBox="0 0 24 24"><path d="M3 20h18M5 16l4-5 4 3 6-8"/></svg><span>Market</span></button>
+  <button class="rail-btn active" data-tab="bot" title="Bot: the live chart and what the bot is doing right now, co-pilot and full auto"><svg viewBox="0 0 24 24"><path d="M3.5 16a8.5 8.5 0 0 1 17 0"/><path d="M12 16l4.2-5"/><circle cx="12" cy="16" r="1.4"/><path d="M6.2 16h-.01M17.8 16h-.01"/></svg><span>Bot</span></button>
   <button class="rail-btn" data-tab="manual" title="Trade by hand"><svg viewBox="0 0 24 24"><path d="M7 17V7M7 7l-3 3M7 7l3 3M17 7v10M17 17l-3-3M17 17l3-3"/></svg><span>Manual</span></button>
   <button class="rail-btn" data-tab="agent" title="Agent"><svg viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="11" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9 15.5h6"/></svg><span>Agent</span></button>
   <button class="rail-btn" data-tab="review" title="Review your trades and the bot's"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Review</span></button>
@@ -70,7 +69,7 @@
         <div class="bl-sym">
           <button id="bl-sym-btn" class="bl-sym-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="bl-sym-pop" title="Switch the symbol the bot trades">
             <b id="bl-sym">—</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
-          <span id="bl-price" class="bl-price num" title="Live price (middle of bid and ask)">—</span>
+          <span class="bl-price" title="Bid and spread in points"><span id="q-sym" class="bl-qsym"></span><b id="q-bid" class="num flashable">—</b><small>spread <span id="q-spr" class="num">—</span></small></span>
           <div id="bl-sym-pop" class="bl-pop glass" role="listbox" aria-label="Symbols" hidden></div>
         </div>
         <div class="bl-clock">
@@ -99,119 +98,89 @@
         </div>
       </header>
       <div class="bl-body">
-        <div class="panel bl-main" id="bl-main">
-          <div id="bl-prop" class="bl-prop" hidden aria-live="polite"></div>
+        <div class="bl-left">
+          <div class="panel chart-panel bl-chart">
+            <div class="chart-head">
+              <div class="quote"><span class="tf">M1</span>
+                <span class="dot-key" title="Dots on the chart: the bot's trades. No stop loss is shown on this tab."><span><i class="k-entry"></i>entry</span><span><i class="k-tp"></i>take profit</span><span><i class="k-exit"></i>other close</span></span></div>
+              <div class="quote">
+                <button class="auto-btn on" id="chart-auto" type="button" aria-pressed="true">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>Auto</span><i class="count"></i>
+                </button>
+                <span class="head-sep" aria-hidden="true"></span>
+                <button class="replay-btn" id="replay-toggle" type="button" title="Run the bot on downloaded history, fast">
+                  <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z"/></svg>Replay</button></div>
+            </div>
+            <div class="replay-bar hidden" id="replay-bar">
+              <div class="row gap wrap">
+                <label class="inline">Period <select id="rp-days">
+                  <optgroup label="Model's unseen data (honest results)">
+                    <option value="test|1">1 day</option><option value="test|7">7 days</option><option value="test|30">30 days</option>
+                    <option value="test|90">90 days</option><option value="test|365">1 year</option>
+                    <option value="test|0" selected>All of it</option></optgroup>
+                  <optgroup label="Most recent">
+                    <option value="end|7">Last 7 days</option><option value="end|30">Last 30 days</option>
+                    <option value="end|90">Last 90 days</option><option value="end|365">Last year</option></optgroup>
+                  <optgroup label="Everything downloaded">
+                    <option value="all|0">All history (includes training data, looks better than live)</option></optgroup>
+                </select></label>
+                <button class="btn primary xs" id="rp-start">Start replay</button>
+                <button class="btn xs" id="rp-pause">Pause</button>
+                <button class="btn xs" id="rp-stop">Stop</button>
+              </div>
+              <div class="chips rp-presets" id="rp-presets"><span class="muted small">Speed</span>
+                <button class="chip" data-speed="1">1/s</button><button class="chip" data-speed="10">10/s</button>
+                <button class="chip" data-speed="60">60/s</button><button class="chip" data-speed="600">600/s</button>
+                <button class="chip" data-speed="2000">2000/s</button><button class="chip" data-speed="0">Max</button></div>
+              <label class="slider-label rp-speed">Custom <span id="rp-speed-txt" class="num"></span><input id="rp-speed" type="range" min="0" max="100" step="1"></label>
+              <div class="rp-progress"><div class="bar"><i id="rp-prog"></i></div><span id="rp-status" class="muted small">Replays your downloaded M1 history through the bot with all its rules. Trades are recorded as "replay" and feed its learning.</span></div>
+            </div>
+            <div class="chart-wrap"><div id="chart"></div><div id="chart-layer" class="chart-layer" aria-hidden="true"></div></div>
+            <p id="chart-msg" class="chart-msg hidden"></p>
+            <div id="bl-prop" class="bl-prop" hidden aria-live="polite"></div>
+          </div>
+          <div class="panel bl-trades">
+            <div class="bl-trades-head"><b>Bot trades</b><span id="bl-pos-count" class="muted small"></span><a id="bl-others" class="bl-others" href="#" data-goto="manual" hidden></a></div>
+            <div id="bl-pos" class="bl-pos"></div>
+          </div>
+        </div>
+        <aside class="panel bl-main" id="bl-main">
           <div class="bl-hero">
             <span id="bl-state" class="bl-state">Loading…</span>
             <h2 id="bl-headline" class="bl-headline">Reading the bot…</h2>
             <p id="bl-reason" class="bl-reason"></p>
           </div>
           <div id="bl-pills" class="bl-pills"></div>
+          <div class="bl-gauge">
+            <svg class="gauge" viewBox="0 0 220 134" role="img" aria-labelledby="bl-conf-txt">
+              <path class="g-track" d="M24 110 A86 86 0 0 1 196 110"/>
+              <path id="bl-gauge-val" class="g-val" d="M24 110 A86 86 0 0 1 196 110" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/>
+              <text id="bl-conf-txt" class="g-num" x="110" y="100" text-anchor="middle">—</text>
+            </svg>
+            <div class="bl-gauge-txt"><b>AI Confidence</b><span id="bl-lean" class="muted small"></span><p id="bl-conf-sub" class="bl-conf-sub num"></p></div>
+          </div>
           <div id="bl-last" class="bl-last"></div>
           <div id="bl-copilot" class="bl-copilot" hidden>
             <span id="bl-copilot-txt" class="muted small"></span>
             <div id="bl-copts" class="bl-copts">
               <label class="switch"><input type="checkbox" id="bl-autoexec"><span>Execute when the timer runs out</span></label>
-              <label class="bl-timer">Timer <select id="bl-secs" aria-label="How long a proposal waits"><option value="15">15 s</option><option value="30">30 s</option><option value="60">60 s</option><option value="120">120 s</option></select></label>
+              <label class="bl-timer" title="How long a proposal waits for you"><span class="bl-timer-txt">Timer</span> <select id="bl-secs" aria-label="How long a proposal waits"><option value="15">15 s</option><option value="30">30 s</option><option value="60">60 s</option><option value="120">120 s</option></select></label>
             </div>
           </div>
           <div class="bl-ctl">
             <button id="bl-start" class="btn primary" type="button">Start</button>
             <button id="bl-stop" class="btn" type="button">Stop</button>
-            <span id="bl-ctl-msg" class="muted small"></span>
             <button class="kill bl-kill" type="button" aria-label="Hold to flatten and reset the agent: stops it and closes its trades">
               <span class="kill-fill"></span>
-              <span class="kill-label">Hold to flatten &amp; reset agent</span>
+              <span class="kill-label">Hold to flatten &amp; reset</span>
             </button>
-          </div>
-        </div>
-        <aside class="bl-side">
-          <div class="panel bl-gauge">
-            <div class="panel-head"><h3>AI Confidence</h3><span id="bl-lean" class="muted small"></span></div>
-            <svg class="gauge" viewBox="0 0 220 134" role="img" aria-labelledby="bl-conf-txt">
-              <path class="g-track" d="M24 110 A86 86 0 0 1 196 110"/>
-              <path id="bl-gauge-val" class="g-val" d="M24 110 A86 86 0 0 1 196 110" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/>
-              <text id="bl-conf-txt" class="g-num" x="110" y="96" text-anchor="middle">—</text>
-              <text class="g-end" x="24" y="132" text-anchor="middle">0</text><text class="g-end" x="196" y="132" text-anchor="middle">100</text>
-            </svg>
-            <p id="bl-conf-sub" class="bl-conf-sub num"></p>
-          </div>
-          <div class="panel bl-pos-panel">
-            <div class="panel-head"><h3>Active position</h3><span id="bl-pos-count" class="muted small"></span></div>
-            <div id="bl-pos" class="bl-pos"></div>
+            <span id="bl-ctl-msg" class="bl-ctl-msg muted small"></span>
           </div>
         </aside>
       </div>
     </div>
   </section>
 
-  <!-- MARKET -->
-  <section id="tab-dash" class="tab">
-    <div class="dash-grid">
-      <div class="panel chart-panel">
-        <div class="chart-head">
-          <div id="symbols" class="chips"></div>
-          <div class="quote"><span id="q-sym">—</span><span class="num flashable" id="q-bid">—</span><span class="muted">spread</span><span class="num" id="q-spr">—</span><span class="tf">M1</span>
-            <button class="auto-btn on" id="chart-auto" type="button" aria-pressed="true">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>Auto</span><i class="count"></i>
-            </button>
-            <span class="head-sep" aria-hidden="true"></span>
-            <button class="replay-btn" id="replay-toggle" type="button" title="Run the bot on downloaded history, fast">
-              <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z"/></svg>Replay</button></div>
-        </div>
-        <div class="replay-bar hidden" id="replay-bar">
-          <div class="row gap wrap">
-            <label class="inline">Period <select id="rp-days">
-              <optgroup label="Model's unseen data (honest results)">
-                <option value="test|1">1 day</option><option value="test|7">7 days</option><option value="test|30">30 days</option>
-                <option value="test|90">90 days</option><option value="test|365">1 year</option>
-                <option value="test|0" selected>All of it</option></optgroup>
-              <optgroup label="Most recent">
-                <option value="end|7">Last 7 days</option><option value="end|30">Last 30 days</option>
-                <option value="end|90">Last 90 days</option><option value="end|365">Last year</option></optgroup>
-              <optgroup label="Everything downloaded">
-                <option value="all|0">All history (includes training data, looks better than live)</option></optgroup>
-            </select></label>
-            <button class="btn primary xs" id="rp-start">Start replay</button>
-            <button class="btn xs" id="rp-pause">Pause</button>
-            <button class="btn xs" id="rp-stop">Stop</button>
-          </div>
-          <div class="chips rp-presets" id="rp-presets"><span class="muted small">Speed</span>
-            <button class="chip" data-speed="1">1/s</button><button class="chip" data-speed="10">10/s</button>
-            <button class="chip" data-speed="60">60/s</button><button class="chip" data-speed="600">600/s</button>
-            <button class="chip" data-speed="2000">2000/s</button><button class="chip" data-speed="0">Max</button></div>
-          <label class="slider-label rp-speed">Custom <span id="rp-speed-txt" class="num"></span><input id="rp-speed" type="range" min="0" max="100" step="1"></label>
-          <div class="rp-progress"><div class="bar"><i id="rp-prog"></i></div><span id="rp-status" class="muted small">Replays your downloaded M1 history through the bot with all its rules. Trades are recorded as "replay" and feed its learning.</span></div>
-        </div>
-        <div class="chart-wrap"><div id="chart"></div><div id="chart-layer" class="chart-layer" aria-hidden="true"></div></div>
-        <p id="chart-msg" class="chart-msg hidden"></p>
-      </div>
-
-      <aside class="side">
-        <div class="panel">
-          <h3>Size a trade</h3>
-          <div class="form-row"><label>Entry<input id="sz-entry" type="number" step="any"></label><label>Stop<input id="sz-stop" type="number" step="any"></label></div>
-          <label class="slider-label">Risk <span id="sz-risk-txt" class="num">0.5%</span><input id="sz-risk" type="range" min="0.1" max="2" step="0.1" value="0.5"></label>
-          <div class="sz-out"><span class="muted">Lots</span><strong id="sz-lots" class="num big">—</strong><span id="sz-detail" class="muted small"></span></div>
-        </div>
-
-        <div class="panel bot-card" id="bot-card">
-          <div class="panel-head"><h3>Bot trade</h3><span id="bot-today" class="bot-today"></span></div>
-          <div id="bot-now"><p class="empty">Loading the bot…</p></div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-head"><h3>Open positions</h3><span id="pos-count" class="muted small"></span></div>
-          <div id="positions" class="positions"><p class="empty">Loading…</p></div>
-        </div>
-
-        <button id="kill" class="kill" aria-label="Hold to flatten and reset the agent: stops it and closes its trades">
-          <span class="kill-fill"></span>
-          <span class="kill-label">Hold to flatten &amp; reset agent</span>
-        </button>
-      </aside>
-    </div>
-  </section>
 
   <!-- MANUAL TRADING -->
   <section id="tab-manual" class="tab">

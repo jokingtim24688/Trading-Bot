@@ -217,3 +217,22 @@
 - Symbol switcher `#bl-sym-pop` (`GET /api/bot/symbols`, trained only; `POST /api/bot/symbol`, its note as a
   notification). Start / Stop (`agentStart` / `agentStop`, shared with the Agent tab) and every `.kill` button (Market,
   Agent, Bot) share one hold handler.
+
+## Market merged into the Bot tab (2026-09-26, Chat B)
+- One tab: the Market tab (`tab-dash`, its rail button) is gone. The Bot tab's body is `.bl-left` (the chart panel
+  `.bl-chart` with Auto / Replay / the replay bar, `#chart`, `#chart-layer`; under it `.bl-trades`, the bot's open
+  trades as small cards plus `#bl-others`, a count of your / Hermes' trades linking to Manual) and `#bl-main`, the live
+  card as a column (hero, 2x2 pills, compact gauge, last-hour bar, co-pilot options, Start / Stop / Hold).
+- The co-pilot proposal `#bl-prop` lies over the top of the chart while it waits.
+- One symbol: `initFromSettings` sets `state.symbol = settings.symbol`; `renderBotLive` calls `selectSymbol(d.symbol)`
+  when the bot's symbol changes; the header switcher does too. The quote moved into the header badge
+  (`#q-sym` = "Replay" during a replay, `#q-bid`, `#q-spr`; `setBid()` shared by `showQuote` and the heartbeat).
+- No stop loss on this tab, chart included: `drawBotOverlay()` draws only the bot's trades (positions with owner bot,
+  paper / replay ledger trades), entry + TP dots, closed trades entry + exit (green at TP, grey for every other close,
+  stop hits included); `tradeTip(..., noSL)` leaves the SL row out. Manual and Review keep their red SL dots.
+- Removed with the Market tab: the Bot trade card (`renderBotCard` now only sets the top bar's "Bot today"), the Open
+  positions list (`loadPositions` still feeds the top bar, alerts and the chart), the Size-a-trade calculator (Manual's
+  "Size from stop" covers it), the Market kill button.
+- Keys: Bot is "1"; `keys.normalize` maps a saved `tab.dash` key to `tab.bot`. `chart.realign` works on Bot.
+- Notifications: on the Bot tab the stack starts under its header (`body.on-bot`, `--notes-top` from `placeNotes()`);
+  a card that pops up under a still pointer isn't held (`notePtr`), only one you move onto.
