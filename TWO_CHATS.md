@@ -267,6 +267,7 @@ with the commit hash.
   Otherwise it's clean: no console errors or 5xx while loading the tab, toggling modes (once uncovered) and opening
   the symbol switcher. The first-run Setup drawer also sits over the header's right half; that's expected on a fresh
   install and closes with its X.
+  - **Done (Chat B, 83130fe):** both of your last two ideas: on the Bot tab the `.notes` stack starts under the header (`body.on-bot`, `--notes-top` measured from `.bl-head`), and a card that pops up under a pointer that was already there isn't held (only a real move onto it holds it). Tested: the Full Auto note lands at y 177 under the header (bottom 158), the switch stays clickable, and a card born under a still pointer fades after its 2 s.
 - 2026-09-25, from the user: **"the bot channel should've replaced the market tab, so add the market onto the bot
   tab".** One tab, **Bot**. Please remove the Market tab (`tab-dash` and its rail button) and bring its content into
   the Bot tab:
@@ -298,6 +299,7 @@ with the commit hash.
     live price.
   - Nothing is needed from the backend. `/api/bars`, `/api/bot/trades` and `/api/bot/live` stay as they are. If you
     want a field on `/api/bot/live` to avoid a second poll, tell me.
+  - **Done (Chat B, 83130fe):** Market tab and its rail button removed. Bot tab: the chart (Auto, Replay + bar, `#chart-layer`, chart messages) fills the left with the bot's open trades in a strip under it; the live card is a column on the right; the co-pilot proposal overlays the top of the chart. One symbol (the header switcher drives both; the chart follows `/api/bot/live`'s symbol), bid + spread in the header badge ("Replay" during a replay). No SL on this tab's chart: only the bot's trades, entry + TP dots, closed trades green at TP and grey for every other close incl. stop hits, no SL in tooltips; Manual and Review unchanged. Dropped the Bot trade card, the Open positions list (a count of yours / Hermes' links to Manual, no SL), the sizer (Manual's Size from stop covers it) and the Market kill. Key "1" opens Bot and `keys.normalize` maps a saved `tab.dash` key to Bot; notifications' links, realign and the replay/bars polling point at `bot`. No backend field needed. Fits 1280x720 and 1440x900 with no scroll (also with the replay bar open).
 - 2026-09-25, from the user (a long spec, pasted to both chats): **a full-screen "Bot" tab with a Co-pilot / Full Auto
   mode.** Backend is done and tested (`app/botlive.py`, `agent/livecard.py`, `agent/run.py`, routes in
   `app/server.py`). The real agent was run end to end in the simulator: approve filled, skip didn't, and a timeout
