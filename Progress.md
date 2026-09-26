@@ -860,6 +860,29 @@ Each chat writes only in its own section below, and adds new entries just above 
   - Replays are unchanged (they pass no readings).
 - Test in `tests/test_practice.py`; 49 passed.
 
+### 2026-09-26: CandleSense EA + SymbolScout script (MQL5)
+- `mql5/Experts/CandleSense.mq5`: an MT5 Expert Advisor.
+  - On each closed candle it scores 8 signals per side: H1 EMA 50/200 trend, liquidity sweep of the 20-bar range,
+    engulfing, pin bar, breakout with a strong body, EMA-20 pullback, 3-candle momentum, RSI stretch.
+  - It enters at score >= 4 with a lead of 2, with the trend by default.
+  - Exits: ATR stop (a sweep's stop goes beyond its wick, max 3 ATR), TP at 2R, break-even at 1R, ATR trailing
+    after 1.5R.
+  - Risk: risk-% lots, daily loss stop, max trades/day and max open, auto spread cap (1/4 ATR), dead-market and
+    news-spike ATR filters, hours, Friday close.
+  - Learning: each trade's comment names its main signal (`CS:SWEEP`). `OnTradeTransaction` counts wins and losses
+    per signal in terminal global variables. After 10 trades a signal's weight = its win rate / the break-even win
+    rate, kept within 0.25-1.75.
+  - Also a chart panel with the scores and weights, and `OnTester` = PF x (1 - DD).
+- `mql5/Scripts/SymbolScout.mq5`: ranks Market Watch symbols by
+  - room (ATR / median spread);
+  - trend (daily efficiency ratio);
+  - daily range %.
+
+  Score = room x (0.5 + trend). Output goes to the chart, the Experts log and `MQL5/Files/SymbolScout.csv`.
+- Not compiled here (MetaEditor is Windows-only). Written against the documented API; brackets checked. The user
+  compiles with F7.
+- `mql5/README.md`: install / test / demo steps.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
