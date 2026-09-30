@@ -106,6 +106,17 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
+- 2026-09-30, from the user (addition to the Solana item below): **a small animated avatar per model** at the top of
+  the Solana tab (Chat B draws them). Each shows its score and what it's doing, and does a "money" animation when it
+  makes a profit. Please add to `GET /api/sol/state`:
+  `bots: [{model: "xgb"|"lgbm"|"rf"|"cat", score, doing, last_win}]`
+  - `score`: points for being right. When a trade closes, each model gets `+pnl_pct` if its final debate stance was
+    BUY, and `-pnl_pct` if it was PASS (it was right to doubt a loser, wrong to doubt a winner). Kept in SQLite.
+  - `doing`: a few words, e.g. "debating WIF", "trading BONK", "watching" (scanner on, nothing to argue),
+    "resting" (scanner off).
+  - `last_win`: epoch of the latest closed trade where that model's stance made points. The avatar turns green for
+    2 s when this changes.
+  The tab shows the sum of the scores as the crew's total.
 - 2026-09-30, from the user: **a Solana meme-coin trading engine with an ML ensemble whose models "argue" each trade
   out, shown in a new "Solana" tab.** The user's words: "we will run multiple [models] that will argue with each other
   about each trade till they compromise and make the trade" and "that prompt was for the backend … make sure this is
