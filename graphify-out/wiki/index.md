@@ -106,4 +106,11 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-30: Solana trenching backend `sol/` (see [sol.md](sol.md)), Bongo Cat avatars + preview board, Quiz Stocks/Trenching/Combined, Telegram /prof /loss /total, MT5 main agent + subagents review (7793203).
 - 2026-09-30: Mac support (b7787c0): installer `Trading Bot.command` that detects the Mac, MT5 bridge (`agent/mt5_remote.py`, `MT5 Bridge.bat`), Mac pop-ups/notifications, see [mac.md](mac.md). Agent profiles in the Solana tab: expand button on each avatar, `/api/sol/agent/{model}`, votes table in sol.db.
 - 2026-09-30: Rank system for the Solana crew (Intern -> Legend; rank = suit + vote weight) and a Ranks tab, see [sol.md](sol.md) and app.md.
+- 2026-09-30: every agent has its own tweet monitor (`sol/tweets.py`, four beats, twitterapi.io or the X API);
+  finds still go through the rug rules, the model floor, the debate and the subagents. Tweet radar panel + per-agent
+  section in the profile. See [sol.md](sol.md#tweet-radar).
+- 2026-09-30: one-line installers `install.ps1` (PowerShell) and `install.sh` (bash, macOS + Linux); links at the
+  top of the README. See [mac.md](mac.md).
+- 2026-09-30: secrets stay in the backend: `settings.SECRETS` + `settings.public()`; `/api/status` and
+  `/api/settings` return `__saved__` for the X key, and sending it back doesn't overwrite the real one.
 <!-- Chat B: add new lines above this marker -->

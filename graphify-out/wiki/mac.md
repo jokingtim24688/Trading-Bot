@@ -49,3 +49,25 @@ Added 2026-09-30 by Chat B (commit b7787c0). Windows behaviour is unchanged.
   ⌘,), `-webkit-backdrop-filter` everywhere (WKWebView), `applyPlatform()` wording for Settings.
 - Tests: `tests/test_platform.py` (bridge round trip against the fake MT5, tokens, encoding, installer on a simulated
   Mac via stub commands, notifications, libomp hint).
+
+## One-line installers (2026-09-30)
+`install.ps1` (Windows) and `install.sh` (macOS + Linux), linked at the top of the README:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/jokingtim24688/Trading-Bot/HEAD/install.ps1 | iex"
+```
+```bash
+curl -fsSL https://raw.githubusercontent.com/jokingtim24688/Trading-Bot/HEAD/install.sh | bash
+```
+Both use `HEAD`, so the link follows whatever the repo's default branch is and never goes stale.
+
+- `install.ps1`: Windows 10/11 check, Python 3.10-3.13 (`py -3.x`, then `python`), git; installs what is missing
+  with **winget** after asking (`-Yes` skips the asking), clones to `%USERPROFILE%\Trading-Bot` (or `-Path`),
+  makes a Desktop shortcut to `Trading Bot.bat` and starts it. `-Check` only reports, `-NoLaunch` sets up quietly.
+  Pure ASCII and no admin rights; `$LASTEXITCODE` is checked instead of piping git's stderr (which turns into a
+  terminating error under `$ErrorActionPreference = "Stop"` in PowerShell 5.1).
+- `install.sh`: macOS or Linux, git (offers `xcode-select --install` on a Mac), Python 3.10-3.13 skipping Apple's
+  `/usr/bin/python3` stub, clones to `~/Trading-Bot` (or `DIR=`). On a Mac it then `exec`s `Trading Bot.command
+  --from-app`, which does the chip / Homebrew / libomp / `.app` side. On Linux it builds the venv, installs
+  `requirements.txt` only when it changed, and starts `app.main`. `--no-launch` stops before opening the app.
+- Running either again updates the copy already there (`git pull --ff-only`) instead of cloning twice.

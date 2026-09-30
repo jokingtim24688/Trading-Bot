@@ -1,5 +1,6 @@
 """Solana trenching bot: rug filter, instant debate, main agents + subagents, Telegram commands, question creators,
 the model crew (split to train, merged after) and the routes. Everything writes under the test's temp data folder."""
+import json
 import time
 
 import numpy as np
@@ -248,3 +249,127 @@ def test_ranks_route_and_career_in_profile():
     assert "xgb" in d["ranks"][1]["agents"] and d["log"][0]["model"] == "xgb"
     prof = c.get("/api/sol/agent/xgb").json()
     assert prof["career"]["rank"]["name"] == "Junior Trader" and prof["career"]["history"]
+
+
+# ---------- every agent's own tweet monitor (sol/tweets.py) ----------
+def _posts(now=None):
+    now = now or time.time()
+    return [
+        {"id": "1", "text": "just launched $FROGGY on pump.fun, 9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin",
+         "t": now - 120, "url": "https://x.com/alpha/status/1", "author": "alpha", "followers": 42000,
+         "account_t": now - 500 * 86400, "verified": True, "likes": 320, "rts": 40, "views": 90000,
+         "links": [], "tags": ["FROGGY"]},
+        {"id": "2", "text": "free airdrop! claim your bag now, dm me", "t": now - 60, "url": "u2",
+         "author": "spambot", "followers": 30, "account_t": now - 2 * 86400, "verified": False,
+         "likes": 0, "rts": 0, "views": 5, "links": [], "tags": []},
+        {"id": "3", "text": "$FROGGY sending", "t": now - 200, "url": "u3", "author": "beta", "followers": 8000,
+         "account_t": now - 900 * 86400, "verified": False, "likes": 60, "rts": 5, "views": 12000,
+         "links": ["https://pump.fun/coin/9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin"], "tags": []},
+    ]
+
+
+def test_tweet_monitor_reads_a_mint_and_filters_the_spam(monkeypatch):
+    from app import settings
+    from sol import store, tweets
+    settings.save({"x_provider": "twitterapi", "x_api_key": "k", "x_min_voices": 1})
+    monkeypatch.setattr(tweets, "pull", lambda q, n, c: _posts())
+    monkeypatch.setattr(tweets, "crew", lambda: ["xgb", "lgbm", "rf", "cat"])
+    monkeypatch.setattr(tweets.feeds, "token_pools",
+                        lambda m: [{"mint": m, "symbol": "FROGGY", "liq_usd": 9000, "price_usd": 0.001}])
+    seen = []
+    monkeypatch.setattr(tweets.engine, "evaluate",
+                        lambda snap, c=None, trade=True: seen.append(snap) or
+                        {"mint": snap["mint"], "verdict": "PASS", "gate": {"passed": True, "why": []}})
+    r = tweets.round_once()
+    assert r["reads"] == 12 and r["checked"] == 1                  # four beats x three posts, one coin between them
+    find = r["found"][0]
+    assert find["mint"] == "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin" and not find["why"]
+    assert "spambot" not in {p["author"] for p in find["posts"]}   # the airdrop post never became a candidate
+    assert seen and seen[0]["found_via"] == "x" and seen[0]["found_by"] == "alpha"
+    assert store.tweet_finds(5)[0]["status"] == "blocked"          # PASS from the crew, so no trade
+
+
+def test_a_tweet_find_still_has_to_pass_the_rug_filter(monkeypatch):
+    """The whole point: a coin everyone is posting about is still thrown out by rug.check."""
+    from app import settings
+    from sol import engine, store, tweets
+    settings.save({"x_provider": "twitterapi", "x_api_key": "k", "x_min_voices": 1, "sol_min_liq_usd": 5000})
+    monkeypatch.setattr(tweets, "pull", lambda q, n, c: _posts())
+    monkeypatch.setattr(tweets, "crew", lambda: ["xgb"])
+    monkeypatch.setattr(tweets.feeds, "token_pools", lambda m: [{
+        "mint": m, "symbol": "FROGGY", "liq_usd": 40000, "price_usd": 0.001, "age_min": 5, "buys_5m": 80,
+        "sells_5m": 10, "vol_5m": 9000, "chg_5m": 40}])
+    monkeypatch.setattr(engine.feeds, "rug_facts", lambda mint: {                # the mint authority is still alive
+        "mint_authority": "SomeoneKeptIt", "freeze_authority": None, "lp_locked_pct": 100.0,
+        "top10_pct": 12.0, "dev_pct": 1.0})
+    engine.state["auto_trade"] = True
+    tweets.round_once()
+    row = store.tweet_finds(5)[0]
+    assert row["status"] == "blocked" and "mint authority" in row["why"].lower()
+    assert not store.positions("open")                                          # nothing was bought
+
+
+def test_every_agent_gets_its_own_beat_and_the_key_never_leaves(monkeypatch):
+    from app import settings
+    from fastapi.testclient import TestClient
+    from app import server
+    from sol import tweets
+    monkeypatch.setattr(tweets, "crew", lambda: ["xgb", "lgbm", "rf", "cat"])
+    c = TestClient(server.app)
+    c.post("/api/sol/tweets/key", json={"provider": "twitterapi", "key": "super-secret"})
+    d = c.get("/api/sol/tweets").json()
+    assert [b["model"] for b in d["beats"]] == ["xgb", "lgbm", "rf", "cat"]
+    assert len({b["id"] for b in d["beats"]}) == 4                  # four different beats, not four of the same
+    assert d["key_set"] is True and "super-secret" not in json.dumps(d)
+    assert settings.load()["x_api_key"] == "super-secret"           # saved, just never handed back
+    assert "super-secret" not in json.dumps(c.get("/api/status").json())
+    assert c.get("/api/status").json()["settings"]["x_api_key"] == settings.KEPT
+    settings.save({"x_api_key": settings.KEPT})                     # the app sending the placeholder back
+    assert settings.load()["x_api_key"] == "super-secret"           # doesn't wipe the real one
+    # one agent's monitor can be switched off on its own
+    d = c.post("/api/sol/tweets/beat", json={"model": "rf", "on": False}).json()
+    assert [b["on"] for b in d["beats"]] == [True, True, False, True]
+    assert c.get("/api/sol/agent/xgb").json()["tweets"]["beat"]["id"] == "launches"
+
+
+def test_monitor_filters_quiet_posts_and_lonely_coins():
+    from app import settings
+    from sol import tweets
+    settings.save({"x_min_likes": 10, "x_min_followers": 1000, "x_min_account_days": 30, "x_max_age_min": 45})
+    c, beat = tweets.cfg(), tweets.BEATS[0]
+    now = time.time()
+    base = {"text": "nice coin", "likes": 500, "followers": 90000, "account_t": now - 900 * 86400,
+            "t": now - 60, "author": "a", "verified": False, "views": 10}
+    assert tweets.grade(base, c, beat) == ""
+    assert "likes" in tweets.grade({**base, "likes": 1}, c, beat)
+    assert "followers" in tweets.grade({**base, "followers": 20}, c, beat)
+    assert "days old" in tweets.grade({**base, "account_t": now - 3 * 86400}, c, beat)
+    assert "min ago" in tweets.grade({**base, "t": now - 3 * 3600}, c, beat)
+    assert "spam" in tweets.grade({**base, "text": "claim your free airdrop"}, c, beat)
+    # louder, fresher, more voices and a higher-ranked finder all score higher
+    lonely, crowd = tweets.heat(base, beat, 1), tweets.heat(base, beat, 4)
+    assert crowd > lonely and tweets.heat(base, beat, 4, 1.5) > crowd
+    assert tweets.heat(base, beat, 4, 1.0, 3) > crowd               # two beats found it, not one
+
+
+def test_monitor_needs_a_key_and_reports_what_it_costs():
+    from app import settings
+    from sol import tweets
+    settings.save({"x_provider": "off", "x_api_key": ""})
+    with pytest.raises(ValueError):
+        tweets.set_monitor(True)
+    assert tweets.round_once()["reads"] == 0                        # no key: it never calls anyone
+    settings.save({"x_provider": "twitterapi", "x_api_key": "k", "x_scan_s": 300, "x_per_beat": 15})
+    cost = tweets.cost()
+    assert cost["rate"] == 0.00015 and cost["posts_per_day"] == cost["monitors"] * 15 * 288
+    assert cost["usd_per_day"] == round(cost["posts_per_day"] * 0.00015, 2)
+
+
+def test_mints_are_read_out_of_links_and_text():
+    from sol import tweets
+    p = {"text": "ape $WIF now", "tags": [],
+         "links": ["https://dexscreener.com/solana/EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm"]}
+    mints, tags = tweets.candidates(p)
+    assert mints == ["EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm"] and tags == ["WIF"]
+    sol_ = {"text": "So11111111111111111111111111111111111111112 is just SOL", "tags": [], "links": []}
+    assert tweets.candidates(sol_)[0] == []                         # wrapped SOL and the stables are never candidates

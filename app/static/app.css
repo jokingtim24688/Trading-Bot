@@ -1705,3 +1705,56 @@ body.on-bot .notes { top: var(--notes-top, 170px); }
 .cb-ranks .cb-cats { gap: 10px; }
 .cb-ranks .cb-cat .cat-box { width: 76px; height: 76px; border-radius: 14px; }
 .cb-ranks .cb-cat span { max-width: 80px; text-align: center; line-height: 1.25; }
+
+/* ---------- Tweet radar (Solana tab): every agent's own monitor on X ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.switch.xs input { width: 26px; height: 15px; }
+.switch.xs input::before { width: 9px; height: 9px; }
+.switch.xs input:checked::before { transform: translateX(11px); }
+.solx-lead { color: var(--muted); font-size: 12.5px; line-height: 1.55; max-width: 92ch; margin: 8px 0 12px; }
+.solx-lead em { color: var(--text); font-style: normal; font-weight: 600; }
+.solx-setup { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); }
+.solx-setup .seg-row { margin-bottom: 0; grid-template-columns: repeat(3, auto); width: max-content; }
+.solx-key { display: inline-flex; align-items: center; gap: 8px; }
+.solx-key input { width: 210px; font-family: var(--mono); font-size: 12px; }
+#solx-cost { flex: 1 1 260px; min-width: 200px; line-height: 1.5; }
+.solx-beats { display: grid; grid-template-columns: repeat(auto-fit, minmax(212px, 1fr)); gap: 10px; margin: 12px 0; }
+.solx-beat { position: relative; padding: 11px 12px 9px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--bg-2); border-left: 3px solid var(--c); transition: opacity .2s, border-color .2s; }
+.solx-beat.off { opacity: .5; border-left-color: var(--line); }
+.solx-beat-top { display: flex; align-items: center; gap: 8px; }
+.solx-beat-top b { font-size: 13px; }
+.solx-beat-top .switch { margin-left: auto; }
+.solx-tag { font: 600 10.5px var(--sans); letter-spacing: .01em; padding: 2px 7px; border-radius: 999px; color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); border: 1px solid color-mix(in srgb, var(--c) 34%, transparent); }
+.solx-what { margin: 6px 0 8px; line-height: 1.45; }
+.solx-beat-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); }
+.solx-beat-stats b { color: var(--text); margin-left: 3px; }
+.solx-beat-stats .up b { color: var(--up); }
+.solx-q summary { cursor: pointer; margin-top: 7px; }
+.solx-q code { display: block; margin-top: 6px; padding: 7px 8px; border-radius: 4px; background: var(--raised); color: var(--muted); white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+.solx-wrap { max-height: 380px; }
+.solx-who { font: 600 11.5px var(--sans); color: var(--c); }
+.solx-heat { display: flex; align-items: center; gap: 8px; min-width: 110px; }
+.solx-heat span { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.07); overflow: hidden; }
+.solx-heat i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, rgba(201,162,74,.45), var(--gold)); }
+.solx-heat b { font-size: 11.5px; color: var(--muted); min-width: 18px; text-align: right; }
+.solx-post a { color: var(--text); text-decoration: none; border-bottom: 1px solid var(--line); }
+.solx-post a:hover { border-bottom-color: var(--gold); }
+.solx-post span { display: block; margin-top: 2px; }
+.solx-st { font: 600 11px var(--sans); padding: 2px 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--raised); color: var(--muted); white-space: nowrap; }
+.solx-st.traded { color: var(--up); border-color: rgba(63,182,139,.4); background: rgba(63,182,139,.1); }
+.solx-st.blocked { color: var(--down); border-color: rgba(224,87,79,.4); background: rgba(224,87,79,.08); }
+.solx-st.checking { color: var(--warn); border-color: rgba(224,163,58,.4); background: rgba(224,163,58,.08); }
+.solx-st.error { color: var(--down); }
+#solx-finds td { vertical-align: top; }
+#solx-finds td:last-child { white-space: normal; min-width: 190px; }
+.solx-row.s-filtered { opacity: .62; }
+/* the same monitor inside an agent's profile */
+.cp-x { display: grid; gap: 8px; }
+.cp-x-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cp-x-head .solx-tag { --c: var(--gold); }
+.cp-x-list { display: grid; gap: 6px; }
+.cp-x-find { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 9px; padding: 6px 9px; border-radius: 4px; background: var(--bg-2); border: 1px solid var(--line-soft); font-size: 12px; }
+.cp-x-find b { font-family: var(--sans); }
+.cp-x-find a { color: var(--muted); text-decoration: none; margin-left: auto; }
+.cp-x-find a:hover { color: var(--gold); }
+@media (max-width: 1100px) { .solx-key input { width: 150px; } }

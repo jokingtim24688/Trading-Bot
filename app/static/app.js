@@ -3167,6 +3167,7 @@ async function loadSol(all = false) {
     const [feed, pos, pnl] = await Promise.all([api("/api/sol/feed?limit=150"), api("/api/sol/positions"), api("/api/sol/pnl")]);
     sol.feed = feed || []; sol.pos = pos || []; sol.pnl = pnl;
     if (all || sol.t % 5 === 0 || !sol.knownTrades) sol.trades = await api("/api/sol/trades?limit=200") || [];
+    if (all || sol.t % 2 === 0) loadTweets();
     solNotify(); renderSol();
   } catch (e) {
     if (e.status === 404) { sol.missing = true; renderSol(); }
@@ -3184,8 +3185,10 @@ function solSocket() {                           // optional push; the 2 s poll 
     sol.ws = ws;
   } catch (e) { sol.ws = null; }
 }
-/* the crew: one suited Bongo Cat per main agent (model) at the top of the tab, in a square frame. Idle they type;
-   when a model makes profit the cat turns profit-green, throws its arms up and waves, $ rain from the top of the frame
+/* the crew: one suited Bongo Cat per main agent (model) at the top of the tab, in a square frame. There are only
+   two animations on purpose: typing, which runs the whole time an agent is doing anything at all (watching a coin,
+   debating, reading X, holding a trade), and the profit sequence below. Nothing else changes the cat's pose.
+   On profit the cat turns profit-green, throws its arms up and waves, $ rain from the top of the frame
    (canvas layer), two $ land on its eyes and shake, stay locked for 2 s, then clear and the cat goes back to typing.
    Phases are classes on .cat-box (p-drop -> p-shake -> p-hold -> p-back); CSS does the motion, JS only the timing. */
 const CAT_T = { drop: 600, shake: 300, hold: 2000, back: 600 };      // ~3.5 s in all, with the 2 s hold
@@ -3393,6 +3396,7 @@ function renderProfile() {
         <button class="btn xs cp-close" id="cp-close" type="button" aria-label="Close the profile">Close</button>
       </div>
       <section class="cp-sec cp-career" id="cp-career"></section>
+      <section class="cp-sec cp-x-sec" id="cp-x-sec" hidden></section>
       <div class="cp-grid">
         <section class="cp-sec cp-chart-sec"><h4 id="cp-chart-h">Chart</h4><div class="cp-chart" id="cp-chart"></div><p class="muted small cp-chart-note" id="cp-chart-note"></p></section>
         <section class="cp-sec"><h4>Confidence</h4><div class="cp-conf" id="cp-conf"></div><div class="cp-conf-chart" id="cp-conf-chart"></div><p class="muted small" id="cp-conf-note"></p></section>
@@ -3417,6 +3421,7 @@ function renderProfile() {
         : `<p class="small">Top of the ladder: ${esc(car.rank.name)}. Its vote counts double.</p>`}
       ${car.history?.length ? `<div class="cp-hist small">${car.history.slice(0, 4).map(h => `<span class="${h.rank.id > h.prev.id ? "up" : "down"}">${h.rank.id > h.prev.id ? "▲" : "▼"} ${esc(h.rank.name)} <em class="muted">${solWhen(h.t)}</em></span>`).join("")}</div>` : ""}`);
   }
+  renderProfileTweets(d.tweets, m);
   $("#cp-sub").textContent = [d.model_info?.auc != null ? `quiz grade AUC ${d.model_info.auc.toFixed(3)}` : "not graded by the quiz yet",
     d.model_info?.weight != null ? `the merged bot trusts it ${d.model_info.weight >= 0 ? "+" : ""}${d.model_info.weight.toFixed(2)}` : "",
     st.accuracy != null ? `right on ${Math.round(st.accuracy * 100)}% of its closed trades` : ""].filter(Boolean).join(" · ");
@@ -3444,6 +3449,31 @@ function renderProfile() {
       <td>${a.verdict === "BUY" ? `<span class="sol-verdict buy">BUY</span>` : `<span class="muted">${a.verdict === "BLOCKED" ? "blocked" : "PASS"}</span>`}</td><td>${res}</td></tr>`;
   }).join("") || `<tr><td colspan="5" class="muted sol-empty">Nothing yet. Every coin it debates shows up here, with how the trade turned out.</td></tr>`);
   updateProfileChart();
+}
+/* the agent's own tweet monitor, inside its profile: its beat, what it read, the coins it brought back */
+function renderProfileTweets(t, m) {
+  const sec = $("#cp-x-sec"); if (!sec) return;
+  sec.hidden = !t?.beat;
+  if (!t?.beat) return;
+  const l = t.live || {}, st = t.stats || {};
+  setHTML(sec, `<h4>Its tweet monitor <span class="solx-tag">${esc(t.beat.name)}</span>
+      <span class="muted small">${t.on ? "reading now" : t.beat.on ? "switched off with the radar" : "this agent's monitor is off"}</span></h4>
+    <div class="cp-x">
+      <p class="muted small">${esc(m.name)} ${esc(t.beat.model_note)}: ${esc(t.beat.what)}. Whatever it brings back
+        still goes through the rug rules, the model floor, the debate and the subagents before anything is bought.</p>
+      <div class="cp-x-head small"><span class="muted">${l.read != null ? `read <b class="num">${l.read}</b> posts last round` : "hasn't read a round yet"}</span>
+        <span class="muted">brought back <b class="num">${st.found ?? 0}</b></span>
+        <span class="muted">bought <b class="num">${st.bought ?? 0}</b></span>
+        <span class="muted">blocked by the filters <b class="num">${st.blocked ?? 0}</b></span></div>
+      <div class="cp-x-list">${(t.finds || []).map(f => {
+        const [word] = SOLX_STATUS[f.status] || [f.status];
+        return `<div class="cp-x-find"><b>${esc(f.symbol || solShort(f.mint) || "?")}</b>
+          <span class="solx-st ${esc(f.status)}">${esc(word)}</span>
+          <span class="muted">${esc(f.why || "")}</span>
+          <span class="muted">heat ${Math.round(f.heat || 0)} · ${f.voices ?? 1} voice${f.voices === 1 ? "" : "s"} · ${solWhen(f.t)}</span>
+          <a href="${esc(f.url || "#")}" target="_blank" rel="noreferrer noopener">@${esc(f.author || "?")}</a></div>`;
+      }).join("") || `<p class="muted small">Nothing yet. The coins this one picks out of X show up here.</p>`}</div>
+    </div>`);
 }
 function buildProfileChart() {
   const d = prof.data, el = $("#cp-chart"), ch = d.chart;
@@ -3478,6 +3508,97 @@ function updateProfileChart(fit = false) {
   $("#cp-chart-note").textContent = ch.position ? `Holding: ${solPct(ch.position.pnl_pct)} since its buy.` : (ch.markers || []).length ? "Arrows: where the crew bought (green) and sold (gold)." : "";
   if (fit) prof.chart.timeScale().fitContent();
 }
+/* Tweet radar: every agent has its own monitor on X (sol/tweets.py). Four beats so four agents don't keep finding
+   the same coin: new launches, runners, the crowd, the callers. A find is a candidate and nothing more — it goes
+   into the same pipeline as a scanner find, so the rug rules, the model floor, the debate and the subagents all
+   still get their say. The panel shows what each monitor read, what it brought back and what happened to it. */
+const solx = { d: null, busy: false, t: 0, held: 0 };
+const SOLX_STATUS = {
+  checking: ["checking", "sent through the rug rules and the debate"],
+  traded: ["bought", "passed every filter and the crew bought it"],
+  blocked: ["blocked", "a filter or the crew said no"],
+  filtered: ["skipped", "didn't clear the monitor's own bar"],
+  error: ["error", "something went wrong looking it up"],
+};
+async function loadTweets() {
+  if (solx.busy) return; solx.busy = true;
+  try { solx.d = await api("/api/sol/tweets"); renderTweets(); }
+  catch (e) { if (e.status !== 404) $("#solx-meta").textContent = e.message; }
+  solx.busy = false;
+}
+function renderTweets() {
+  const d = solx.d; if (!d) return;
+  const on = d.running, live = d.beats.filter(b => b.on).length;
+  $("#solx-meta").textContent = d.error && !on ? d.error
+    : `${on ? `${live} monitor${live === 1 ? "" : "s"} reading` : "monitors off"} · ${d.stats.found.toLocaleString()} coins brought back · ${d.stats.bought.toLocaleString()} bought${d.last_round ? ` · last round ${solWhen(d.last_round)}` : ""}`;
+  $$("#solx-prov .seg-opt").forEach(b => { const sel = b.dataset.p === d.provider; b.classList.toggle("on", sel); b.setAttribute("aria-checked", String(sel)); });
+  const key = $("#solx-key");
+  if (document.activeElement !== key && Date.now() - solx.held > 4000) { key.value = ""; key.placeholder = d.key_set ? "a key is saved" : "paste the key"; }
+  const run = $("#solx-run");
+  run.textContent = on ? "Stop monitors" : "Start monitors";
+  run.classList.toggle("primary", !on); run.classList.toggle("danger-outline", on);
+  run.disabled = $("#solx-now").disabled = d.provider === "off" || !d.key_set;
+  const c = d.cost;
+  $("#solx-cost").textContent = d.provider === "off" ? "Pick a provider and save its key to switch the monitors on."
+    : !d.key_set ? "No key saved yet — the monitors have nothing to read."
+    : `${c.monitors} monitors × ${d.config.per_beat} posts every ${Math.round(d.config.scan_s / 60)} min ≈ ${c.posts_per_day.toLocaleString()} posts a day, about $${c.usd_per_day.toFixed(2)} at this provider's price.`
+      + (d.api.ok === false ? ` · ${d.api.said}` : "");
+  // one card per agent: whose beat it is, what it looks for, what it read last round
+  setHTML($("#solx-beats"), d.beats.map(b => {
+    const m = SOL_MODEL[b.model] || { name: b.model, col: "var(--gold)" }, l = b.live || {}, st = b.stats || {};
+    return `<div class="solx-beat${b.on ? "" : " off"}" style="--c:${m.col}" data-model="${b.model}">
+      <div class="solx-beat-top"><b>${esc(m.name)}</b><span class="solx-tag">${esc(b.name)}</span>
+        <label class="switch xs" title="${b.on ? "Stop" : "Start"} ${esc(m.name)}'s monitor"><input type="checkbox" class="solx-on" data-model="${b.model}"${b.on ? " checked" : ""}><span class="sr-only">${esc(m.name)}'s monitor</span></label></div>
+      <p class="solx-what small muted">${esc(b.what)}</p>
+      <div class="solx-beat-stats small"><span>${l.read != null ? `read <b class="num">${l.read}</b>` : "not read yet"}</span>
+        <span>kept <b class="num">${l.kept ?? 0}</b></span><span>found <b class="num">${st.found ?? 0}</b></span>
+        <span class="up">bought <b class="num">${st.bought ?? 0}</b></span></div>
+      <details class="solx-q"><summary class="small muted">Its search</summary><code class="small">${esc(b.query)}</code></details>
+    </div>`;
+  }).join(""));
+  // what the monitors brought back
+  setHTML($("#solx-finds tbody"), (d.finds || []).map(f => {
+    const m = SOL_MODEL[f.model] || { name: f.model, col: "var(--gold)" }, [word, why] = SOLX_STATUS[f.status] || [f.status, ""];
+    const also = (f.also || "").split(",").filter(Boolean).map(x => SOL_MODEL[x]?.name || x);
+    return `<tr class="solx-row s-${esc(f.status)}">
+      <td>${solWhen(f.t)}</td>
+      <td class="sol-tok"><b>${esc(f.symbol || solShort(f.mint) || "?")}</b>${f.mint && f.symbol ? `<span class="muted small">${solShort(f.mint)}</span>` : ""}</td>
+      <td><span class="solx-who" style="--c:${m.col}">${esc(m.name)}</span>${also.length ? `<span class="muted small"> +${esc(also.join(", "))}</span>` : ""}</td>
+      <td><div class="solx-heat" title="How loud, fresh and repeated the post was, and how high the agent that found it ranks"><span><i style="width:${Math.max(3, Math.min(100, f.heat || 0))}%"></i></span><b class="num">${Math.round(f.heat || 0)}</b></div></td>
+      <td class="num">${f.voices ?? 1}</td>
+      <td class="solx-post"><a href="${esc(f.url || "#")}" target="_blank" rel="noreferrer noopener">@${esc(f.author || "?")}</a>
+        <span class="muted small">${(f.likes ?? 0).toLocaleString()} likes · ${Math.round((f.followers || 0) / 1000)}k followers</span></td>
+      <td><span class="solx-st ${esc(f.status)}" title="${esc(why)}">${esc(word)}</span>${f.why ? ` <span class="muted small">${esc(f.why)}</span>` : ""}</td></tr>`;
+  }).join("") || `<tr><td colspan="7" class="muted sol-empty">${d.key_set ? "Nothing yet. Every coin a monitor picks out shows up here with the post that put it there, and what the filters did with it." : "Save an X API key above and each agent starts reading its own beat."}</td></tr>`);
+}
+$("#solx-prov").addEventListener("click", async e => {
+  const b = e.target.closest(".seg-opt"); if (!b) return;
+  try { await api("/api/sol/tweets/key", { method: "POST", body: { provider: b.dataset.p, key: $("#solx-key").value || null } }); $("#solx-key").value = ""; loadTweets(); }
+  catch (err) { toast(err.message); }
+});
+$("#solx-save").onclick = async () => {
+  const key = $("#solx-key").value.trim(), prov = $("#solx-prov .seg-opt.on")?.dataset.p || "off";
+  if (!key) return toast("Paste the key first.");
+  if (prov === "off") return toast("Pick twitterapi.io or the X API first, so the key has somewhere to go.");
+  try { await api("/api/sol/tweets/key", { method: "POST", body: { provider: prov, key } }); $("#solx-key").value = ""; toast("Key saved. It stays in data/settings.json and no page ever reads it back."); loadTweets(); }
+  catch (err) { toast(err.message); }
+};
+$("#solx-run").onclick = async () => {
+  const on = !solx.d?.running;
+  try { await api("/api/sol/tweets/monitor", { method: "POST", body: { on } }); toast(on ? "Every agent is on its beat." : "Monitors stopped."); loadTweets(); }
+  catch (err) { toast(err.message); }
+};
+$("#solx-now").onclick = async () => {
+  try { await api("/api/sol/tweets/round", { method: "POST" }); toast("Reading every beat once…"); setTimeout(loadTweets, 2500); }
+  catch (err) { toast(err.message); }
+};
+$("#solx-beats").addEventListener("change", async e => {
+  const c = e.target.closest(".solx-on"); if (!c) return;
+  solx.held = Date.now();
+  try { solx.d = await api("/api/sol/tweets/beat", { method: "POST", body: { model: c.dataset.model, on: c.checked } }); renderTweets(); }
+  catch (err) { toast(err.message); loadTweets(); }
+});
+
 /* the Ranks tab: the ladder top to bottom with the agents on each rank, their points and % to the next rank */
 const rk = { data: null, busy: false, missing: false, err: "" };
 async function loadRanks() {
@@ -3531,7 +3652,7 @@ setInterval(() => seen() && state.tab === "ranks" && loadRanks(), 4000);
 
 /* the preview board: every phase of the animation, one row each, looping, so it can be seen and tested */
 const CAT_ROWS = [
-  { id: "idle", name: "Typing (idle)", note: "Paws take turns on the keys, the head bobs, the eyes blink now and then." },
+  { id: "idle", name: "Typing (everything else)", note: "Watching, debating, trading, resting: the only animation is typing. Paws take turns on the keys, the head bobs, the eyes blink now and then." },
   { id: "drop", name: "Profit: $ drop in, green", note: "Fur turns profit-green, arms fly up, $ start raining and two $ fall toward the eyes." },
   { id: "shake", name: "$ shake / arms waving", note: "The two $ land on the eyes and shake; both arms wave side to side." },
   { id: "hold", name: "$ fall away (2s hold)", note: "The $ stay locked on the eyes for 2 s while the rest fall past the keyboard and out." },
