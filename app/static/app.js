@@ -121,6 +121,7 @@ function showTab(name) {
   moveRailInd();
   if (name === "bot" && state.chart && state.chartAuto && !state.autoT) realignChart(true);
   if (name === "bot") openBot();
+  if (name === "sol") openSol();
   if (name === "chat") { loadHistory(); loadFacts(); }
   if (name === "manual") openManual();
   if (name === "review") openReview();
@@ -2101,7 +2102,7 @@ const KEY_GROUPS = {
     desc: "These place and close orders on the first press, with nothing to confirm. On a real account the first order of the session asks you to type REAL." },
   app: { label: "Moving around", on: true, desc: "Switch tabs, realign charts, step through replays, mute. Safe to leave on." },
 };
-const TAB_NAME = { bot: "Bot", manual: "Manual", agent: "Agent", review: "Review", train: "Train", quiz: "Quiz", chat: "Hermes", keys: "Keys", sounds: "Sounds", settings: "Settings" };
+const TAB_NAME = { bot: "Bot", sol: "Solana", manual: "Manual", agent: "Agent", review: "Review", train: "Train", quiz: "Quiz", chat: "Hermes", keys: "Keys", sounds: "Sounds", settings: "Settings" };
 function pressBtn(sel) {
   const el = $(sel); if (!el || el.disabled) return;
   el.click(); if (el.animate && motionOK()) el.animate([{ transform: "scale(.96)" }, { transform: "none" }], { duration: 160 });
@@ -2128,7 +2129,7 @@ const KEY_ACTIONS = [
   { id: "man.market", group: "manual", tabs: ["manual"], label: "Order type: market", short: "Market", key: null, run: () => pressBtn('#man-type [data-type="market"]') },
   { id: "man.limit", group: "manual", tabs: ["manual"], label: "Order type: limit", short: "Limit", key: null, run: () => pressBtn('#man-type [data-type="limit"]') },
   { id: "man.stop", group: "manual", tabs: ["manual"], label: "Order type: stop", short: "Stop", key: null, run: () => pressBtn('#man-type [data-type="stop"]') },
-  ...Object.entries({ bot: "1", manual: "2", agent: "3", review: "4", train: "5", quiz: "6", chat: "7", keys: "8", sounds: "9", settings: "0" })
+  ...Object.entries({ bot: "1", sol: "`", manual: "2", agent: "3", review: "4", train: "5", quiz: "6", chat: "7", keys: "8", sounds: "9", settings: "0" })
     .map(([t, k]) => ({ id: `tab.${t}`, group: "app", label: `Go to ${TAB_NAME[t]}`, short: TAB_NAME[t], key: k, run: () => showTab(t) })),
   { id: "chart.realign", group: "app", tabs: ["bot", "manual", "review"], label: "Realign the chart", short: "Realign", key: "R", run: realignHere },
   { id: "log", group: "app", tabs: ["agent"], label: "Open or close the live log", short: "Log", key: "L", run: () => $("#log-drawer").classList.contains("open") ? closeLog() : openLog() },
@@ -3105,6 +3106,338 @@ setInterval(() => {                                // 1 s while you look at the 
   const onTab = state.tab === "bot" && !document.hidden, copilot = bl.d?.running && bl.d?.bot_mode === "copilot";
   if (onTab || (copilot && bl.t % 3 === 0) || bl.t % 10 === 0) loadBotLive();
   if (onTab) renderClock();
+}, 1000);
+
+/* ---------- Solana tab: meme-coin scanner, anti-rug gatekeeper, the ML models' debate, paper / live trades.
+   Backend: /api/sol/* (Chat A). Polls every 2 s while the tab is open (a WebSocket at /api/sol/ws pushes sooner when
+   the backend has one) and every 10 s elsewhere, so new trades still notify. ---------- */
+const SOL_MODEL = {                              // identity colours, checked for colour-blind separation on the panel colour
+  xgb: { name: "XGBoost", col: "#3987e5" }, lgbm: { name: "LightGBM", col: "#d95926" },
+  rf: { name: "RandomForest", col: "#199e70" }, cat: { name: "CatBoost", col: "#8c9098", dash: true },
+};
+const SOL_EXIT = { take_profit: "Take profit", trailing_stop: "Trailing stop", timeout: "20-min timeout", manual: "Closed by you", kill: "Panic sell" };
+const sol = { state: null, feed: [], pos: [], trades: [], pnl: null, sel: null, filter: "all", missing: false, busy: false, t: 0,
+              debate: null, debateKey: "", knownPos: null, knownTrades: null, ws: null, wsTried: 0 };
+const solPx = v => v == null || isNaN(v) ? "—" : Math.abs(v) >= 1 ? fmt(v, 4) : Number(v).toPrecision(4);
+const solSol = (v, d = 3) => v == null || isNaN(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`;
+const solPct = v => v == null || isNaN(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}%`;
+const solAge = m => m == null ? "—" : m < 60 ? `${Math.round(m)} min` : m < 1440 ? `${(m / 60).toFixed(1)} h` : `${(m / 1440).toFixed(1)} d`;
+const solTime = e => e ? new Date(e * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+const solUsd = v => v == null ? "—" : v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `$${(v / 1e3).toFixed(1)}k` : `$${Math.round(v)}`;
+const solShort = m => m ? `${m.slice(0, 4)}…${m.slice(-4)}` : "";
+const solModels = o => Object.keys(SOL_MODEL).filter(k => o?.[`${k}_prob`] != null);
+
+function openSol() { loadSol(true); solSocket(); }
+async function loadSol(all = false) {
+  if (sol.busy) return; sol.busy = true;
+  try {
+    const st = await api("/api/sol/state");
+    sol.state = st; sol.missing = false;
+    const [feed, pos, pnl] = await Promise.all([api("/api/sol/feed?limit=150"), api("/api/sol/positions"), api("/api/sol/pnl")]);
+    sol.feed = feed || []; sol.pos = pos || []; sol.pnl = pnl;
+    if (all || sol.t % 5 === 0 || !sol.knownTrades) sol.trades = await api("/api/sol/trades?limit=200") || [];
+    solNotify(); renderSol();
+  } catch (e) {
+    if (e.status === 404) { sol.missing = true; renderSol(); }
+    else if (state.tab === "sol") $("#sol-status").textContent = `Can't reach the Solana engine: ${e.message}`;
+  }
+  sol.busy = false;
+}
+function solSocket() {                           // optional push; the 2 s poll covers everything without it
+  if (sol.ws || sol.missing || Date.now() - sol.wsTried < 30000) return;
+  sol.wsTried = Date.now();
+  try {
+    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/sol/ws`);
+    ws.onmessage = e => { try { const m = JSON.parse(e.data); if (m.type === "debate" && m.data?.mint === sol.sel) { sol.debate = m.data; renderSolDebate(); } else loadSol(); } catch (err) {} };
+    ws.onclose = () => { sol.ws = null; }; ws.onerror = () => { try { ws.close(); } catch (err) {} };
+    sol.ws = ws;
+  } catch (e) { sol.ws = null; }
+}
+/* the crew: one small avatar per model at the top of the tab. Idle they type at a laptop; when a model makes points it
+   turns green for 2 s and dollar signs drop over its eyes, shake and fall; then it goes back to typing. */
+const BOT_FACE = `<svg viewBox="0 0 64 64" aria-hidden="true">
+  <circle class="bf-bg" cx="32" cy="32" r="30"/>
+  <g class="bf-body"><line x1="32" y1="15" x2="32" y2="9" class="bf-ant"/><circle cx="32" cy="8" r="2.4" class="bf-tip"/>
+    <rect x="17" y="15" width="30" height="22" rx="9" class="bf-head"/>
+    <g class="bf-eyes"><circle cx="26.5" cy="26" r="2.7"/><circle cx="37.5" cy="26" r="2.7"/></g>
+    <g class="bf-cash"><text x="26.5" y="29.5">$</text><text x="37.5" y="29.5">$</text></g></g>
+  <path d="M19 38h26l2 9H17z" class="bf-lid"/><rect x="21" y="40" width="22" height="1.6" rx=".8" class="bf-glow"/>
+  <rect x="13" y="47" width="38" height="4" rx="2" class="bf-base"/>
+  <rect x="21" y="44" width="7" height="5" rx="2.5" class="bf-hand l"/><rect x="36" y="44" width="7" height="5" rx="2.5" class="bf-hand r"/>
+</svg>`;
+function crewBots() {                            // the backend's bots[], else a stand-in from what the tab already knows
+  const st = sol.state || {};
+  if (Array.isArray(st.bots) && st.bots.length) return st.bots.filter(b => SOL_MODEL[b.model]);
+  const d = sol.feed.find(r => r.status === "passed" && r.ensemble), open = sol.pos[0];
+  const doing = !st.scanner?.running ? "resting" : open ? `trading ${open.symbol}` : d ? `debating ${d.symbol}` : "watching";
+  const ms = d ? solModels(d.ensemble) : ["xgb", "lgbm", "rf"];
+  return ms.map(m => ({ model: m, score: null, doing }));
+}
+function renderCrew() {
+  const box = $("#sol-crew"), bots = crewBots(), sig = bots.map(b => b.model).join(",");
+  if (box._sig !== sig) {
+    box._sig = sig;
+    box.innerHTML = bots.map(b => `<div class="bot-pf" data-model="${b.model}" style="--c:${SOL_MODEL[b.model].col}">
+        <span class="bot-score num" title="${SOL_MODEL[b.model].name}'s points for being right"></span>
+        <div class="bot-av">${BOT_FACE}</div>
+        <div class="bot-meta"><b>${SOL_MODEL[b.model].name}</b><span class="bot-doing"></span></div></div>`).join("")
+      + `<span class="crew-total num" title="All the models' points together"></span>`;
+  }
+  let total = 0, known = false;
+  bots.forEach(b => {
+    const el = box.querySelector(`.bot-pf[data-model="${b.model}"]`); if (!el) return;
+    const sc = el.querySelector(".bot-score"), txt = b.score == null ? "–" : `${b.score >= 0 ? "+" : "−"}${Math.abs(Math.round(b.score))}`;
+    if (sc.textContent !== txt) sc.textContent = txt;
+    sc.classList.toggle("up", b.score > 0); sc.classList.toggle("down", b.score < 0);
+    if (b.score != null) { total += b.score; known = true; }
+    const dn = el.querySelector(".bot-doing"); if (dn.textContent !== (b.doing || "")) dn.textContent = b.doing || "";
+    el.classList.toggle("resting", b.doing === "resting");
+    const prev = sol.lastWin?.[b.model];
+    if (b.last_win && prev != null && b.last_win > prev) crewWin(b.model);
+    (sol.lastWin ||= {})[b.model] = b.last_win || 0;
+  });
+  box.querySelector(".crew-total").textContent = known ? `Σ ${total >= 0 ? "+" : "−"}${Math.abs(Math.round(total))} pts` : "Σ – pts";
+}
+function crewWin(model) {                        // green for 2 s, dollar-sign eyes, then back to typing
+  const el = $(`#sol-crew .bot-pf[data-model="${model}"]`); if (!el) return;
+  el.classList.remove("win"); void el.offsetWidth; el.classList.add("win");
+  clearTimeout(el._winT); el._winT = setTimeout(() => el.classList.remove("win"), 2000);
+}
+function solNotify() {                           // a trade opened or closed: a notification and the usual sounds
+  const ids = new Set(sol.pos.map(p => p.id)), tids = new Set(sol.trades.map(t => t.id));
+  if (sol.knownPos) sol.pos.filter(p => !sol.knownPos.has(p.id)).forEach(p => {
+    notify({ kind: "info", title: `Solana: bought ${p.symbol} (${p.mode})`, body: `${p.size_sol} SOL at ${solPx(p.entry_price)}`, onClick: () => showTab("sol") });
+    playEvent("botOpen");
+  });
+  if (sol.knownTrades) sol.trades.filter(t => !sol.knownTrades.has(t.id)).forEach(t => {
+    notify({ kind: t.pnl_sol >= 0 ? "tp" : "sl", title: `Solana: closed ${t.symbol} (${t.mode})`, body: `${SOL_EXIT[t.exit_reason] || t.exit_reason || "closed"} · ${solPct(t.pnl_pct)}`, amount: t.pnl_sol, onClick: () => showTab("sol") });
+    playEvent(t.pnl_sol >= 0 ? "profit" : "loss");
+    if (t.pnl_sol > 0 && !sol.state?.bots?.length) crewBots().forEach(b => crewWin(b.model));
+  });
+  sol.knownPos = ids; if (sol.trades.length || sol.knownTrades) sol.knownTrades = tids;
+}
+function renderSol() {
+  const miss = $("#sol-missing"); miss.hidden = !sol.missing;
+  $$("#tab-sol > :not(#sol-missing):not(#sol-crew)").forEach(el => el.hidden = sol.missing);
+  renderCrew();
+  if (sol.missing) {
+    setHTML(miss, `<div class="empty-state">${ICON.bot}<div><b>The Solana engine isn't installed yet</b>This tab shows the meme-coin scanner, the rug filter, the models' debate and your paper or live trades. It lights up by itself once the backend (<code>/api/sol/*</code>) is in; Chat A has the full spec.</div></div>`);
+    return;
+  }
+  renderSolCtl(); renderSolFeed(); renderSolBrain(); renderSolPort();
+}
+
+/* top bar: scanner, mode, auto-trade, dataset and training with one progress bar */
+function renderSolCtl() {
+  const st = sol.state || {}, sc = st.scanner || {}, m = st.model || {};
+  const ago = sc.last_scan ? Math.max(0, Math.round(Date.now() / 1000 - sc.last_scan)) : null;
+  $("#sol-status").textContent = sc.error ? `Scanner stopped: ${sc.error}` : `${sc.running ? "Scanning" : "Scanner off"} · ${(sc.scanned ?? 0).toLocaleString()} checked · ${(sc.passed ?? 0).toLocaleString()} passed the rug filter · ${(sc.blocked ?? 0).toLocaleString()} blocked${ago != null ? ` · last scan ${ago < 90 ? ago + " s" : Math.round(ago / 60) + " min"} ago` : ""}`;
+  const scan = $("#sol-scan"); scan.textContent = sc.running ? "Stop scanner" : "Start scanner"; scan.classList.toggle("primary", !sc.running); scan.classList.toggle("danger-outline", !!sc.running);
+  $$("#sol-mode .seg-opt").forEach(b => { const on = b.dataset.mode === (st.mode || "paper"); b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); });
+  $("#tab-sol").classList.toggle("is-live", st.mode === "live");
+  if (!sol.autoHeld || Date.now() - sol.autoHeld > 3000) $("#sol-auto").checked = !!st.auto_trade;
+  const tr = st.training || {}, ds = st.dataset || {}, job = tr.running ? { ...tr, what: "Training" } : ds.running ? { ...ds, what: "Building dataset" } : null;
+  $("#sol-train").disabled = !!tr.running; $("#sol-dataset").disabled = !!ds.running;
+  $("#sol-train").textContent = tr.running ? "Training…" : "Train Parallel Ensemble";
+  const pr = $("#sol-progress"), err = tr.error || ds.error;
+  pr.hidden = !job && !err;
+  if (job) { $("#sol-prog-bar").style.width = `${Math.round((job.progress || 0) * 100)}%`; $("#sol-prog-txt").textContent = `${job.what}: ${job.stage || ""} · ${Math.round((job.progress || 0) * 100)}%${job.what === "Building dataset" && ds.wallets_checked != null ? ` · ${ds.wallets_skilled ?? 0} of ${ds.wallets_checked} wallets skilled, ${ds.samples ?? 0} trades` : ""}`; pr.classList.remove("err"); }
+  else if (err) { $("#sol-prog-bar").style.width = "0"; $("#sol-prog-txt").textContent = err; pr.classList.add("err"); }
+  const apis = st.apis || {}, dot = (k, label) => `<span class="sol-api ${apis[k] === true ? "ok" : apis[k] === false ? "bad" : ""}" title="${label}: ${apis[k] === true ? "reachable" : apis[k] === false ? "not reachable" : "not checked yet"}"><i></i>${label}</span>`;
+  const met = m.metrics || {};
+  const model = m.loaded ? `<span class="sol-chip${m.synthetic ? " warn" : ""}" title="${m.synthetic ? "Trained on synthetic demo data: live mode stays locked" : "The saved ensemble (models/super_ensemble.joblib)"}">Model ${m.method === "voting" ? "soft vote" : "stacked"} · ${m.n_samples?.toLocaleString() ?? "?"} trades${met.auc != null ? ` · AUC ${(+met.auc).toFixed(2)}` : ""}${m.device ? ` · ${m.device === "cuda" ? "GPU" : "CPU"}` : ""}${m.trained_at ? ` · ${String(m.trained_at).slice(0, 16).replace("T", " ")}` : ""}${m.synthetic ? " · demo data" : ""}</span>`
+    : `<span class="sol-chip warn">No model yet: Build dataset, then Train</span>`;
+  const w = st.wallet || {}, money = st.mode === "live" ? (w.key_loaded ? `<span class="sol-chip" title="${esc(w.pubkey || "")}">Wallet ${solShort(w.pubkey)} · ${w.sol_balance != null ? (+w.sol_balance).toFixed(3) + " SOL" : "balance —"}</span>` : `<span class="sol-chip warn">No wallet key in .env</span>`)
+    : `<span class="sol-chip">Paper balance ${st.paper?.balance_sol != null ? (+st.paper.balance_sol).toFixed(3) : "—"} SOL</span>`;
+  const c = st.config || {};
+  setHTML($("#sol-chips"), `${model}${money}<span class="sol-chip" title="Exits: take profit, trailing stop, timeout">TP +${c.tp_pct ?? 30}% · trail −${c.trail_pct ?? 10}% · ${c.timeout_min ?? 20} min · ${c.trade_size_sol ?? "?"} SOL a trade</span><span class="sol-apis">${dot("dexscreener", "DexScreener")}${dot("rugcheck", "RugCheck")}${dot("helius", "Helius")}${dot("jupiter", "Jupiter")}</span>`);
+}
+$("#sol-scan").onclick = async () => {
+  const run = !sol.state?.scanner?.running;
+  try { await api("/api/sol/scanner", { method: "POST", body: { run } }); toast(run ? "Scanner started: every new coin goes through the rug filter first." : "Scanner stopped. Open trades keep their exits."); } catch (e) { toast(e.message, true); }
+  loadSol();
+};
+$("#sol-mode").addEventListener("click", async e => {
+  const b = e.target.closest("[data-mode]"); if (!b || b.classList.contains("on")) return;
+  if (b.dataset.mode === "live") {
+    const dlg = $("#sol-live-dlg"), inp = $("#sol-live-input"); inp.value = ""; $("#sol-live-ok").disabled = true; dlg.showModal(); inp.focus();
+    const ok = await new Promise(res => { dlg.onclose = () => res(dlg.returnValue === "ok"); });
+    if (!ok) return;
+    try { await api("/api/sol/mode", { method: "POST", body: { mode: "live", confirm: "LIVE" } }); toast("Live wallet mode: BUY verdicts now spend real SOL."); } catch (err) { toast(err.message, true); }
+  } else {
+    try { await api("/api/sol/mode", { method: "POST", body: { mode: "paper" } }); toast("Paper mode: trades are simulated with live Jupiter quotes."); } catch (err) { toast(err.message, true); }
+  }
+  loadSol();
+});
+$("#sol-live-input").addEventListener("input", e => $("#sol-live-ok").disabled = e.target.value.trim().toUpperCase() !== "LIVE");
+$("#sol-live-input").addEventListener("keydown", e => { if (e.key !== "Enter") return; e.preventDefault(); if (!$("#sol-live-ok").disabled) $("#sol-live-dlg").close("ok"); });
+$("#sol-auto").onchange = async e => {
+  const on = e.target.checked; sol.autoHeld = Date.now();
+  try { await api("/api/sol/autotrade", { method: "POST", body: { on } }); toast(on ? "Auto-trade on: a BUY verdict from the debate opens a trade." : "Auto-trade off: the scanner and the debate still run; nothing is bought."); } catch (err) { toast(err.message, true); e.target.checked = !on; }
+};
+$("#sol-train").onclick = async () => {
+  try { await api("/api/sol/train", { method: "POST", body: {} }); toast("Training XGBoost, LightGBM and RandomForest in parallel, then the stacker."); } catch (e) { toast(e.message, true); }
+  loadSol();
+};
+$("#sol-dataset").onclick = async () => {
+  try { await api("/api/sol/dataset", { method: "POST", body: {} }); toast("Building the dataset: checking wallets against the four skill rules."); } catch (e) { toast(e.message, true); }
+  loadSol();
+};
+
+/* live scanner & rug blocker feed */
+function renderSolFeed() {
+  const rows = sol.feed.filter(r => sol.filter === "all" || r.status === sol.filter), tb = $("#sol-feed tbody");
+  const p = sol.feed.filter(r => r.status === "passed").length;
+  $("#sol-feed-meta").textContent = sol.feed.length ? `${sol.feed.length} newest · ${p} passed · ${sol.feed.length - p} blocked` : "";
+  setHTML(tb, rows.map(r => {
+    const gate = r.status === "passed" ? `<span class="sol-gate ok">✓ Passed</span>` : r.status === "blocked" ? `<span class="sol-gate bad">✕ Blocked</span>` : `<span class="sol-gate">! Error</span>`;
+    const why = r.status === "passed" ? (r.debate ? `<span class="sol-verdict ${r.debate.verdict === "BUY" ? "buy" : ""}">${r.debate.verdict === "BUY" ? "BUY" : "PASS"} after debate · ${Math.round((r.debate.consensus ?? 0) * 100)}%</span>` : r.ensemble ? `<span class="sol-verdict ${r.ensemble.signal === "BUY" ? "buy" : ""}">${r.ensemble.signal} · ${Math.round(r.ensemble.ensemble_score * 100)}%</span>` : `<span class="muted">waiting for the model</span>`)
+      : esc((r.reasons || []).join(" · ") || "—");
+    return `<tr data-mint="${esc(r.mint)}" class="${r.mint === sol.sel ? "sel" : ""}${r.status === "passed" ? " pick" : ""}"><td>${solTime(r.seen)}</td><td class="sol-tok" title="${esc(r.name || "")} ${esc(r.mint)}"><b>${esc(r.symbol || "?")}</b><span class="muted">${solShort(r.mint)}</span></td>
+      <td>${solUsd(r.liquidity_usd)}</td><td>${solAge(r.age_min)}</td><td>${r.buys_5m ?? "—"}/${r.sells_5m ?? "—"}</td><td>${gate}</td><td class="sol-why">${why}</td></tr>`;
+  }).join("") || `<tr><td colspan="7" class="muted sol-empty">${sol.feed.length ? "Nothing in this filter." : "Start the scanner: every new Solana coin shows up here, and only the ones that pass all six rug rules reach the models."}</td></tr>`);
+}
+$("#sol-feed").addEventListener("click", e => {
+  const tr = e.target.closest("tr[data-mint]"); if (!tr) return;
+  const r = sol.feed.find(x => x.mint === tr.dataset.mint);
+  if (r?.status !== "passed") { toast(`${r?.symbol || "This coin"} was blocked by the rug filter, so the models never saw it.`); return; }
+  sol.sel = r.mint; renderSolFeed(); renderSolBrain();
+});
+$("#sol-filter").addEventListener("click", e => {
+  const b = e.target.closest("[data-f]"); if (!b) return;
+  sol.filter = b.dataset.f; $$("#sol-filter .seg-opt").forEach(x => x.classList.toggle("on", x === b)); renderSolFeed();
+});
+
+/* ensemble brain: each model's probability, the combined verdict, then the debate */
+function renderSolBrain() {
+  const passed = sol.feed.filter(r => r.status === "passed" && r.ensemble);
+  const r = passed.find(x => x.mint === sol.sel) || passed[0];
+  if (r && r.mint !== sol.sel) sol.sel = r.mint;
+  const c = sol.state?.config || {}, floor = c.model_floor ?? 0.65, need = c.buy_threshold ?? 0.78;
+  if (!r) {
+    $("#sol-brain-tok").textContent = "";
+    setHTML($("#sol-bars"), `<p class="muted small sol-empty">Pick a coin that passed the rug filter to see what each model thinks.</p>`);
+    setHTML($("#sol-debate"), ""); $("#sol-debate-meta").textContent = ""; return;
+  }
+  const e = r.ensemble;
+  $("#sol-brain-tok").innerHTML = `<b>${esc(r.symbol)}</b> · ${solShort(r.mint)}${e.latency_ms != null ? ` · ${(+e.latency_ms).toFixed(1)} ms` : ""}`;
+  const bar = (label, col, p, tick, dash) => `<div class="sol-bar"><span class="sol-bar-name"><i style="background:${col}"${dash ? ' class="dash"' : ""}></i>${label}</span>
+      <div class="sol-track" title="${label}: ${(p * 100).toFixed(1)}%"><b style="width:${Math.max(0, Math.min(100, p * 100))}%;background:${col}"></b><u style="left:${tick * 100}%" title="${tick === need ? "BUY needs the combined score here" : "every model must be at least here"}"></u></div>
+      <span class="sol-bar-val num">${(p * 100).toFixed(1)}%</span></div>`;
+  const buy = e.signal === "BUY";
+  setHTML($("#sol-bars"), solModels(e).map(k => bar(SOL_MODEL[k].name, SOL_MODEL[k].col, e[`${k}_prob`], floor, SOL_MODEL[k].dash)).join("")
+    + `<div class="sol-bar sol-bar-total">${bar("Combined ensemble", "var(--gold)", e.ensemble_score, need).replace('<div class="sol-bar">', "").replace(/<\/div>$/, "")}</div>
+    <div class="sol-verdict-row"><span class="sol-verdict big ${buy ? "buy" : ""}">${buy ? "✓ BUY" : "– PASS"}</span><span class="muted small">${buy ? `Combined ${Math.round(e.ensemble_score * 100)}% ≥ ${Math.round(need * 100)}% and every model ≥ ${Math.round(floor * 100)}%` : `BUY needs the combined score ≥ ${Math.round(need * 100)}% and every model ≥ ${Math.round(floor * 100)}%`}</span></div>`);
+  const key = `${r.mint}|${r.debate?.rounds ?? ""}|${r.debate?.verdict ?? ""}`;
+  if (key !== sol.debateKey) { sol.debateKey = key; loadSolDebate(r.mint); }
+}
+async function loadSolDebate(mint) {
+  try { const d = await api(`/api/sol/debate/${encodeURIComponent(mint)}`); if (mint !== sol.sel) return; sol.debate = d; }
+  catch (e) { sol.debate = e.status === 404 ? null : { error: e.message }; }
+  renderSolDebate();
+}
+function renderSolDebate() {
+  const d = sol.debate, box = $("#sol-debate");
+  if (!d || d.error || !d.rounds?.length) {
+    $("#sol-debate-meta").textContent = "";
+    setHTML(box, `<p class="muted small sol-empty">${d?.error ? esc(d.error) : "No debate for this coin yet. Every coin that passes the rug filter gets one: the models state their case, move toward each other round by round, and only trade if they agree."}</p>`);
+    return;
+  }
+  const k = d.consensus || {}, rs = d.rounds, models = [...new Set(rs.flatMap(r => r.stances.map(s => s.model)))].filter(m => SOL_MODEL[m]);
+  $("#sol-debate-meta").textContent = `${rs.length - 1} round${rs.length === 2 ? "" : "s"} · ${k.agreed ? "they agreed" : "no deal"}${d.time ? ` · ${solTime(d.time)}` : ""}`;
+  const c = sol.state?.config || {}, floor = c.model_floor ?? 0.65, need = c.buy_threshold ?? 0.78;
+  const series = models.map(m => ({ key: m, name: SOL_MODEL[m].name, col: SOL_MODEL[m].col, dash: SOL_MODEL[m].dash, pts: rs.map(r => ({ x: r.n, y: r.stances.find(s => s.model === m)?.prob })) }));
+  const said = (r, i) => `<div class="sol-round${i === 0 || i === rs.length - 1 ? "" : " mid"}"><span class="sol-round-n">${i === 0 ? "Opening" : i === rs.length - 1 ? "Final" : `Round ${r.n}`}</span>
+      ${r.stances.filter(s => SOL_MODEL[s.model]).map(s => `<div class="sol-say"><span class="sol-who"><i style="background:${SOL_MODEL[s.model].col}"></i>${SOL_MODEL[s.model].name}</span><span class="sol-stance ${s.stance === "BUY" ? "buy" : ""}">${s.stance === "BUY" ? "BUY" : "PASS"} ${(s.prob * 100).toFixed(0)}%</span><span class="sol-says">${esc(s.says || "")}${s.moved ? ` <em class="muted">(${s.moved > 0 ? "+" : "−"}${Math.abs(s.moved * 100).toFixed(1)} pts)</em>` : ""}</span></div>`).join("")}</div>`;
+  const cp = k.compromise;
+  setHTML(box, `<div class="sol-conv" id="sol-conv"></div>
+    <div class="sol-deal ${k.verdict === "BUY" ? "buy" : ""}"><b>${k.verdict === "BUY" ? "✓ Deal: BUY" : k.agreed ? "– Agreed: PASS" : "✕ No deal: PASS"}</b>
+      <span>Consensus ${Math.round((k.score ?? 0) * 100)}% · spread ${((k.spread ?? 0) * 100).toFixed(1)} pts</span>
+      ${cp ? `<span class="sol-comp">Compromise: ${cp.size_sol != null ? `${cp.size_sol} SOL` : ""}${cp.size_pct != null ? ` (${Math.round(cp.size_pct)}% of a normal trade)` : ""}${cp.tp_pct != null ? ` · TP +${cp.tp_pct}%` : ""}${cp.trail_pct != null ? ` · trail −${cp.trail_pct}%` : ""}${cp.note ? `. ${esc(cp.note)}` : ""}</span>` : ""}</div>
+    <div class="sol-transcript">${rs.map(said).join("")}${rs.length > 2 ? `<button class="btn xs sol-more" type="button">Show all ${rs.length - 2} middle rounds</button>` : ""}</div>`);
+  const lo = Math.min(0.4, ...series.flatMap(s => s.pts.map(p => p.y ?? 1))) - 0.03;
+  solChart($("#sol-conv"), series, { xLabel: n => n === 0 ? "open" : `R${n}`, yMin: Math.max(0, lo), yMax: 1, yFmt: v => `${Math.round(v * 100)}%`, refs: [{ y: need, label: `BUY ${Math.round(need * 100)}%` }, { y: floor, label: `floor ${Math.round(floor * 100)}%` }], endLabels: true, height: 150 });
+}
+$("#sol-debate").addEventListener("click", e => { if (!e.target.closest(".sol-more")) return; $("#sol-debate .sol-transcript").classList.add("all"); e.target.remove(); });
+
+/* portfolio: stats, the P/L chart, open trades with panic sell, closed trades */
+function renderSolPort() {
+  const p = sol.pnl || {}, st = sol.state || {};
+  const openSol = sol.pos.reduce((s, x) => s + (x.pnl_sol || 0), 0);
+  $("#sol-port-meta").textContent = `${sol.pos.length} open${st.config?.max_open ? ` of ${st.config.max_open}` : ""}`;
+  const tile = (k, v, cls2 = "", sub = "") => `<div class="sol-stat"><span>${k}</span><b class="num ${cls2}">${v}</b>${sub ? `<small class="muted">${sub}</small>` : ""}</div>`;
+  const wr = p.win_rate != null ? p.win_rate : (p.wins + p.losses ? p.wins / (p.wins + p.losses) : null);
+  setHTML($("#sol-stats"), tile("Realized P/L", `${solSol(p.realized_sol)} SOL`, cls(p.realized_sol))
+    + tile("Win rate", wr == null ? "—" : `${Math.round((wr > 1 ? wr / 100 : wr) * 100)}%`, "", `${p.wins ?? 0} won · ${p.losses ?? 0} lost`)
+    + tile("Open P/L", `${solSol(p.open_sol ?? openSol)} SOL`, cls(p.open_sol ?? openSol), `${sol.pos.length} open`)
+    + tile(st.mode === "live" ? "Wallet" : "Paper balance", `${(st.mode === "live" ? st.wallet?.sol_balance : st.paper?.balance_sol) != null ? (+(st.mode === "live" ? st.wallet.sol_balance : st.paper.balance_sol)).toFixed(3) : "—"} SOL`));
+  const pts = (p.points || []).map(q => ({ x: q.t, y: q.cum_sol }));
+  if (pts.length > 1) solChart($("#sol-pnl"), [{ key: "pnl", name: "Realized P/L", col: "var(--gold)", pts }], { time: true, zero: true, yFmt: v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`, xLabel: t => new Date(t * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }), height: 150, unit: " SOL", noDots: true });
+  else setHTML($("#sol-pnl"), `<p class="muted small sol-empty">The P/L line starts with the first closed trade.</p>`);
+  const now = Date.now() / 1000;
+  setHTML($("#sol-pos tbody"), sol.pos.map(x => `<tr data-id="${x.id}"><td class="sol-tok"><b>${esc(x.symbol)}</b><span class="muted">${solShort(x.mint)}</span></td><td><span class="tag ${x.mode === "live" ? "real" : ""}">${x.mode}</span></td>
+      <td>${x.size_sol} SOL</td><td>${solPx(x.entry_price)}</td><td>${solPx(x.last_price)}</td><td class="${cls(x.pnl_pct)}"><b>${solPct(x.pnl_pct)}</b> <span class="muted">${solSol(x.pnl_sol, 4)}</span></td>
+      <td title="Trailing stop, from the entry">${x.stop_pct != null ? solPct(x.stop_pct) : "—"}</td><td>${x.timeout_at ? `${Math.max(0, Math.floor((x.timeout_at - now) / 60))}:${String(Math.max(0, Math.floor((x.timeout_at - now) % 60))).padStart(2, "0")}` : "—"}</td>
+      <td><button class="btn xs danger-outline" data-close="${x.id}" type="button">Panic sell</button></td></tr>`).join("")
+    || `<tr><td colspan="9" class="muted sol-empty">No open trades. A BUY verdict from the debate opens one (in ${st.mode === "live" ? "your wallet" : "paper"}); it closes at +${st.config?.tp_pct ?? 30}%, on the trailing stop or after ${st.config?.timeout_min ?? 20} minutes.</td></tr>`);
+  $("#sol-trades-meta").textContent = sol.trades.length ? `(${sol.trades.length})` : "";
+  setHTML($("#sol-trades tbody"), sol.trades.map(t => `<tr><td>${solTime(t.closed_at)}</td><td class="sol-tok"><b>${esc(t.symbol)}</b></td><td>${t.mode}</td><td>${t.size_sol} SOL</td><td>${solPx(t.entry_price)}</td><td>${solPx(t.exit_price)}</td>
+      <td class="${cls(t.pnl_pct)}">${solPct(t.pnl_pct)} <span class="muted">${solSol(t.pnl_sol, 4)}</span></td><td>${SOL_EXIT[t.exit_reason] || esc(t.exit_reason || "")}</td></tr>`).join("") || `<tr><td colspan="8" class="muted sol-empty">No closed trades yet.</td></tr>`);
+}
+$("#sol-pos").addEventListener("click", async e => {
+  const b = e.target.closest("[data-close]"); if (!b) return;
+  if (sol.state?.mode === "live" && !(await realCheck())) return;
+  b.disabled = true; b.textContent = "Selling…";
+  try { const r = await api(`/api/sol/positions/${b.dataset.close}/close`, { method: "POST", body: {} }); toast(`Closed at ${solPx(r.exit_price)} · ${solPct(r.pnl_pct)}`, (r.pnl_pct ?? 0) < 0); }
+  catch (err) { toast(err.message, true); b.disabled = false; b.textContent = "Panic sell"; }
+  loadSol(true);
+});
+
+/* one small line chart for the debate (rounds) and the P/L (time): recessive grid, 2 px lines, a crosshair tooltip */
+function solChart(el, series, o) {
+  const W = Math.max(260, el.clientWidth || 400), H = o.height || 150, L = 44, R = o.endLabels ? 96 : 12, T = 10, B = 22;
+  const xs = series.flatMap(s => s.pts.map(p => p.x)), ys = series.flatMap(s => s.pts.map(p => p.y)).filter(v => v != null);
+  if (!xs.length || !ys.length) { setHTML(el, ""); return; }
+  const x0 = Math.min(...xs), x1 = Math.max(...xs) || x0 + 1;
+  let y0 = o.yMin ?? Math.min(...ys), y1 = o.yMax ?? Math.max(...ys);
+  if (o.zero) { y0 = Math.min(y0, 0); y1 = Math.max(y1, 0); }
+  if (y1 - y0 < 1e-9) { y0 -= 0.5; y1 += 0.5; }
+  const pad = o.yMax != null ? 0 : (y1 - y0) * 0.08; y0 -= o.yMin != null ? 0 : pad; y1 += pad;
+  const X = v => L + (x1 === x0 ? 0.5 : (v - x0) / (x1 - x0)) * (W - L - R), Y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+  // with reference lines (the debate's BUY and floor levels) those are the axis ticks, so no label sits on the lines
+  const gv = o.refs?.length ? [y1, ...o.refs.map(r => r.y)] : [0, 0.5, 1].map(f => y0 + (y1 - y0) * f);
+  const grid = gv.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="g"/><text x="${L - 6}" y="${Y(v) + 3}" class="yl">${o.yFmt(v)}</text>`).join("");
+  const refs = (o.refs || []).map(r => `<line x1="${L}" x2="${W - R}" y1="${Y(r.y)}" y2="${Y(r.y)}" class="ref"><title>${r.label}</title></line><text x="${L - 6}" y="${Y(r.y) + 13}" class="rl yl">${r.label.split(" ")[0]}</text>`).join("");
+  const zero = o.zero ? `<line x1="${L}" x2="${W - R}" y1="${Y(0)}" y2="${Y(0)}" class="z"/>` : "";
+  const ticks = [...new Set(o.time ? [x0, (x0 + x1) / 2, x1] : xs)].map(v => `<text x="${X(v)}" y="${H - 6}" class="xl">${o.xLabel(v)}</text>`).join("");
+  const lines = series.map(s => {
+    const pts = s.pts.filter(p => p.y != null), d = pts.map((p, i) => `${i ? "L" : "M"}${X(p.x).toFixed(1)},${Y(p.y).toFixed(1)}`).join("");
+    const last = pts[pts.length - 1];
+    return `<path d="${d}" fill="none" stroke="${s.col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${s.dash ? ' stroke-dasharray="5 4"' : ""}/>`
+      + (o.noDots ? "" : pts.map(p => `<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="4" fill="${s.col}" stroke="var(--surface)" stroke-width="2"/>`).join(""))
+      + (o.endLabels && last ? `<text x="${X(last.x) + 8}" y="${Y(last.y) + 3}" class="el" data-y="${Y(last.y)}">${s.name}</text>` : "");
+  }).join("");
+  setHTML(el, `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="${esc(series.map(s => s.name).join(", "))}">${grid}${zero}${refs}${ticks}${lines}<line class="xh" y1="${T}" y2="${H - B}" x1="-10" x2="-10"/><rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}"/></svg><div class="sol-tip" hidden></div>`);
+  const svg = el.querySelector("svg"), tip = el.querySelector(".sol-tip"), xh = svg.querySelector(".xh");
+  // end labels: nudge apart so they never overlap
+  const labs = [...svg.querySelectorAll(".el")].sort((a, b) => a.dataset.y - b.dataset.y); let prev = -99;
+  labs.forEach(t => { const y = Math.max(+t.dataset.y + 3, prev + 12); t.setAttribute("y", y); prev = y; });
+  const uniq = [...new Set(xs)].sort((a, b) => a - b);
+  svg.querySelector(".hit").addEventListener("mousemove", ev => {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width);
+    const xv = uniq.reduce((best, v) => Math.abs(X(v) - px) < Math.abs(X(best) - px) ? v : best, uniq[0]);
+    xh.setAttribute("x1", X(xv)); xh.setAttribute("x2", X(xv));
+    setHTML(tip, `<b>${o.time ? new Date(xv * 1000).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" }) : o.xLabel(xv) === "open" ? "Opening statements" : `Round ${xv}`}</b>`
+      + series.map(s => { const p = s.pts.find(q => q.x === xv); return p?.y == null ? "" : `<span><i style="background:${s.col}"></i>${s.name}<em>${o.yFmt(p.y)}${o.unit || ""}</em></span>`; }).join(""));
+    tip.hidden = false; const left = X(xv) / W * r.width; tip.style.left = `${Math.min(r.width - tip.offsetWidth - 4, Math.max(4, left + 12))}px`;
+  });
+  svg.querySelector(".hit").addEventListener("mouseleave", () => { tip.hidden = true; xh.setAttribute("x1", -10); xh.setAttribute("x2", -10); });
+}
+setInterval(() => {                               // 2 s while the tab is open; 10 s elsewhere (trade notifications); 60 s without an engine
+  sol.t++;
+  const on = state.tab === "sol" && !document.hidden;
+  if (sol.missing ? sol.t % 60 === 0 : on ? sol.t % 2 === 0 : sol.t % 10 === 0) loadSol();
+  if (on && sol.pos.length) renderSolPort();       // the timeout countdown ticks every second
 }, 1000);
 
 /* ---------- boot ---------- */

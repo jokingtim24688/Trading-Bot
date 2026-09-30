@@ -25,6 +25,7 @@
   </div>
   <button class="rail-btn active" data-tab="bot" title="Bot: the live chart and what the bot is doing right now, co-pilot and full auto"><svg viewBox="0 0 24 24"><path d="M3.5 16a8.5 8.5 0 0 1 17 0"/><path d="M12 16l4.2-5"/><circle cx="12" cy="16" r="1.4"/><path d="M6.2 16h-.01M17.8 16h-.01"/></svg><span>Bot</span></button>
   <button class="rail-btn" data-tab="manual" title="Trade by hand"><svg viewBox="0 0 24 24"><path d="M7 17V7M7 7l-3 3M7 7l3 3M17 7v10M17 17l-3-3M17 17l3-3"/></svg><span>Manual</span></button>
+  <button class="rail-btn" data-tab="sol" title="Solana meme coins: rug filter, ML ensemble debate, paper and live trades"><svg viewBox="0 0 24 24"><path d="M7 6h13l-3 3H4zM4 10.5h13l3 3H7zM7 15h13l-3 3H4z"/></svg><span>Solana</span></button>
   <button class="rail-btn" data-tab="agent" title="Agent"><svg viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="11" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9 15.5h6"/></svg><span>Agent</span></button>
   <button class="rail-btn" data-tab="review" title="Review your trades and the bot's"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Review</span></button>
   <button class="rail-btn" data-tab="train" title="Train"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-3 3 2 5-6"/><circle cx="19" cy="8" r="1.5"/></svg><span>Train</span></button>
@@ -181,6 +182,59 @@
     </div>
   </section>
 
+
+  <!-- SOLANA: meme-coin scanner, anti-rug gatekeeper, ML ensemble that debates each trade, paper / live trades -->
+  <section id="tab-sol" class="tab">
+    <div class="sol-crew" id="sol-crew" aria-label="The models: score, what each is doing"></div>
+    <div id="sol-missing" class="panel sol-missing" hidden></div>
+    <div class="panel sol-ctl">
+      <div class="sol-ctl-top">
+        <div class="sol-title">
+          <h2>Solana meme coins</h2>
+          <span id="sol-status" class="muted small">Loading…</span>
+        </div>
+        <div class="sol-actions">
+          <button id="sol-scan" class="btn primary" type="button">Start scanner</button>
+          <div class="seg-row sol-mode" id="sol-mode" role="radiogroup" aria-label="Trading mode">
+            <button type="button" class="seg-opt on" data-mode="paper" role="radio" aria-checked="true">Paper</button>
+            <button type="button" class="seg-opt" data-mode="live" role="radio" aria-checked="false">Live wallet</button>
+          </div>
+          <label class="switch" title="When on, a BUY verdict from the debate opens a trade by itself"><input type="checkbox" id="sol-auto"><span>Auto-trade</span></label>
+          <button id="sol-dataset" class="btn" type="button" title="Find skilled wallets (Helius) and build training trades from them">Build dataset</button>
+          <button id="sol-train" class="btn" type="button">Train Parallel Ensemble</button>
+        </div>
+      </div>
+      <div class="sol-ctl-bottom">
+        <div class="sol-progress" id="sol-progress" hidden><div class="bar"><i id="sol-prog-bar"></i></div><span id="sol-prog-txt" class="muted small"></span></div>
+        <div class="sol-chips" id="sol-chips"></div>
+      </div>
+    </div>
+    <div class="sol-grid">
+      <div class="panel sol-feed-panel">
+        <div class="panel-head"><h3>Live scanner &amp; rug blocker</h3><span id="sol-feed-meta" class="muted small"></span></div>
+        <div class="seg-row sol-filter" id="sol-filter" role="radiogroup" aria-label="Show">
+          <button type="button" class="seg-opt on" data-f="all">All</button><button type="button" class="seg-opt" data-f="passed">Passed</button><button type="button" class="seg-opt" data-f="blocked">Blocked</button>
+        </div>
+        <div class="table-wrap sol-feed-wrap"><table id="sol-feed"><thead><tr><th>Seen</th><th>Token</th><th>Liquidity</th><th>Age</th><th>Buys/Sells 5m</th><th>Gate</th><th>Why</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="panel sol-brain">
+        <div class="panel-head"><h3>Ensemble brain</h3><span id="sol-brain-tok" class="muted small"></span></div>
+        <div id="sol-bars" class="sol-bars"></div>
+        <div class="panel-head sol-debate-head"><h3>The debate</h3><span id="sol-debate-meta" class="muted small"></span></div>
+        <div id="sol-debate" class="sol-debate"></div>
+      </div>
+    </div>
+    <div class="panel sol-port">
+      <div class="panel-head"><h3>Portfolio &amp; active trades</h3><span id="sol-port-meta" class="muted small"></span></div>
+      <div class="sol-port-grid">
+        <div class="sol-stats" id="sol-stats"></div>
+        <div class="sol-pnl" id="sol-pnl"></div>
+      </div>
+      <div class="table-wrap"><table id="sol-pos"><thead><tr><th>Token</th><th>Mode</th><th>Size</th><th>Entry</th><th>Now</th><th>P/L</th><th>Stop</th><th>Time left</th><th></th></tr></thead><tbody></tbody></table></div>
+      <details class="sol-trades"><summary>Closed trades <span id="sol-trades-meta" class="muted small"></span></summary>
+        <div class="table-wrap"><table id="sol-trades"><thead><tr><th>Closed</th><th>Token</th><th>Mode</th><th>Size</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Why</th></tr></thead><tbody></tbody></table></div></details>
+    </div>
+  </section>
 
   <!-- MANUAL TRADING -->
   <section id="tab-manual" class="tab">
@@ -733,6 +787,14 @@
 
 
 
+<dialog id="sol-live-dlg" class="dlg glass" aria-labelledby="sol-live-h">
+  <form method="dialog">
+    <h3 id="sol-live-h">Trade from your Solana wallet?</h3>
+    <p>Live mode signs real swaps with the key in your <code>.env</code> (it never leaves this PC). Meme coins can go to zero in minutes; the rug filter lowers that risk, it can't remove it. Every BUY verdict will spend real SOL.</p>
+    <label>Type LIVE to continue<input id="sol-live-input" autocomplete="off" spellcheck="false"></label>
+    <div class="dlg-btns"><button class="btn" value="cancel">Cancel</button><button class="btn danger" id="sol-live-ok" value="ok" disabled>Go live</button></div>
+  </form>
+</dialog>
 <dialog id="real-dlg" class="dlg glass" aria-labelledby="real-h">
   <form method="dialog">
     <h3 id="real-h">Trade real money?</h3>
