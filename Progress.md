@@ -1164,4 +1164,23 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Tests: 49 passed. Browser-tested at 1280x720 and 1440x900 (no scrolling, nothing cut off, also with the replay bar
   open), 0 page errors.
 
+### 2026-09-30 (Chat B): Solana trenching backend, Bongo Cat avatars, quiz schools, Telegram commands (7793203)
+- The user asked Chat B to do the backend itself ("no handoff, do it all in here"), and for the debate to be immediate
+  so the market can't move while the bots argue. New package `sol/` (map: graphify-out/wiki/sol.md):
+  rug filter (6 rules, fails closed), GeckoTerminal + RugCheck feeds, the model crew that splits to train and merges
+  into one bot file, a flattened RandomForest (identical answers; whole crew predicts in ~2.6 ms, was ~90 ms), the
+  debate (opening + at most 3 rounds, ~0.03 ms), main agents whose subagents can veto (Solana and MT5), paper trading
+  with TP / trailing stop / timeout, live Jupiter swaps signed locally (key only from .env, never returned).
+- Trenching research (Pump.fun "trenches": fresh launches, most die, take profit fast) -> a preloaded starter set so
+  the quiz trains at once, a downloader for real PumpSwap candles (+25 % before -12 % in 30 min), 2+ question creators
+  writing questions to disk with their own file positions (no RAM), quiz training with grades per model.
+- Quiz tab: Stocks / Trenching (Recommended) / Combined picker and a Trenching school panel. Settings: Telegram
+  /prof /loss /total /help (saved chat only). Debate panel shows the main agent's subagent check.
+- Avatars rebuilt to the user's spec: suited Bongo Cats in square frames for the main agents only (no subtext),
+  typing loop; profit = green fur + glow, arms up and waving, canvas $ rain, two $ locked on the eyes for 2 s, then
+  back to typing. "Preview animations" opens a 5-row board (each phase looping, Play, slow motion).
+- Rust: measured first; the slow part was the RandomForest (fixed in numpy), the rest is network time.
+- Sandbox: GeckoTerminal/RugCheck/Jupiter are blocked by the network policy here, so real downloads were not tested;
+  the downloader reports that and the starter set trains meanwhile. Tests: 58 passed (9 new in tests/test_sol.py).
+
 <!-- Chat B: add new entries above this line -->

@@ -13,6 +13,7 @@
 | Desktop app (tabs Market, Manual, Agent, Review, Train, Quiz, Hermes, Keys, Sounds, Settings) | [app.md](app.md) | `app/main.py`, `app/server.py`, `app/static/*` | B: static + window · A: server, jobs, settings |
 | Hermes assistant + memory | [hermes.md](hermes.md) | `app/brain.py`, `app/memory.py`, `app/tools.py`, `hermes/` | A |
 | M1 trading agent | [agent.md](agent.md) | `agent/run.py`, `agent/features.py`, `agent/model.py`, `agent/risk.py`, `agent/broker.py` | A |
+| Solana trenching bot (rug filter, model crew split/merge, instant debate, main agents + subagents, trenching quiz) | [sol.md](sol.md) | `sol/engine.py`, `sol/debate.py`, `sol/model.py`, `sol/agents.py`, `sol/trench.py` | B built it (2026-09-30, user asked) |
 | MT5 MCP bridge | [mcp.md](mcp.md) | `mcp_server/mt5_mcp.py` | A |
 | mt5-trading skill + Claude subagent | [skill.md](skill.md) | `.claude/skills/mt5-trading/`, `.claude/agents/mt5-m1-trader.md` | A |
 
@@ -100,4 +101,5 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-25: price dots on all charts (hover + drag), Manual acts on the first click, bot card last-hour reasons, trading hours, kill reset, version in Settings > About; see app.md "Dots, one-click Manual, bot card why".
 - 2026-09-25: Bot tab (default, full screen): live card, co-pilot proposals with Approve / Skip, symbol switch, clock in any time zone, points, gauge, pills; see app.md "Bot tab".
 - 2026-09-26: Market merged into the Bot tab (chart left, live card right, no SL on its chart), notifications below the Bot header; see app.md "Market merged into the Bot tab".
+- 2026-09-30: Solana trenching backend `sol/` (see [sol.md](sol.md)), Bongo Cat avatars + preview board, Quiz Stocks/Trenching/Combined, Telegram /prof /loss /total, MT5 main agent + subagents review (7793203).
 <!-- Chat B: add new lines above this marker -->

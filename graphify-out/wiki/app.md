@@ -236,3 +236,22 @@
 - Keys: Bot is "1"; `keys.normalize` maps a saved `tab.dash` key to `tab.bot`. `chart.realign` works on Bot.
 - Notifications: on the Bot tab the stack starts under its header (`body.on-bot`, `--notes-top` from `placeNotes()`);
   a card that pops up under a still pointer isn't held (`notePtr`), only one you move onto.
+
+## Solana tab, Bongo Cat crew, quiz schools, Telegram commands (2026-09-30, Chat B; backend in `sol/`, see sol.md)
+- Rail button `data-tab="sol"` (key `` ` ``), `#tab-sol`: `#sol-crew`, controls `.sol-ctl` (scanner, paper/live with
+  `#sol-live-dlg` typed LIVE, auto-trade, download, train, API chips), rug feed `#sol-feed`, ensemble brain `#sol-bars`,
+  debate `#sol-debate` (convergence chart `solChart`, deal box, `.sol-check` = main agent + subagents, transcript),
+  portfolio `#sol-stats`/`#sol-pnl`/`#sol-pos` (Panic sell)/`#sol-trades`. Data: `loadSol()` polls `/api/sol/*` every 2 s.
+- Avatars: `CAT_SVG` (suited Bongo Cat, viewBox 120) inside `.cat-box` (square frame + `canvas.cat-rain`). Shared SVG defs
+  at the top of `<body>` (`#cat-body-clip`, `#cat-keys`). Phases are classes on `.cat-box`: `p-drop` (0.6 s) ->
+  `p-shake` (0.3 s) -> `p-hold` (2 s) -> `p-back` (0.6 s), set by `catProfit(box)`; `catRain(box, ms)` draws the $ rain
+  and stops its rAF when empty; `--cs` slows every duration (board's slow motion). `renderCrew()` shows main agents only
+  (score top-left, total bottom-left, "Merged into one bot" / "Training: split" on the right); `crewWin(model)` plays
+  profit when `last_win` grows. Board: `#cat-board` dialog, `openCatBoard()`, rows `CAT_ROWS`, loops `catBoardLoop()`.
+  Reduced motion: green with $ eyes for 2 s, no rain or waving. `window.__cat` exposes the functions for tests.
+- Quiz tab: `#quiz-modes` (`.qm-opt[data-mode]`, "Recommended" under Trenching) -> `POST /api/quiz/mode`;
+  `applyQuizMode()` shows `#quiz-trench` and/or the stocks `.quiz-grid`; `loadTrench()` polls `/api/trench/state`,
+  `renderTrench()` (stats, train/download, progress, crew grades), `renderTrenchQ()` (a question from the bank).
+- Settings > Phone alerts: `telegram_commands` checkbox, `.tg-cmd-list`, `#tg-cmd-status` (from `/api/telegram/status`
+  `.commands`).
+

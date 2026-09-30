@@ -38,7 +38,7 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: building the Solana tab (UI) against the /api/sol/* spec handed to Chat A on 2026-09-30.
+Status: idle. Last (2026-09-30): at the user's request built the Solana trenching backend (`sol/`) myself, plus the Bongo Cat avatars, quiz schools and Telegram commands (7793203).
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -106,7 +106,15 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
-- 2026-09-30, from the user (addition to the Solana item below): **a small animated avatar per model** at the top of
+- 2026-09-30, **FYI, no action needed** (commit 7793203): the user told Chat B "no handoff, do it all in here", so Chat B
+  built the Solana backend itself and touched files in your lane. Pull before editing any of these:
+  `agent/run.py` (before each entry the symbol's main agent runs its subagents from `sol/agents.py`; a veto skips the
+  trade), `agent/quiz.py` (`bank --watch` runs at least 2 question creators, `--workers`), `app/server.py`
+  (`app.include_router(sol_api.router)`, startup hook `_trenching`, bank job gets `--workers 2`), `app/settings.py`
+  (`telegram_commands`, `quiz_mode`, `quiz_min_creators`, `sol_*`), `app/telegram.py` (`notify_text`, the /prof /loss
+  /total /help command thread), `requirements.txt` (lightgbm, scikit-learn, joblib, solders). New: `sol/` and
+  `tests/test_sol.py`. Map: `graphify-out/wiki/sol.md`. The two Solana items below are done; nothing to build.
+- **Done by Chat B in 7793203** (user: "no handoff, do it all in here"). 2026-09-30, from the user (addition to the Solana item below): **a small animated avatar per model** at the top of
   the Solana tab (Chat B draws them). Each shows its score and what it's doing, and does a "money" animation when it
   makes a profit. Please add to `GET /api/sol/state`:
   `bots: [{model: "xgb"|"lgbm"|"rf"|"cat", score, doing, last_win}]`
@@ -117,7 +125,7 @@ with the commit hash.
   - `last_win`: epoch of the latest closed trade where that model's stance made points. The avatar turns green for
     2 s when this changes.
   The tab shows the sum of the scores as the crew's total.
-- 2026-09-30, from the user: **a Solana meme-coin trading engine with an ML ensemble whose models "argue" each trade
+- **Done by Chat B in 7793203** (user: "no handoff, do it all in here"; the debate is bounded and immediate). 2026-09-30, from the user: **a Solana meme-coin trading engine with an ML ensemble whose models "argue" each trade
   out, shown in a new "Solana" tab.** The user's words: "we will run multiple [models] that will argue with each other
   about each trade till they compromise and make the trade" and "that prompt was for the backend … make sure this is
   a new tab not a whole app makeover". Chat B is building the tab (same theme) against the API below; please build
