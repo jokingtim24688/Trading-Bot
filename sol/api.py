@@ -165,6 +165,72 @@ def sol_close(pid: int):
     return {"id": pid, "exit_price": p.get("exit_px"), "pnl_pct": p.get("pnl_pct"), "pnl_sol": p.get("pnl_sol")}
 
 
+# ---------- one agent's profile (the expand button on its avatar) ----------
+_candles = {}
+
+
+def _candles_for(mint: str) -> list:
+    """1-minute candles of a coin's pool for a profile chart (cached 30 s: GeckoTerminal allows ~30 calls a minute)."""
+    pool = store.seen_snap(mint).get("pool")
+    if not pool:
+        return []
+    hit = _candles.get(pool)
+    if hit and time.time() - hit[0] < 30:
+        return hit[1]
+    cs = feeds.candles(pool, 120)
+    _candles[pool] = (time.time(), cs)
+    for k in sorted(_candles, key=lambda k: _candles[k][0])[:-40]:
+        _candles.pop(k, None)
+    return cs
+
+
+@router.get("/api/sol/agent/{name}")
+def sol_agent(name: str):
+    bots = {b["model"]: b for b in engine.bots_view()}
+    if name not in bots and name not in model.MEMBERS:
+        raise HTTPException(404, "No agent with that name.")
+    b = bots.get(name) or {"model": name, "score": 0, "trade_score": 0, "quiz_score": 0, "last_win": 0, "doing": ""}
+    ranked = sorted(bots.values(), key=lambda x: -(x.get("score") or 0))
+    rank = next((i + 1 for i, x in enumerate(ranked) if x["model"] == name), len(ranked) + 1)
+    c = engine.cfg()
+    vs = store.votes(name, 40)
+    opens = {p["id"]: p for p in store.positions("open")}
+    focus = next((v for v in vs if v["position_id"] in opens and v["stance"] == "BUY"), vs[0] if vs else None)
+    chart = None
+    if focus:
+        mint = focus["mint"]
+        trades = [p for p in list(opens.values()) + store.positions("closed", 60) if p["mint"] == mint]
+        marks = []
+        for p in trades:
+            marks.append({"t": p["opened"], "kind": "buy", "price": p["entry_px"], "text": "Bought"})
+            if p["status"] == "closed":
+                marks.append({"t": p["closed"], "kind": "sell", "price": p["exit_px"], "text": f"Sold {p['pnl_pct']:+.0f}%"})
+        live = opens.get(focus["position_id"])
+        chart = {"mint": mint, "symbol": focus["symbol"], "markers": sorted(marks, key=lambda m: m["t"]),
+                 "candles": [r[:5] for r in _candles_for(mint)],
+                 "position": None if not live else {"entry": live["entry_px"], "last": live["last_px"],
+                                                     "pnl_pct": live.get("pnl_pct"), "tp_pct": live["tp_pct"]}}
+    meta = model.meta().get("metrics") or {}
+    status = lambda v: ("open" if v["position_id"] in opens else "closed" if v["closed"] else
+                        "traded" if v["position_id"] else "passed")          # noqa: E731
+    return {
+        "model": name, "score": b.get("score"), "trade_score": b.get("trade_score"), "quiz_score": b.get("quiz_score"),
+        "last_win": b.get("last_win"), "rank": rank, "of": len(ranked), "doing": b.get("doing"),
+        "stats": store.vote_stats(name),
+        "confidence": {"last": vs[0]["final_prob"] if vs else None, "last_symbol": vs[0]["symbol"] if vs else None,
+                       "last_stance": vs[0]["stance"] if vs else None, "need": c["buy_threshold"], "floor": c["model_floor"],
+                       "series": [{"t": v["t"], "p": v["final_prob"], "open": v["open_prob"], "symbol": v["symbol"],
+                                   "stance": v["stance"]} for v in reversed(vs)]},
+        "activity": [{**{k: v[k] for k in ("t", "symbol", "mint", "stance", "open_prob", "final_prob", "verdict",
+                                            "position_id", "points")},
+                      "pnl_pct": v["pnl_pct"] if v["closed"] else (opens[v["position_id"]].get("pnl_pct")
+                                                                    if v["position_id"] in opens else None),
+                      "status": status(v)} for v in vs[:25]],
+        "chart": chart,
+        "model_info": {"auc": (meta.get("members") or {}).get(name), "weight": (meta.get("weights") or {}).get(name)},
+    }
+
+
 # ---------- trenching quiz ----------
 @router.get("/api/trench/state")
 def trench_state():

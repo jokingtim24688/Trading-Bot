@@ -28,6 +28,11 @@ config, `bots[]`, `crew{merged,training}`, `debate{max_rounds,last_ms}`), `GET /
 `GET /api/sol/trades`, `GET /api/sol/pnl`, `POST /api/sol/scanner {run}`, `/autotrade {on}`, `/mode {mode, confirm:"LIVE"}`,
 `/train`, `/dataset`, `/positions/{id}/close`. Trenching quiz: `GET /api/trench/state`, `GET /api/trench/question`,
 `POST /api/trench/train`, `POST /api/trench/download`, `POST /api/quiz/mode {stocks|trenching|combined}`. `GET /api/agents`.
+Agent profile: `GET /api/sol/agent/{model}` (score split, rank, `stats` from the votes table, `confidence{last, need,
+floor, series}`, `activity[]` with open/closed/passed status, points and P/L, `chart{symbol, candles, markers,
+position}` for the coin it's on (candles from GeckoTerminal, cached 30 s), `model_info{auc, weight}`).
+Votes: `store.votes` table, one row per model per debate (`record_votes` in `evaluate`, `link_votes` when the trade
+opens, `settle_votes` on close = the points each model gets).
 
 ## Settings (app/settings.py)
 `quiz_mode` (default trenching), `quiz_min_creators` (2), `telegram_commands` (True), `sol_trade_size_sol` 0.1,

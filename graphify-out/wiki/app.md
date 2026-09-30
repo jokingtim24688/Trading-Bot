@@ -255,3 +255,12 @@
 - Settings > Phone alerts: `telegram_commands` checkbox, `.tg-cmd-list`, `#tg-cmd-status` (from `/api/telegram/status`
   `.commands`).
 
+## Agent profiles (2026-09-30, Chat B)
+- Each crew avatar has `.cat-expand` (bottom right of its `.cat-box`, `EXPAND_ICON`) -> `openProfile(model)` toggles
+  `#crew-profile` (grid-rows 0fr -> 1fr) under the crew; `prof` state; `loadProfile()` polls `/api/sol/agent/{model}`
+  every 3 s while open; `renderProfile()`: big cat (mirrors `crewWin`), rank, quiz AUC and merged-bot weight, points tiles
+  (total / trades / quiz), 1-minute candles with buy/sell markers and entry/TP lines (Lightweight Charts, `prof.chart`,
+  rebuilt when the coin changes), confidence now (bar with BUY and floor ticks) + its last debates (`solChart` in
+  `.cp-conf-chart`), and "What it has done" (its call open -> final %, the crew's verdict, result and points).
+- Settings > MT5 connection (`#set-mt5`) and Mac wording: see mac.md.
+

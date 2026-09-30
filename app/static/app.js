@@ -3220,7 +3220,8 @@ const CAT_SVG = `<svg class="cat" viewBox="0 0 120 120" aria-hidden="true">
   <g transform="translate(36 78)"><g class="cat-arm l">${CAT_ARM}</g></g>
   <g transform="translate(84 78)"><g class="cat-arm r">${CAT_ARM}</g></g>
 </svg>`;
-const catBox = (extra = "") => `<div class="cat-box ${extra}">${CAT_SVG}<canvas class="cat-rain" aria-hidden="true"></canvas></div>`;
+const catBox = (extra = "", inner = "") => `<div class="cat-box ${extra}">${CAT_SVG}<canvas class="cat-rain" aria-hidden="true"></canvas>${inner}</div>`;
+const EXPAND_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"/></svg>`;
 const cat = { freeze: false };
 const catSpeed = box => parseFloat(getComputedStyle(box).getPropertyValue("--cs")) || 1;
 function catPhase(box, phase) {
@@ -3295,7 +3296,7 @@ function renderCrew() {
     box._sig = sig;
     box.innerHTML = bots.map(b => `<div class="bot-pf" data-model="${b.model}" style="--c:${SOL_MODEL[b.model].col}">
         <span class="bot-score num" title="${SOL_MODEL[b.model].name}'s points for being right"></span>
-        ${catBox()}<b class="bot-name">${SOL_MODEL[b.model].name}</b></div>`).join("")
+        ${catBox("", `<button class="cat-expand" type="button" data-agent="${b.model}" aria-expanded="false" aria-controls="crew-profile" aria-label="Open ${SOL_MODEL[b.model].name}'s profile" title="Profile: chart, confidence, what it has done">${EXPAND_ICON}</button>`)}<b class="bot-name">${SOL_MODEL[b.model].name}</b></div>`).join("")
       + `<span class="crew-total num" title="All the main agents' points together"></span>
          <div class="crew-side"><span class="crew-state muted small"></span><button class="btn xs ghost" type="button" id="cat-board-open" title="See and test every phase of the avatar animation">Preview animations</button></div>`;
   }
@@ -3315,8 +3316,125 @@ function renderCrew() {
     : cr?.merged ? "Merged into one bot" : "";
   const cs = box.querySelector(".crew-state"); if (cs.textContent !== stTxt) cs.textContent = stTxt;
 }
-function crewWin(model) {                        // profit: the whole cat sequence on that agent
+function crewWin(model) {                        // profit: the whole cat sequence on that agent (and in its open profile)
   catProfit($(`#sol-crew .bot-pf[data-model="${model}"] .cat-box`));
+  if (prof.model === model) catProfit($("#cp-inner .cp-cat .cat-box"));
+}
+
+/* an agent's profile: the expand button at the bottom right of its avatar opens it under the crew, with the chart of
+   the coin it's on (its buys and sells marked), its confidence (now, over its last debates) and what it has done */
+const prof = { model: null, data: null, chart: null, series: null, timer: 0, key: "" };
+document.addEventListener("click", e => {
+  const b = e.target.closest(".cat-expand");
+  if (b) { e.stopPropagation(); openProfile(prof.model === b.dataset.agent ? null : b.dataset.agent); return; }
+  if (e.target.closest("#cp-close")) openProfile(null);
+});
+async function openProfile(model) {
+  prof.model = model;
+  $$("#sol-crew .cat-expand").forEach(x => { const on = x.dataset.agent === model; x.setAttribute("aria-expanded", String(on)); x.closest(".bot-pf").classList.toggle("open", on); });
+  const box = $("#crew-profile");
+  clearInterval(prof.timer);
+  if (!model) { box.classList.remove("open"); setTimeout(() => { if (!prof.model) { destroyProfileChart(); setHTML($("#cp-inner"), ""); prof.key = ""; } }, 400); return; }
+  if (prof.key && !prof.key.startsWith(model + "|")) { destroyProfileChart(); prof.key = ""; }
+  box.classList.add("open");
+  await loadProfile();
+  prof.timer = setInterval(() => state.tab === "sol" && seen() && prof.model && loadProfile(), 3000);
+}
+async function loadProfile() {
+  const model = prof.model; if (!model) return;
+  let d;
+  try { d = await api(`/api/sol/agent/${encodeURIComponent(model)}`); }
+  catch (e) { if (prof.model === model) setHTML($("#cp-inner"), `<div class="cp"><p class="muted small">${e.status === 404 ? "The Solana engine isn't running yet, so this agent has no profile." : esc(e.message)}</p></div>`); return; }
+  if (prof.model !== model) return;
+  prof.data = d; renderProfile();
+}
+function destroyProfileChart() { try { prof.chart?.remove(); } catch (e) {} prof.chart = prof.series = null; }
+const solWhen = t => { const s = Date.now() / 1000 - t; return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : new Date(t * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
+function renderProfile() {
+  const d = prof.data, m = SOL_MODEL[d.model] || { name: d.model, col: "var(--gold)" }, c = d.confidence || {}, st = d.stats || {};
+  const key = `${d.model}|${d.chart?.mint || ""}`, root = $("#cp-inner");
+  if (prof.key !== key) {                        // first paint for this agent / coin: the layout, the cat and the chart
+    destroyProfileChart();
+    root.innerHTML = `<div class="cp" style="--c:${m.col}">
+      <div class="cp-head">
+        <div class="cp-cat">${catBox()}</div>
+        <div class="cp-id"><div class="cp-title"><h3>${esc(m.name)}</h3><span class="cp-rank num" id="cp-rank"></span></div>
+          <div class="cp-sub muted small" id="cp-sub"></div>
+          <div class="cp-pts" id="cp-pts"></div></div>
+        <button class="btn xs cp-close" id="cp-close" type="button" aria-label="Close the profile">Close</button>
+      </div>
+      <div class="cp-grid">
+        <section class="cp-sec cp-chart-sec"><h4 id="cp-chart-h">Chart</h4><div class="cp-chart" id="cp-chart"></div><p class="muted small cp-chart-note" id="cp-chart-note"></p></section>
+        <section class="cp-sec"><h4>Confidence</h4><div class="cp-conf" id="cp-conf"></div><div class="cp-conf-chart" id="cp-conf-chart"></div><p class="muted small" id="cp-conf-note"></p></section>
+      </div>
+      <section class="cp-sec"><h4>What it has done <span class="muted small" id="cp-act-meta"></span></h4>
+        <div class="table-wrap cp-act"><table><thead><tr><th>When</th><th>Coin</th><th>Its call</th><th>Crew</th><th>Result</th></tr></thead><tbody id="cp-act"></tbody></table></div></section>
+    </div>`;
+    prof.key = key;
+    buildProfileChart();
+  }
+  const pts = (k, v, sub = "") => `<div class="cp-tile"><span>${k}</span><b class="num ${v > 0 ? "up" : v < 0 ? "down" : ""}">${v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(Math.round(v))}`}</b>${sub ? `<small class="muted">${sub}</small>` : ""}</div>`;
+  $("#cp-rank").textContent = d.rank ? `#${d.rank} of ${d.of}` : "";
+  $("#cp-sub").textContent = [d.model_info?.auc != null ? `quiz grade AUC ${d.model_info.auc.toFixed(3)}` : "not graded by the quiz yet",
+    d.model_info?.weight != null ? `the merged bot trusts it ${d.model_info.weight >= 0 ? "+" : ""}${d.model_info.weight.toFixed(2)}` : "",
+    st.accuracy != null ? `right on ${Math.round(st.accuracy * 100)}% of its closed trades` : ""].filter(Boolean).join(" · ");
+  setHTML($("#cp-pts"), pts("Points", d.score, "all together") + pts("From trades", d.trade_score, `${st.right ?? 0} right · ${st.wrong ?? 0} wrong`) + pts("From the quiz", d.quiz_score, "how well it answers"));
+  // confidence now: a bar with the BUY line and the floor, the stance it took
+  const p = c.last, need = c.need ?? 0.78, floor = c.floor ?? 0.65;
+  setHTML($("#cp-conf"), p == null ? `<p class="muted small">No debates yet. Its confidence shows here from its first coin.</p>`
+    : `<div class="cp-now"><b class="num">${Math.round(p * 100)}%</b><span class="sol-stance ${c.last_stance === "BUY" ? "buy" : ""}">${c.last_stance === "BUY" ? "BUY" : c.last_stance === "PASS" ? "PASS" : "UNSURE"}</span><span class="muted small">on ${esc(c.last_symbol || "?")}</span></div>
+       <div class="sol-track cp-track" title="Its confidence: ${(p * 100).toFixed(1)}%"><b style="width:${Math.max(0, Math.min(100, p * 100))}%;background:${m.col}"></b><u style="left:${need * 100}%" title="BUY needs ${Math.round(need * 100)}%"></u><u style="left:${floor * 100}%" title="floor ${Math.round(floor * 100)}%"></u></div>
+       <div class="cp-conf-stats small muted">${st.avg_confidence != null ? `average ${Math.round(st.avg_confidence * 100)}%` : ""}${st.buy_rate != null ? ` · says BUY on ${Math.round(st.buy_rate * 100)}% of coins` : ""}${st.debates ? ` · ${st.debates} debates` : ""}</div>`);
+  const ser = (c.series || []).map(x => ({ x: x.t, y: x.p }));
+  const lo = Math.max(0, Math.min(0.25, ...ser.map(q => q.y)) - 0.05);   // room between the BUY and floor labels
+  if (ser.length > 1) solChart($("#cp-conf-chart"), [{ key: d.model, name: m.name, col: m.col, pts: ser }], { time: true, yMin: lo, yMax: 1, yFmt: v => `${Math.round(v * 100)}%`, refs: [{ y: need, label: `BUY ${Math.round(need * 100)}%` }, { y: floor, label: `floor ${Math.round(floor * 100)}%` }], xLabel: t => new Date(t * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }), height: 150, unit: "" });
+  else setHTML($("#cp-conf-chart"), "");
+  $("#cp-conf-note").textContent = ser.length > 1 ? `Its final confidence in each of its last ${ser.length} debates.` : "";
+  // what it has done
+  const act = d.activity || [];
+  $("#cp-act-meta").textContent = act.length ? `(last ${act.length})` : "";
+  setHTML($("#cp-act"), act.map(a => {
+    const res = a.status === "passed" ? `<span class="muted">${a.verdict === "BLOCKED" ? "blocked" : "no trade"}</span>`
+      : a.status === "open" ? `<span class="${cls(a.pnl_pct)}">open ${solPct(a.pnl_pct)}</span>`
+      : a.status === "closed" ? `<span class="${cls(a.pnl_pct)}">${solPct(a.pnl_pct)}</span> <b class="num ${a.points > 0 ? "up" : a.points < 0 ? "down" : ""}">${a.points > 0 ? "+" : a.points < 0 ? "−" : ""}${Math.abs(Math.round(a.points ?? 0))} pts</b>` : `<span class="muted">bought</span>`;
+    return `<tr><td>${solWhen(a.t)}</td><td class="sol-tok"><b>${esc(a.symbol || "?")}</b></td>
+      <td><span class="sol-stance ${a.stance === "BUY" ? "buy" : ""}">${a.stance === "BUY" ? "BUY" : a.stance === "PASS" ? "PASS" : "UNSURE"} ${Math.round(a.final_prob * 100)}%</span>${Math.abs(a.final_prob - a.open_prob) >= 0.005 ? ` <span class="muted small">from ${Math.round(a.open_prob * 100)}%</span>` : ""}</td>
+      <td>${a.verdict === "BUY" ? `<span class="sol-verdict buy">BUY</span>` : `<span class="muted">${a.verdict === "BLOCKED" ? "blocked" : "PASS"}</span>`}</td><td>${res}</td></tr>`;
+  }).join("") || `<tr><td colspan="5" class="muted sol-empty">Nothing yet. Every coin it debates shows up here, with how the trade turned out.</td></tr>`);
+  updateProfileChart();
+}
+function buildProfileChart() {
+  const d = prof.data, el = $("#cp-chart"), ch = d.chart;
+  $("#cp-chart-h").textContent = ch ? `${ch.symbol || "?"} · 1-minute chart` : "Chart";
+  if (!ch || !ch.candles?.length || !window.LightweightCharts) {
+    el.classList.add("empty");
+    setHTML(el, `<p class="muted small">${!ch ? "No coin yet: the chart of what it's trading shows here." : "No candles for this coin right now (the price feed didn't answer). Its buys and sells show here once it does."}</p>`);
+    return;
+  }
+  el.classList.remove("empty"); el.innerHTML = "";
+  const last = ch.candles[ch.candles.length - 1][4] || 1, prec = Math.max(2, Math.min(10, Math.ceil(-Math.log10(last)) + 3));
+  prof.chart = LightweightCharts.createChart(el, {
+    autoSize: true, layout: { background: { color: "transparent" }, textColor: "#8c9098", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
+    grid: { vertLines: { color: "rgba(255,255,255,.035)" }, horzLines: { color: "rgba(255,255,255,.035)" } },
+    rightPriceScale: { borderColor: "#262c34" }, timeScale: { borderColor: "#262c34", timeVisible: true, secondsVisible: false, rightOffset: 4 },
+    crosshair: { mode: 0 }, localization: { locale: "en-US" }, handleScroll: false, handleScale: false,
+  });
+  prof.series = prof.chart.addCandlestickSeries({ upColor: "#3fb68b", downColor: "#e0574f", borderVisible: false, wickUpColor: "#3fb68b", wickDownColor: "#e0574f", priceFormat: { type: "price", precision: prec, minMove: Math.pow(10, -prec) } });
+  updateProfileChart(true);
+}
+function updateProfileChart(fit = false) {
+  const ch = prof.data?.chart; if (!prof.series || !ch?.candles?.length) return;
+  prof.series.setData(ch.candles.map(([t, o, h, l, cl]) => ({ time: t, open: o, high: h, low: l, close: cl })));
+  const t0 = ch.candles[0][0], snap = t => Math.max(t0, Math.floor(t / 60) * 60);
+  prof.series.setMarkers((ch.markers || []).map(k => ({ time: snap(k.t), position: k.kind === "buy" ? "belowBar" : "aboveBar", color: k.kind === "buy" ? "#3fb68b" : "#c9a24a", shape: k.kind === "buy" ? "arrowUp" : "arrowDown", text: k.text })).sort((a, b) => a.time - b.time));
+  (prof.lines || []).forEach(l => { try { prof.series.removePriceLine(l); } catch (e) {} });
+  prof.lines = [];
+  if (ch.position) {
+    prof.lines.push(prof.series.createPriceLine({ price: ch.position.entry, color: "#8c9098", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "entry" }));
+    if (ch.position.tp_pct) prof.lines.push(prof.series.createPriceLine({ price: ch.position.entry * (1 + ch.position.tp_pct / 100), color: "#3fb68b", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: `TP +${ch.position.tp_pct}%` }));
+  }
+  $("#cp-chart-note").textContent = ch.position ? `Holding: ${solPct(ch.position.pnl_pct)} since its buy.` : (ch.markers || []).length ? "Arrows: where the crew bought (green) and sold (gold)." : "";
+  if (fit) prof.chart.timeScale().fitContent();
 }
 /* the preview board: every phase of the animation, one row each, looping, so it can be seen and tested */
 const CAT_ROWS = [

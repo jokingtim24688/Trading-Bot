@@ -159,3 +159,33 @@ def test_routes():
     assert c.post("/api/sol/mode", json={"mode": "live", "confirm": "yes"}).status_code == 400
     assert c.get("/api/sol/debate/NOPE").status_code == 404
     assert c.get("/api/agents").json().keys() == {"mt5", "sol"}
+
+
+def test_agent_profile_votes_chart_and_activity(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import server
+    from sol import engine, feeds, model, store
+    monkeypatch.setattr(feeds, "prices", lambda mints: {m: 0.00102 for m in mints})
+    t0 = int(time.time()) // 60 * 60 - 3600
+    monkeypatch.setattr(feeds, "candles", lambda pool, limit=300: [[t0 + 60 * i, 1, 1.2, .9, 1.1, 5] for i in range(60)])
+    monkeypatch.setattr(model, "loaded", lambda: True)
+    monkeypatch.setattr(model, "predict", lambda x: {"xgb": 0.93, "lgbm": 0.74, "rf": 0.95, "bot": 0.9})
+    monkeypatch.setitem(engine.state, "auto_trade", True)
+    monkeypatch.setitem(engine.state, "mode", "paper")
+    engine.evaluate({**SAFE, "pool": "POOL1"})
+    [pos] = store.positions("open")
+    votes = {v["model"]: v for v in store.votes("lgbm") + store.votes("xgb")}
+    assert votes["lgbm"]["open_prob"] == pytest.approx(0.74) and votes["lgbm"]["position_id"] == pos["id"]
+    c = TestClient(server.app)
+    live = c.get("/api/sol/agent/lgbm").json()
+    assert live["activity"][0]["status"] == "open" and live["chart"]["symbol"] == "SAFE"
+    assert len(live["chart"]["candles"]) == 60 and live["chart"]["markers"][0]["kind"] == "buy"
+    assert live["confidence"]["last"] > 0.74                       # it moved toward the others in the debate
+    engine.close(pos["id"], "tp", px=0.00102 * 1.3)
+    done = c.get("/api/sol/agent/lgbm").json()
+    a = done["activity"][0]
+    assert a["status"] == "closed" and a["pnl_pct"] == pytest.approx(30.0)
+    assert a["points"] == pytest.approx(30.0 if a["stance"] == "BUY" else -30.0)
+    assert [m["kind"] for m in done["chart"]["markers"]] == ["buy", "sell"]
+    assert done["stats"]["debates"] == 1 and done["stats"]["trades"] == 1
+    assert c.get("/api/sol/agent/nobody").status_code == 404

@@ -1481,16 +1481,16 @@ body.on-bot .notes { top: var(--notes-top, 170px); }
 .sol-verdict-row { display: flex; align-items: center; gap: 12px; margin: 12px 0 2px; }
 .sol-debate-head { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
 .sol-conv, .sol-pnl { position: relative; }
-.sol-conv svg, .sol-pnl svg { display: block; }
-.sol-conv .g, .sol-pnl .g { stroke: rgba(255,255,255,.05); }
-.sol-conv text, .sol-pnl text { font: 10px var(--mono); fill: var(--muted); }
-.sol-conv .yl, .sol-pnl .yl { text-anchor: end; } .sol-conv .xl, .sol-pnl .xl { text-anchor: middle; }
-.sol-conv .ref { stroke: rgba(230,227,218,.32); stroke-dasharray: 3 4; }
-.sol-conv .rl { font-family: var(--sans); }
+.sol-conv svg, .sol-pnl svg, .cp-conf-chart svg { display: block; }
+.sol-conv .g, .sol-pnl .g, .cp-conf-chart .g { stroke: rgba(255,255,255,.05); }
+.sol-conv text, .sol-pnl text, .cp-conf-chart text { font: 10px var(--mono); fill: var(--muted); }
+.sol-conv .yl, .sol-pnl .yl, .cp-conf-chart .yl { text-anchor: end; } .sol-conv .xl, .sol-pnl .xl, .cp-conf-chart .xl { text-anchor: middle; }
+.sol-conv .ref, .cp-conf-chart .ref { stroke: rgba(230,227,218,.32); stroke-dasharray: 3 4; }
+.sol-conv .rl, .cp-conf-chart .rl { font-family: var(--sans); }
 .sol-pnl .z { stroke: rgba(230,227,218,.3); }
 .sol-conv .el { font: 600 11px var(--sans); fill: var(--text); }
-.sol-conv .xh, .sol-pnl .xh { stroke: rgba(230,227,218,.3); }
-.sol-conv .hit, .sol-pnl .hit { fill: transparent; }
+.sol-conv .xh, .sol-pnl .xh, .cp-conf-chart .xh { stroke: rgba(230,227,218,.3); }
+.sol-conv .hit, .sol-pnl .hit, .cp-conf-chart .hit { fill: transparent; }
 .sol-tip { position: absolute; top: 2px; z-index: 5; pointer-events: none; display: grid; gap: 2px; min-width: 150px; padding: 7px 10px; border-radius: var(--r-sm); background: #1b1f25; border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.45); font-size: 11.5px; }
 .sol-tip[hidden] { display: none; }
 .sol-tip span { display: flex; align-items: center; gap: 6px; } .sol-tip i { width: 8px; height: 8px; border-radius: 50%; }
@@ -1571,3 +1571,42 @@ body.on-bot .notes { top: var(--notes-top, 170px); }
 /* Settings > MT5 connection */
 .mt5-where { margin: 0 0 6px; font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 820px; }
 .mt5-steps code { font: 500 12px var(--mono); color: var(--gold); }
+
+/* the expand button at the bottom right of each avatar, and the profile it opens under the crew */
+.cat-expand { position: absolute; right: 4px; bottom: 4px; z-index: 2; width: 22px; height: 22px; display: grid; place-items: center;
+  padding: 0; border-radius: 7px; border: 1px solid rgba(255,255,255,.14); background: rgba(14,16,19,.72); color: var(--gold); cursor: pointer;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); transition: transform .15s var(--ease-spring), background-color .15s, border-color .15s; }
+.cat-expand svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.cat-expand:hover { background: rgba(14,16,19,.92); border-color: var(--gold); transform: scale(1.08); }
+.cat-expand:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.bot-pf.open .cat-box { border-color: var(--c); box-shadow: 0 0 0 1px var(--c); }
+.bot-pf.open .cat-expand { background: var(--gold); color: #14171c; border-color: var(--gold); }
+.crew-profile { display: grid; grid-template-rows: 0fr; margin: -8px 0 0; transition: grid-template-rows .38s var(--ease-out), margin .38s var(--ease-out); }
+.crew-profile.open { grid-template-rows: 1fr; margin: -8px 0 20px; }
+.cp-inner { min-height: 0; overflow: hidden; }
+.cp { padding: 16px 18px 18px; border: 1px solid var(--line-soft); border-top: 2px solid var(--c); border-radius: var(--r-md); background: var(--surface); display: grid; gap: 16px; }
+.cp-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: center; }
+.cp-cat .cat-box { width: 96px; height: 96px; border-radius: 18px; }
+.cp-title { display: flex; align-items: baseline; gap: 10px; }
+.cp-title h3 { margin: 0; font: 600 18px var(--sans); color: var(--text); }
+.cp-rank { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); font: 600 11px var(--mono); color: var(--gold); }
+.cp-sub { margin: 4px 0 10px; }
+.cp-pts { display: grid; grid-template-columns: repeat(3, minmax(0, 150px)); gap: 10px; }
+.cp-tile { display: grid; gap: 1px; padding: 8px 10px; border-radius: var(--r-md); background: var(--bg-2); border: 1px solid var(--line-soft); }
+.cp-tile span { font-size: 11px; color: var(--muted); } .cp-tile b { font: 600 17px var(--mono); } .cp-tile small { font-size: 10.5px; }
+.cp-close { align-self: start; }
+.cp-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px; }
+.cp-sec h4 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font: 600 12.5px var(--sans); color: var(--muted); }
+.cp-chart { height: 230px; border-radius: var(--r-md); background: var(--bg-2); border: 1px solid var(--line-soft); overflow: hidden; }
+.cp-chart.empty { display: grid; place-items: center; padding: 16px; text-align: center; }
+.cp-chart-note { margin: 6px 0 0; min-height: 1.2em; }
+.cp-now { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.cp-now b { font: 600 30px var(--mono); color: var(--c); }
+.cp-track { height: 10px; margin-bottom: 6px; }
+.cp-conf-stats { margin-bottom: 10px; }
+.cp-conf-chart { position: relative; min-height: 150px; }
+.cp-act table { width: 100%; }
+.cp-act td, .cp-act th { white-space: nowrap; }
+@media (max-width: 1150px) { .cp-grid { grid-template-columns: 1fr; } .cp-pts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (prefers-reduced-motion: reduce) { .crew-profile { transition: none; } }
+.reduce-motion .crew-profile { transition: none; }

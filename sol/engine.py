@@ -79,6 +79,7 @@ def evaluate(snap: dict, c=None, trade=True) -> dict:
     d["probs"], d["predict_ms"] = probs, round(predict_ms, 3)
     store.save_debate(snap["mint"], {**d, "symbol": snap.get("symbol"), "mint": snap["mint"], "t": time.time(), "time": time.time()})
     store.record_seen(snap, gate, cons["score"], review["final"])
+    store.record_votes(snap["mint"], snap.get("symbol"), d["rounds"], review["final"])
     out.update(verdict=review["final"], debate=d)
     if trade and review["final"] == "BUY" and state["auto_trade"] and not any(p["mint"] == snap["mint"] for p in opens):
         open_trade(snap, fresh or snap.get("price_usd"), size, comp.get("tp_pct", c["tp_pct"]),
@@ -94,6 +95,7 @@ def open_trade(snap, px, size, tp, trail, timeout, d):
         tx = wallet.buy(snap["mint"], size)             # raises = no position recorded
     pid = store.open_position(snap["mint"], snap.get("symbol"), state["mode"], size, px, tp, trail, timeout,
                               {"consensus": d["consensus"], "ms": d["ms"]}, tx)
+    store.link_votes(snap["mint"], pid)
     for m in model.meta().get("metrics", {}).get("members", {}) or {}:
         state["doing"][m] = f"trading {snap.get('symbol')}"
     _say(f"🟢 Bought {snap.get('symbol')} ({state['mode']}) {size:g} SOL — crew {d['consensus']['score']:.0%}", "open")
@@ -107,16 +109,17 @@ def close(pid: int, reason="manual", px=None) -> dict:
     px = px or feeds.prices([p["mint"]]).get(p["mint"]) or p["last_px"]
     tx = wallet.sell_all(p["mint"]) if p["mode"] == "live" else None
     done = store.close_position(pid, px, reason, tx)
-    stances = {}
-    try:
-        body = store.get_debate(p["mint"]) or {}
-        stances = {s["model"]: s["stance"] for s in (body.get("rounds") or [{}])[-1].get("stances", [])}
-    except (KeyError, IndexError, TypeError):
-        pass
     pct = done.get("pnl_pct") or 0
-    for m, st in stances.items():                       # right to buy a winner / right to doubt a loser
-        pts = pct if st == "BUY" else -pct
-        store.add_score(m, round(pts, 2), win=pts > 0)
+    settled = store.settle_votes(pid, pct)              # right to buy a winner / right to doubt a loser
+    if not settled:                                     # a trade from before votes were kept: use its debate
+        try:
+            body = store.get_debate(p["mint"]) or {}
+            settled = {s["model"]: round(pct if s["stance"] == "BUY" else -pct, 2)
+                       for s in (body.get("rounds") or [{}])[-1].get("stances", [])}
+        except (KeyError, IndexError, TypeError):
+            settled = {}
+    for m, pts in settled.items():
+        store.add_score(m, pts, win=pts > 0)
     _say(f"{'✅' if pct >= 0 else '🛑'} Sold {p['symbol']} ({reason}) {pct:+.1f}% = {done.get('pnl_sol', 0):+.4f} SOL",
          "tp" if reason == "tp" else ("sl" if reason in ("trail", "timeout") else "close"))
     return done

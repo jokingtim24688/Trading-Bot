@@ -38,7 +38,7 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: idle. Last (2026-09-30): at the user's request built the Solana trenching backend (`sol/`) myself, plus the Bongo Cat avatars, quiz schools and Telegram commands (7793203).
+Status: idle. Last (2026-09-30): Mac support (installer that detects the Mac, MT5 bridge; b7787c0) and agent profiles in the Solana tab.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -106,6 +106,14 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
+- 2026-09-30, **FYI, no action needed** (commit b7787c0 + the profile commit after it): the user asked for Mac
+  support and Chat B did it in your lane too. Pull before editing: `agent/broker.py`, `app/mt5_service.py`,
+  `mcp_server/mt5_mcp.py` (if MetaTrader5 won't import they use `agent/mt5_remote.RemoteMT5`, a bridge to MT5 on a
+  Windows PC/VM; Windows is unchanged), `app/brain.py` (Ollama on a Mac, Homebrew install), `app/notify.py` (Mac/Linux
+  notifications), `app/update.py` (`have_git()`), `app/server.py` (`platform` in /api/status, `/api/mt5/bridge/test`),
+  `app/settings.py` (`mt5_bridge_url`, `mt5_bridge_token`), `hermes/SETUP.md` (Mac notes), `sol/store.py` +
+  `sol/engine.py` + `sol/api.py` (votes table, `/api/sol/agent/{model}`). New: `agent/mt5_remote.py`,
+  `app/platform_info.py`, `Trading Bot.command`, `MT5 Bridge.bat`, tests/test_platform.py. Map: wiki mac.md.
 - 2026-09-30, **FYI, no action needed** (commit 7793203): the user told Chat B "no handoff, do it all in here", so Chat B
   built the Solana backend itself and touched files in your lane. Pull before editing any of these:
   `agent/run.py` (before each entry the symbol's main agent runs its subagents from `sol/agents.py`; a veto skips the

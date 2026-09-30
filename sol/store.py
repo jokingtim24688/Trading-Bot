@@ -25,6 +25,11 @@ def conn():
     CREATE INDEX IF NOT EXISTS ix_pos_status ON positions(status);
     CREATE TABLE IF NOT EXISTS bots (model TEXT PRIMARY KEY, score REAL, last_win REAL, quiz REAL);
     CREATE TABLE IF NOT EXISTS debates (mint TEXT PRIMARY KEY, t REAL, body TEXT);
+    CREATE TABLE IF NOT EXISTS votes (id INTEGER PRIMARY KEY, model TEXT, mint TEXT, symbol TEXT, t REAL,
+        open_prob REAL, final_prob REAL, stance TEXT, verdict TEXT, position_id INTEGER, pnl_pct REAL, points REAL,
+        closed REAL);
+    CREATE INDEX IF NOT EXISTS ix_votes_model ON votes(model, t);
+    CREATE INDEX IF NOT EXISTS ix_votes_pos ON votes(position_id);
     """)
     return c
 
@@ -174,3 +179,58 @@ def get_debate(mint):
     with conn() as c:
         r = c.execute("SELECT body FROM debates WHERE mint=?", (mint,)).fetchone()
     return jload(r[0]) if r else None
+
+
+# ---------- each model's votes (its profile: confidence, what it did, how it turned out) ----------
+def record_votes(mint, symbol, rounds, verdict):
+    """One row per model for a debate: its opening and final confidence, final stance and the crew's verdict."""
+    if not rounds:
+        return
+    first = {x["model"]: x for x in rounds[0]["stances"]}
+    with conn() as c:
+        for x in rounds[-1]["stances"]:
+            c.execute("""INSERT INTO votes (model, mint, symbol, t, open_prob, final_prob, stance, verdict)
+                         VALUES (?,?,?,?,?,?,?,?)""", (x["model"], mint, symbol, now(),
+                                                      first.get(x["model"], x)["prob"], x["prob"], x["stance"], verdict))
+        c.execute("DELETE FROM votes WHERE t < ?", (now() - 30 * 86400,))
+
+
+def link_votes(mint, pid):
+    """The trade that came out of the latest debate on this coin."""
+    with conn() as c:
+        t = c.execute("SELECT MAX(t) FROM votes WHERE mint=? AND position_id IS NULL", (mint,)).fetchone()[0]
+        if t is not None:
+            c.execute("UPDATE votes SET position_id=? WHERE mint=? AND position_id IS NULL AND t >= ?", (pid, mint, t - 1))
+
+
+def settle_votes(pid, pnl_pct) -> dict:
+    """The trade closed: a model that said BUY earns its P/L %, one that doubted it earns the opposite."""
+    out = {}
+    with conn() as c:
+        for r in c.execute("SELECT id, model, stance FROM votes WHERE position_id=?", (pid,)).fetchall():
+            pts = round(pnl_pct if r["stance"] == "BUY" else -pnl_pct, 2)
+            c.execute("UPDATE votes SET pnl_pct=?, points=?, closed=? WHERE id=?", (pnl_pct, pts, now(), r["id"]))
+            out[r["model"]] = pts
+    return out
+
+
+def votes(model, limit=30):
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM votes WHERE model=? ORDER BY t DESC LIMIT ?", (model, limit))]
+
+
+def vote_stats(model) -> dict:
+    with conn() as c:
+        r = c.execute("""SELECT COUNT(*), AVG(final_prob), SUM(stance='BUY'), SUM(position_id IS NOT NULL),
+                         SUM(points > 0), SUM(points < 0), SUM(closed IS NOT NULL) FROM votes WHERE model=?""",
+                      (model,)).fetchone()
+    n, avg, buys, traded, right, wrong, closed = (v or 0 for v in r)
+    return {"debates": n, "avg_confidence": round(avg, 4) if n else None, "buy_rate": round(buys / n, 3) if n else None,
+            "trades": traded, "right": right, "wrong": wrong, "accuracy": round(right / closed, 3) if closed else None}
+
+
+def seen_snap(mint) -> dict:
+    with conn() as c:
+        r = c.execute("SELECT snap FROM seen WHERE mint=?", (mint,)).fetchone()
+    return jload(r[0], {}) if r else {}
+

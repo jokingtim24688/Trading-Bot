@@ -1183,4 +1183,22 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Sandbox: GeckoTerminal/RugCheck/Jupiter are blocked by the network policy here, so real downloads were not tested;
   the downloader reports that and the starter set trains meanwhile. Tests: 58 passed (9 new in tests/test_sol.py).
 
+### 2026-09-30 (Chat B): Mac support, agent profiles, successful-trade video
+- Mac (b7787c0), map in graphify-out/wiki/mac.md. `Trading Bot.command` is the Mac installer + launcher: detects
+  macOS 12+, Apple silicon / Intel (switches a Rosetta Terminal to native), Homebrew, Python 3.10-3.13, libomp, git /
+  Command Line Tools, installs what's missing after asking, builds .venv, updates, installs packages, makes
+  `Trading Bot.app`. Checked: the XGBoost and LightGBM Mac wheels need Homebrew's libomp, so it installs it.
+  Tested here: `--check` on Linux, a simulated Mac (stub uname/sw_vers/xcode-select/brew) and a real install run.
+- MetaTrader5 is Windows-only, so Macs reach MT5 through `agent/mt5_remote.py` (RemoteMT5 drop-in + a stdlib bridge
+  next to MT5 on a Windows PC/VM, `MT5 Bridge.bat`), with Settings > MT5 connection and a Test button. Everything
+  else runs natively: Mac pop-ups over full-screen apps without stealing focus (AppKit), Notification Center alerts,
+  Ollama via Homebrew, native Hermes Agent, ⌘ key labels, WebKit prefixes. Not testable here: real macOS/AppKit calls
+  (all wrapped so a failure falls back to pywebview's own behaviour).
+- Agent profiles: an expand button at the bottom right of each Solana avatar opens its profile under the crew:
+  points (trades / quiz), rank, quiz grade, a 1-minute chart of the coin it's on with the buy and sell marked, its
+  confidence now and over its last debates, and what it has done (its call, the crew's verdict, result, points).
+  Backend: votes table in sol.db (record / link / settle), `GET /api/sol/agent/{model}`.
+- Video preview of a successful trade (scripted data, real UI): debate -> buy -> climb -> take profit +30 % -> the
+  crew celebrates (close-up) -> LightGBM's profile. Tests: 69 passed.
+
 <!-- Chat B: add new entries above this line -->

@@ -14,6 +14,7 @@
 | Hermes assistant + memory | [hermes.md](hermes.md) | `app/brain.py`, `app/memory.py`, `app/tools.py`, `hermes/` | A |
 | M1 trading agent | [agent.md](agent.md) | `agent/run.py`, `agent/features.py`, `agent/model.py`, `agent/risk.py`, `agent/broker.py` | A |
 | Solana trenching bot (rug filter, model crew split/merge, instant debate, main agents + subagents, trenching quiz) | [sol.md](sol.md) | `sol/engine.py`, `sol/debate.py`, `sol/model.py`, `sol/agents.py`, `sol/trench.py` | B built it (2026-09-30, user asked) |
+| Mac / Linux support (installer, MT5 bridge, Mac pop-ups) | [mac.md](mac.md) | `Trading Bot.command`, `agent/mt5_remote.py`, `MT5 Bridge.bat`, `app/platform_info.py` | B (2026-09-30) |
 | MT5 MCP bridge | [mcp.md](mcp.md) | `mcp_server/mt5_mcp.py` | A |
 | mt5-trading skill + Claude subagent | [skill.md](skill.md) | `.claude/skills/mt5-trading/`, `.claude/agents/mt5-m1-trader.md` | A |
 
@@ -26,6 +27,7 @@
 6. **M1 lock**: `TIMEFRAME = "M1"` (agent/config.py), `TF = mt5.TIMEFRAME_M1` (mcp), `PERIOD_M1` (MQL5 docs)
 
 ## Key flows
+- **Launch (Mac)**: `Trading Bot.command` / `Trading Bot.app` (detects macOS, chip, Homebrew, Python, libomp, git; installs what's missing; same update + pip + launch) → MT5 through `agent/mt5_remote.py` to a Windows PC/VM running `MT5 Bridge.bat`. See [mac.md](mac.md).
 - **Launch**: `Trading Bot.bat` (git pull, pip only if requirements changed, pythonw, window closes) → `.venv` → `app.main` → uvicorn (127.0.0.1:8420) + pywebview window → auto-start MCP bridge (:8765).
 - **Train**: Train tab → `/api/fetch` → `fetch_m1.py` → `data/SYMBOL_M1.parquet` → `/api/train` → `agent.train` → `models/SYMBOL_M1.json`.
 - **Trade**: Agent tab → `/api/agent/start` → `agent.run` → closed-bar poll → features → XGBoost proba → `RiskGate` → Paper/LiveBroker → `logs/journal_*.csv`.
@@ -102,4 +104,5 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-25: Bot tab (default, full screen): live card, co-pilot proposals with Approve / Skip, symbol switch, clock in any time zone, points, gauge, pills; see app.md "Bot tab".
 - 2026-09-26: Market merged into the Bot tab (chart left, live card right, no SL on its chart), notifications below the Bot header; see app.md "Market merged into the Bot tab".
 - 2026-09-30: Solana trenching backend `sol/` (see [sol.md](sol.md)), Bongo Cat avatars + preview board, Quiz Stocks/Trenching/Combined, Telegram /prof /loss /total, MT5 main agent + subagents review (7793203).
+- 2026-09-30: Mac support (b7787c0): installer `Trading Bot.command` that detects the Mac, MT5 bridge (`agent/mt5_remote.py`, `MT5 Bridge.bat`), Mac pop-ups/notifications, see [mac.md](mac.md). Agent profiles in the Solana tab: expand button on each avatar, `/api/sol/agent/{model}`, votes table in sol.db.
 <!-- Chat B: add new lines above this marker -->
