@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, HTTPException
 
 from app import settings
 
-from . import agents, engine, feeds, model, store, trench, wallet
+from . import agents, engine, feeds, model, ranks, store, trench, wallet
 
 router = APIRouter()
 EXIT = {"tp": "take_profit", "trail": "trailing_stop", "stop": "stop_loss", "timeout": "timeout", "manual": "manual",
@@ -228,7 +228,34 @@ def sol_agent(name: str):
                       "status": status(v)} for v in vs[:25]],
         "chart": chart,
         "model_info": {"auc": (meta.get("members") or {}).get(name), "weight": (meta.get("weights") or {}).get(name)},
+        "career": {**_agent_rank(name, store.bots()),
+                   "history": [{**r, "rank": ranks.info(r["rank"]), "prev": ranks.info(r["prev"])} for r in store.rank_log(name)]},
     }
+
+
+# ---------- ranks ----------
+def _agent_rank(name: str, bots: dict) -> dict:
+    points, trades, acc = ranks.stats_for(name, bots)
+    cur = int((bots.get(name) or {}).get("rank") or 0)
+    nxt = ranks.progress(cur, points, trades, acc)
+    return {"model": name, "rank": ranks.info(cur), "since": (bots.get(name) or {}).get("rank_t") or 0,
+            "points": round(points, 1), "trades": trades, "accuracy": acc, "next": nxt,
+            "pct": 100.0 if nxt is None else round(nxt["frac"] * 100, 1)}
+
+
+@router.get("/api/sol/ranks")
+def sol_ranks():
+    """The ladder (Intern -> Legend), who is on each rank, their points and how far they are to the next rank."""
+    bots = store.bots()
+    names = [b["model"] for b in engine.bots_view()]
+    agents_ = [_agent_rank(n, bots) for n in names]
+    log = []
+    for n in names:
+        log += [{**r, "rank": ranks.info(r["rank"]), "prev": ranks.info(r["prev"])} for r in store.rank_log(n, 20)]
+    return {"ranks": [{**{k: r[k] for k in ("id", "name", "short", "pts", "trades", "acc", "weight", "perk")},
+                       "agents": [a["model"] for a in agents_ if a["rank"]["id"] == r["id"]]} for r in ranks.RANKS],
+            "agents": sorted(agents_, key=lambda a: (-a["rank"]["id"], -a["points"])),
+            "log": sorted(log, key=lambda r: -r["t"])[:30]}
 
 
 # ---------- trenching quiz ----------

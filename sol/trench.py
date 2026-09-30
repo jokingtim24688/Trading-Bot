@@ -358,6 +358,8 @@ def train_quiz() -> dict:
         for m, auc in (meta["metrics"].get("members") or {}).items():
             if auc is not None:                         # points: how far above guessing each model answered
                 store.add_score(m, round((auc - 0.5) * 200, 1), quiz=True)
+        from . import engine, ranks                     # the quiz grade can promote an intern
+        ranks.update(list((meta["metrics"].get("members") or {})), say=engine.announce_rank)
         tr.update(progress=1.0, stage="merged into one bot", last=meta)
         return meta
     except Exception as e:

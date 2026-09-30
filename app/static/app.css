@@ -1610,3 +1610,98 @@ body.on-bot .notes { top: var(--notes-top, 170px); }
 @media (max-width: 1150px) { .cp-grid { grid-template-columns: 1fr; } .cp-pts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .crew-profile { transition: none; } }
 .reduce-motion .crew-profile { transition: none; }
+
+/* ---------- ranks: the suit changes with the rank (data-rank on .cat-box; no data-rank = Junior's plain navy tie) */
+.cat-tiebar, .cat-pocket, .cat-lanyard, .cat-pin { display: none; }
+.cat-tie { transition: fill .5s ease; }
+.cat-tiebar { fill: #d9b45a; }
+.cat-pocket .sq { fill: #f4f5f7; stroke: #b8bcc3; stroke-width: .35; } .cat-pocket .welt { stroke: #3a3f47; stroke-width: .7; }
+.cat-lanyard .strap { fill: none; stroke: #3a7bd5; stroke-width: 1.3; stroke-linecap: round; }
+.cat-lanyard .card { fill: #f4f5f7; stroke: #9aa1ab; stroke-width: .45; } .cat-lanyard .photo { fill: #3a7bd5; }
+.cat-pin { fill: #e8c46a; stroke: #7a5c1c; stroke-width: .3; }
+.cat-box[data-rank="0"] .cat-tie { display: none; } .cat-box[data-rank="0"] .cat-lanyard { display: inline; }
+.cat-box[data-rank="2"] .cat-tie { fill: #1f5f8b; }
+.cat-box[data-rank="3"] .cat-tie { fill: #7a2233; } .cat-box[data-rank="3"] .cat-pocket { display: inline; }
+.cat-box[data-rank="4"] .cat-tie { fill: #7a2233; } .cat-box[data-rank="4"] .cat-pocket, .cat-box[data-rank="4"] .cat-tiebar { display: inline; }
+.cat-box[data-rank="4"] .cat-pocket .sq, .cat-box[data-rank="5"] .cat-pocket .sq, .cat-box[data-rank="6"] .cat-pocket .sq { fill: #d9b45a; stroke: #7a5c1c; }
+.cat-box[data-rank="5"] .cat-tie, .cat-box[data-rank="6"] .cat-tie { fill: #c9a24a; stroke: #7a5c1c; }
+.cat-box[data-rank="5"] .cat-pocket, .cat-box[data-rank="5"] .cat-pin, .cat-box[data-rank="6"] .cat-pocket, .cat-box[data-rank="6"] .cat-pin { display: inline; }
+.cat-box[data-rank="6"] { border-color: rgba(201,162,74,.7); box-shadow: inset 0 0 14px rgba(201,162,74,.18), 0 0 0 1px rgba(201,162,74,.35); }
+
+/* rank chip: pips (1-5 filled of 6) or Legend's star, in the brass family so it never reads as a model colour */
+.rank-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px 1px 5px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--bg-2); font: 600 10.5px var(--sans); color: var(--text); white-space: nowrap; line-height: 16px; }
+.rank-chip[data-r="0"] { color: var(--muted); }
+.rank-chip[data-r="5"], .rank-chip[data-r="6"] { border-color: rgba(201,162,74,.55); color: var(--gold); }
+.rank-chip[data-r="6"] { background: color-mix(in srgb, var(--gold) 14%, var(--bg-2)); }
+.rk-pips { display: inline-flex; gap: 1.5px; align-items: flex-end; height: 9px; }
+.rk-pips b { width: 2.5px; border-radius: 1px; background: rgba(255,255,255,.14); }
+.rk-pips b:nth-child(1) { height: 4px; } .rk-pips b:nth-child(2) { height: 5px; } .rk-pips b:nth-child(3) { height: 6px; }
+.rk-pips b:nth-child(4) { height: 7px; } .rk-pips b:nth-child(5) { height: 8px; } .rk-pips b:nth-child(6) { height: 9px; }
+.rk-pips b.on { background: var(--gold); }
+.rk-star { display: inline-grid; width: 11px; height: 11px; } .rk-star svg { width: 11px; height: 11px; fill: var(--gold); }
+.bot-rank { min-height: 18px; margin-top: -2px; }
+/* a promotion: a brass ring pulses round the frame, the chip pops and "Promoted" rises above the avatar */
+.bot-pf.promo .cat-box { animation: rk-ring 1.2s ease-out 2; }
+.bot-pf.promo .rank-chip { animation: rk-pop .6s var(--ease-spring) both; border-color: var(--gold); color: var(--gold); }
+.promo-tag { position: absolute; left: 50%; top: -24px; z-index: 4; transform: translateX(-50%); padding: 1px 8px; border-radius: 999px;
+  background: var(--gold); color: #15171b; font: 700 10.5px var(--sans); pointer-events: none; animation: rk-rise 2.4s ease-out both; }
+@keyframes rk-ring { 0% { box-shadow: 0 0 0 0 rgba(201,162,74,.7); } 100% { box-shadow: 0 0 0 12px rgba(201,162,74,0); } }
+@keyframes rk-pop { 0% { transform: scale(.7); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
+@keyframes rk-rise { 0% { opacity: 0; transform: translate(-50%, 8px); } 15%, 75% { opacity: 1; transform: translate(-50%, -8px); } 100% { opacity: 0; transform: translate(-50%, -16px); } }
+.reduce-motion .bot-pf.promo .cat-box, .reduce-motion .bot-pf.promo .rank-chip, .reduce-motion .promo-tag { animation: none; }
+@media (prefers-reduced-motion: reduce) { .bot-pf.promo .cat-box, .bot-pf.promo .rank-chip, .promo-tag { animation: none; } }
+.sol-w { font: 500 10.5px var(--mono); font-style: normal; color: var(--gold); }
+
+/* profile: career */
+.cp-title #cp-rchip:empty { display: none; }
+.cp-career:empty { display: none; }
+.cp-next { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12.5px; }
+.cp-next b { font: 600 20px var(--mono); color: var(--gold); }
+.cp-reqs { display: grid; gap: 6px; max-width: 620px; }
+.cp-req { display: grid; grid-template-columns: 110px minmax(80px, 1fr) 110px; align-items: center; gap: 10px; font-size: 12px; }
+.rk-bar { display: block; height: 7px; border-radius: 4px; background: rgba(255,255,255,.07); overflow: hidden; }
+.rk-bar i { display: block; height: 100%; width: 0; border-radius: 4px; background: linear-gradient(90deg, #a5832f, var(--gold)); transition: width .6s var(--ease-out); }
+.cp-hist { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
+.cp-hist em { font-style: normal; }
+
+/* the Ranks tab */
+.rk-intro p { margin: 2px 0 0; max-width: 980px; line-height: 1.55; }
+.rk-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 12px; align-items: start; margin-top: 12px; }
+.rk-side { display: grid; gap: 12px; min-width: 0; }
+.rk-side > .panel { min-width: 0; }
+.rk-table td:last-child { white-space: normal; min-width: 170px; }
+.rk-ladder { position: relative; display: grid; gap: 0; padding-left: 14px; }
+.rk-ladder::before { content: ""; position: absolute; left: 4px; top: 16px; bottom: 16px; width: 2px; border-radius: 1px;
+  background: linear-gradient(180deg, var(--gold), rgba(201,162,74,.08)); }
+.rk-rung { position: relative; display: grid; grid-template-columns: 230px minmax(0, 1fr); grid-template-areas: "badge agents" "req agents"; gap: 2px 16px;
+  align-items: center; padding: 12px 10px 12px 14px; border-bottom: 1px solid var(--line-soft); }
+.rk-rung:last-child { border-bottom: 0; }
+.rk-rung::before { content: ""; position: absolute; left: -14px; top: 22px; width: 10px; height: 10px; margin-left: 0; border-radius: 50%;
+  background: var(--bg); border: 2px solid rgba(201,162,74,.45); }
+.rk-rung.has::before { background: var(--gold); border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,162,74,.18); }
+.rk-rung.has { background: linear-gradient(90deg, rgba(201,162,74,.06), transparent 70%); border-radius: var(--r-md); }
+.rk-badge { grid-area: badge; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.rk-badge > .muted { white-space: nowrap; }
+.rk-badge .rank-chip { font-size: 12px; padding: 2px 9px 2px 7px; }
+.rk-req { grid-area: req; }
+.rk-agents { grid-area: agents; display: flex; flex-wrap: wrap; gap: 10px; min-height: 56px; align-items: center; }
+.rk-empty { font-style: italic; }
+.rk-agent { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; border-radius: var(--r-md); border: 1px solid var(--line);
+  background: var(--bg-2); color: var(--text); cursor: pointer; text-align: left; transition: border-color .15s, transform .15s var(--ease-spring); }
+.rk-agent:hover { border-color: var(--c); transform: translateY(-1px); }
+.rk-agent .cat-box { width: 56px; height: 56px; border-radius: 12px; }
+.rk-a-meta { display: grid; gap: 3px; min-width: 150px; }
+.rk-a-meta b { font: 600 12.5px var(--sans); color: var(--c); }
+.rk-pts { font: 600 13px var(--mono); }
+.rk-table td { vertical-align: middle; }
+.rk-to { display: grid; grid-template-columns: minmax(80px, 1fr) 40px; align-items: center; gap: 8px; margin-bottom: 3px; }
+.rk-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.rk-log li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; }
+.rk-log li em { font-style: normal; margin-left: auto; white-space: nowrap; }
+.rk-arrow { font-size: 10px; } .rk-log li.up .rk-arrow { color: var(--up); } .rk-log li.down .rk-arrow { color: var(--down); }
+@media (max-width: 1150px) { .rk-grid { grid-template-columns: 1fr; } .rk-rung { grid-template-columns: 1fr; grid-template-areas: "badge" "req" "agents"; } }
+.cb-ranks { grid-template-columns: minmax(180px, 1fr) auto; }
+.cb-ranks .cb-cats { gap: 10px; }
+.cb-ranks .cb-cat .cat-box { width: 76px; height: 76px; border-radius: 14px; }
+.cb-ranks .cb-cat span { max-width: 80px; text-align: center; line-height: 1.25; }

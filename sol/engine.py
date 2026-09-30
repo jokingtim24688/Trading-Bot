@@ -11,7 +11,7 @@ import numpy as np
 
 from app import settings
 
-from . import agents, debate, feeds, model, rug, store, wallet
+from . import agents, debate, feeds, model, ranks, rug, store, wallet
 from .features import vector
 
 state = {"running": False, "auto_trade": False, "mode": "paper", "last_scan": None, "error": "", "doing": {},
@@ -58,8 +58,8 @@ def evaluate(snap: dict, c=None, trade=True) -> dict:
     t0 = time.perf_counter()
     probs = model.predict(vector(snap))
     predict_ms = (time.perf_counter() - t0) * 1000
-    scores = {m: b["score"] for m, b in store.bots().items()}
-    d = debate.run(probs, scores, c["buy_threshold"], c["model_floor"], c["trade_size_sol"], c["tp_pct"], c["trail_pct"])
+    d = debate.run(probs, None, c["buy_threshold"], c["model_floor"], c["trade_size_sol"], c["tp_pct"], c["trail_pct"],
+                   weights=ranks.weights())
     state["last_debate_ms"] = d["ms"]
     cons = d["consensus"]
     for m in probs:
@@ -120,9 +120,18 @@ def close(pid: int, reason="manual", px=None) -> dict:
             settled = {}
     for m, pts in settled.items():
         store.add_score(m, pts, win=pts > 0)
+    ranks.update(list(settled), say=announce_rank)
     _say(f"{'✅' if pct >= 0 else '🛑'} Sold {p['symbol']} ({reason}) {pct:+.1f}% = {done.get('pnl_sol', 0):+.4f} SOL",
          "tp" if reason == "tp" else ("sl" if reason in ("trail", "timeout") else "close"))
     return done
+
+
+def announce_rank(ch: dict):
+    name = {"xgb": "XGBoost", "lgbm": "LightGBM", "rf": "RandomForest", "cat": "CatBoost"}.get(ch["model"], ch["model"])
+    if ch["up"]:
+        _say(f"🎖 {name} promoted to {ch['to']['name']} — {ch['to']['perk']}", "close")
+    else:
+        _say(f"⬇ {name} dropped to {ch['to']['name']}", "close")
 
 
 def _monitor():
@@ -213,5 +222,6 @@ def bots_view() -> list[dict]:
         doing = "training" if model.state["training"] else state["doing"].get(m, "watching" if state["running"] else "resting")
         out.append({"model": m, "score": round((r.get("score") or 0) + (r.get("quiz") or 0), 1),
                     "trade_score": round(r.get("score") or 0, 1), "quiz_score": round(r.get("quiz") or 0, 1),
-                    "doing": doing, "last_win": r.get("last_win") or 0})
+                    "doing": doing, "last_win": r.get("last_win") or 0,
+                    "rank": {**ranks.info(r.get("rank") or 0), "since": r.get("rank_t") or 0}})
     return out

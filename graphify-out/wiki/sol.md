@@ -48,3 +48,15 @@ opens, `settle_votes` on close = the points each model gets).
 - Tests: `tests/test_sol.py` (9 tests).
 - Rust: measured first; the debate (0.03 ms) and review are arithmetic, the crew predicts in 2.6 ms, so the time is in
   the network calls. Rust would help only if the scanner ever evaluates thousands of coins a second.
+
+## Ranks (`sol/ranks.py`, 2026-09-30)
+Career ladder: Intern -> Junior Trader (25 pts) -> Trader (75 pts, 5 closed trades) -> Senior Trader (150, 15, 55 %
+right) -> Portfolio Manager (300, 30, 58 %) -> Partner (600, 60, 60 %) -> Legend (1200, 120, 62 %). Points = trade points
++ the latest quiz grade (quiz points now replace, not add up, so training again can't farm rank). Trades / accuracy
+come from the votes table. `rank_for(..., current)` promotes at once and demotes only when clearly below (10 % under
+the points or 2 points under the accuracy). `update()` runs after each close (engine.close) and each quiz training,
+writes `bots.rank`/`rank_t` + `rank_log`, and `engine.announce_rank` sends Telegram. Rank = vote weight in the debate
+(`debate.run(weights=ranks.weights())`: 1.0 / 1.1 / 1.2 / 1.35 / 1.5 / 1.7 / 2.0; `d["weights"]` shown in the transcript).
+Routes: `GET /api/sol/ranks` (ranks with who's on them, agents with points / trades / accuracy / next{needs, frac} / pct,
+log), `career` in `/api/sol/agent/{model}`, `rank` in `bots[]` of `/api/sol/state`.
+

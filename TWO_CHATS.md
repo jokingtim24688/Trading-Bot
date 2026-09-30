@@ -38,7 +38,7 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: idle. Last (2026-09-30): Mac support (installer that detects the Mac, MT5 bridge; b7787c0) and agent profiles in the Solana tab.
+Status: idle. Last (2026-09-30): rank system + Ranks tab (sol/ranks.py), after Mac support (b7787c0) and agent profiles.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab

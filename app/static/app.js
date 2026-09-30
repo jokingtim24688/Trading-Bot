@@ -122,6 +122,7 @@ function showTab(name) {
   if (name === "bot" && state.chart && state.chartAuto && !state.autoT) realignChart(true);
   if (name === "bot") openBot();
   if (name === "sol") openSol();
+  if (name === "ranks") loadRanks();
   if (name === "chat") { loadHistory(); loadFacts(); }
   if (name === "manual") openManual();
   if (name === "review") openReview();
@@ -2103,7 +2104,7 @@ const KEY_GROUPS = {
     desc: "These place and close orders on the first press, with nothing to confirm. On a real account the first order of the session asks you to type REAL." },
   app: { label: "Moving around", on: true, desc: "Switch tabs, realign charts, step through replays, mute. Safe to leave on." },
 };
-const TAB_NAME = { bot: "Bot", sol: "Solana", manual: "Manual", agent: "Agent", review: "Review", train: "Train", quiz: "Quiz", chat: "Hermes", keys: "Keys", sounds: "Sounds", settings: "Settings" };
+const TAB_NAME = { bot: "Bot", sol: "Solana", ranks: "Ranks", manual: "Manual", agent: "Agent", review: "Review", train: "Train", quiz: "Quiz", chat: "Hermes", keys: "Keys", sounds: "Sounds", settings: "Settings" };
 function pressBtn(sel) {
   const el = $(sel); if (!el || el.disabled) return;
   el.click(); if (el.animate && motionOK()) el.animate([{ transform: "scale(.96)" }, { transform: "none" }], { duration: 160 });
@@ -2130,7 +2131,7 @@ const KEY_ACTIONS = [
   { id: "man.market", group: "manual", tabs: ["manual"], label: "Order type: market", short: "Market", key: null, run: () => pressBtn('#man-type [data-type="market"]') },
   { id: "man.limit", group: "manual", tabs: ["manual"], label: "Order type: limit", short: "Limit", key: null, run: () => pressBtn('#man-type [data-type="limit"]') },
   { id: "man.stop", group: "manual", tabs: ["manual"], label: "Order type: stop", short: "Stop", key: null, run: () => pressBtn('#man-type [data-type="stop"]') },
-  ...Object.entries({ bot: "1", sol: "`", manual: "2", agent: "3", review: "4", train: "5", quiz: "6", chat: "7", keys: "8", sounds: "9", settings: "0" })
+  ...Object.entries({ bot: "1", sol: "`", ranks: null, manual: "2", agent: "3", review: "4", train: "5", quiz: "6", chat: "7", keys: "8", sounds: "9", settings: "0" })
     .map(([t, k]) => ({ id: `tab.${t}`, group: "app", label: `Go to ${TAB_NAME[t]}`, short: TAB_NAME[t], key: k, run: () => showTab(t) })),
   { id: "chart.realign", group: "app", tabs: ["bot", "manual", "review"], label: "Realign the chart", short: "Realign", key: "R", run: realignHere },
   { id: "log", group: "app", tabs: ["agent"], label: "Open or close the live log", short: "Log", key: "L", run: () => $("#log-drawer").classList.contains("open") ? closeLog() : openLog() },
@@ -3204,6 +3205,10 @@ const CAT_SVG = `<svg class="cat" viewBox="0 0 120 120" aria-hidden="true">
       <path class="cat-lapel" d="M50 76L45.5 85L53 87.5M70 76L74.5 85L67 87.5"/>
       <path class="cat-collar" d="M50 75.4L58.6 77L53.4 83.2ZM70 75.4L61.4 77L66.6 83.2Z"/>
       <path class="cat-tie" d="M57.6 77.3H62.4L61.4 81H58.6ZM58.6 81H61.4L63 90.6L60 94.6L57 90.6Z"/>
+      <rect class="cat-tiebar" x="57.3" y="85.6" width="5.4" height="1.1" rx=".4"/>
+      <g class="cat-pocket"><path class="sq" d="M65.6 91.2L67 87.2L68.8 89.4L70.6 86.9L72.6 91.2Z"/><path class="welt" d="M65 91.4H73.2"/></g>
+      <g class="cat-lanyard"><path class="strap" d="M55.5 77.5L59.6 90M64.5 77.5L60.4 90"/><rect class="card" x="56.8" y="89.6" width="6.4" height="7.4" rx="1"/><rect class="photo" x="58" y="91.2" width="4" height="1.4" rx=".4"/></g>
+      <path class="cat-pin" d="M47.8 79.9l.55 1.2 1.3.15-.95.9.25 1.3-1.15-.65-1.15.65.25-1.3-.95-.9 1.3-.15z"/>
     </g>
     <path class="cat-outline" d="${CAT_BODY}"/>
     <ellipse class="cat-blush" cx="40.5" cy="66" rx="3.6" ry="2.1"/><ellipse class="cat-blush" cx="79.5" cy="66" rx="3.6" ry="2.1"/>
@@ -3283,6 +3288,22 @@ function catRain(box, ms) {                      // gold and green $ falling fro
   rain.raf = requestAnimationFrame(step);
 }
 window.__cat = { profit: catProfit, phase: catPhase, rain: catRain, state: cat };
+/* ranks (sol/ranks.py): Intern -> Legend. Pips count the rank, Legend gets a star; the suit changes with it */
+const STAR_SVG = `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 .8l1.5 3.1 3.4.5-2.5 2.4.6 3.4L6 8.6 3 10.2l.6-3.4L1.1 4.4l3.4-.5z"/></svg>`;
+const rankPips = r => r >= 6 ? `<i class="rk-star">${STAR_SVG}</i>` : `<i class="rk-pips" aria-hidden="true">${Array.from({ length: 6 }, (_, i) => `<b class="${i < r ? "on" : ""}"></b>`).join("")}</i>`;
+const rankChip = (rk, full = false) => rk ? `<span class="rank-chip" data-r="${rk.id}" title="${esc(rk.name)}${rk.perk ? `: ${esc(rk.perk)}` : ""}">${rankPips(rk.id)}${esc(full ? rk.name : rk.short)}</span>` : "";
+function crewRankChange(model, prev, rk) {
+  const el = $(`#sol-crew .bot-pf[data-model="${model}"]`), name = SOL_MODEL[model]?.name || model;
+  if (rk.id > prev) {
+    if (el) {
+      el.classList.remove("promo"); void el.offsetWidth; el.classList.add("promo");
+      const tag = document.createElement("span"); tag.className = "promo-tag"; tag.textContent = "Promoted";
+      el.appendChild(tag); setTimeout(() => { el.classList.remove("promo"); tag.remove(); }, 2600);
+    }
+    notify({ kind: "tp", title: `${name} promoted to ${rk.name}`, body: rk.perk ? rk.perk[0].toUpperCase() + rk.perk.slice(1) : "", onClick: () => showTab("ranks") });
+    playEvent("profit");
+  } else notify({ kind: "info", title: `${name} dropped to ${rk.name}`, body: "It fell clearly below its old rank.", onClick: () => showTab("ranks") });
+}
 function crewBots() {                            // the main agents only: the backend's bots[], else the default crew
   const st = sol.state || {};
   if (Array.isArray(st.bots) && st.bots.length) return st.bots.filter(b => SOL_MODEL[b.model]);
@@ -3296,7 +3317,7 @@ function renderCrew() {
     box._sig = sig;
     box.innerHTML = bots.map(b => `<div class="bot-pf" data-model="${b.model}" style="--c:${SOL_MODEL[b.model].col}">
         <span class="bot-score num" title="${SOL_MODEL[b.model].name}'s points for being right"></span>
-        ${catBox("", `<button class="cat-expand" type="button" data-agent="${b.model}" aria-expanded="false" aria-controls="crew-profile" aria-label="Open ${SOL_MODEL[b.model].name}'s profile" title="Profile: chart, confidence, what it has done">${EXPAND_ICON}</button>`)}<b class="bot-name">${SOL_MODEL[b.model].name}</b></div>`).join("")
+        ${catBox("", `<button class="cat-expand" type="button" data-agent="${b.model}" aria-expanded="false" aria-controls="crew-profile" aria-label="Open ${SOL_MODEL[b.model].name}'s profile" title="Profile: chart, confidence, what it has done">${EXPAND_ICON}</button>`)}<b class="bot-name">${SOL_MODEL[b.model].name}</b><span class="bot-rank"></span></div>`).join("")
       + `<span class="crew-total num" title="All the main agents' points together"></span>
          <div class="crew-side"><span class="crew-state muted small"></span><button class="btn xs ghost" type="button" id="cat-board-open" title="See and test every phase of the avatar animation">Preview animations</button></div>`;
   }
@@ -3310,6 +3331,14 @@ function renderCrew() {
     const prev = sol.lastWin?.[b.model];
     if (b.last_win && prev != null && b.last_win > prev) crewWin(b.model);
     (sol.lastWin ||= {})[b.model] = b.last_win || 0;
+    const rk = b.rank, rEl = el.querySelector(".bot-rank"), box2 = el.querySelector(".cat-box");
+    if (rk) {
+      if (box2.dataset.rank !== String(rk.id)) box2.dataset.rank = rk.id;
+      const html = rankChip(rk); if (rEl._h !== html) { rEl._h = html; rEl.innerHTML = html; }
+      const was = sol.lastRank?.[b.model];
+      if (was != null && was !== rk.id) crewRankChange(b.model, was, rk);
+      (sol.lastRank ||= {})[b.model] = rk.id;
+    }
   });
   box.querySelector(".crew-total").textContent = known ? `Σ ${total >= 0 ? "+" : "−"}${Math.abs(Math.round(total))} pts` : "Σ – pts";
   const cr = sol.state?.crew, m = sol.state?.model, stTxt = cr?.training ? `Training: split into ${bots.length} models${m && sol.state?.training?.progress != null ? ` · ${Math.round(sol.state.training.progress * 100)}%` : ""}`
@@ -3358,11 +3387,12 @@ function renderProfile() {
     root.innerHTML = `<div class="cp" style="--c:${m.col}">
       <div class="cp-head">
         <div class="cp-cat">${catBox()}</div>
-        <div class="cp-id"><div class="cp-title"><h3>${esc(m.name)}</h3><span class="cp-rank num" id="cp-rank"></span></div>
+        <div class="cp-id"><div class="cp-title"><h3>${esc(m.name)}</h3><span id="cp-rchip"></span><span class="cp-rank num" id="cp-rank"></span></div>
           <div class="cp-sub muted small" id="cp-sub"></div>
           <div class="cp-pts" id="cp-pts"></div></div>
         <button class="btn xs cp-close" id="cp-close" type="button" aria-label="Close the profile">Close</button>
       </div>
+      <section class="cp-sec cp-career" id="cp-career"></section>
       <div class="cp-grid">
         <section class="cp-sec cp-chart-sec"><h4 id="cp-chart-h">Chart</h4><div class="cp-chart" id="cp-chart"></div><p class="muted small cp-chart-note" id="cp-chart-note"></p></section>
         <section class="cp-sec"><h4>Confidence</h4><div class="cp-conf" id="cp-conf"></div><div class="cp-conf-chart" id="cp-conf-chart"></div><p class="muted small" id="cp-conf-note"></p></section>
@@ -3375,6 +3405,18 @@ function renderProfile() {
   }
   const pts = (k, v, sub = "") => `<div class="cp-tile"><span>${k}</span><b class="num ${v > 0 ? "up" : v < 0 ? "down" : ""}">${v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(Math.round(v))}`}</b>${sub ? `<small class="muted">${sub}</small>` : ""}</div>`;
   $("#cp-rank").textContent = d.rank ? `#${d.rank} of ${d.of}` : "";
+  const car = d.career;
+  if (car) {
+    const cb = $("#cp-inner .cp-cat .cat-box"); if (cb) cb.dataset.rank = car.rank.id;
+    $("#cp-rchip").innerHTML = rankChip(car.rank, true);
+    const nx = car.next, lbl = { points: "Points", trades: "Closed trades", accuracy: "Right calls" };
+    const val = n => n.what === "accuracy" ? `${Math.round(n.have * 100)}% of ${Math.round(n.need * 100)}%` : `${n.what === "points" ? Math.round(n.have) : n.have} of ${n.need}`;
+    setHTML($("#cp-career"), `<h4>Career <span class="muted small">${esc(car.rank.perk || "")}</span></h4>
+      ${nx ? `<div class="cp-next"><span>Next: ${rankChip(nx, true)}</span><b class="num">${car.pct}%</b><span class="muted small">there once every bar is full</span></div>
+        <div class="cp-reqs">${nx.needs.map(n => `<div class="cp-req"><span>${lbl[n.what]}</span><div class="rk-bar"><i style="width:${Math.round(n.frac * 100)}%"></i></div><span class="num small">${val(n)}</span></div>`).join("")}</div>`
+        : `<p class="small">Top of the ladder: ${esc(car.rank.name)}. Its vote counts double.</p>`}
+      ${car.history?.length ? `<div class="cp-hist small">${car.history.slice(0, 4).map(h => `<span class="${h.rank.id > h.prev.id ? "up" : "down"}">${h.rank.id > h.prev.id ? "▲" : "▼"} ${esc(h.rank.name)} <em class="muted">${solWhen(h.t)}</em></span>`).join("")}</div>` : ""}`);
+  }
   $("#cp-sub").textContent = [d.model_info?.auc != null ? `quiz grade AUC ${d.model_info.auc.toFixed(3)}` : "not graded by the quiz yet",
     d.model_info?.weight != null ? `the merged bot trusts it ${d.model_info.weight >= 0 ? "+" : ""}${d.model_info.weight.toFixed(2)}` : "",
     st.accuracy != null ? `right on ${Math.round(st.accuracy * 100)}% of its closed trades` : ""].filter(Boolean).join(" · ");
@@ -3436,6 +3478,57 @@ function updateProfileChart(fit = false) {
   $("#cp-chart-note").textContent = ch.position ? `Holding: ${solPct(ch.position.pnl_pct)} since its buy.` : (ch.markers || []).length ? "Arrows: where the crew bought (green) and sold (gold)." : "";
   if (fit) prof.chart.timeScale().fitContent();
 }
+/* the Ranks tab: the ladder top to bottom with the agents on each rank, their points and % to the next rank */
+const rk = { data: null, busy: false, missing: false, err: "" };
+async function loadRanks() {
+  if (rk.busy) return; rk.busy = true;
+  try { rk.data = await api("/api/sol/ranks"); rk.missing = false; rk.err = ""; }
+  catch (e) { rk.missing = e.status === 404; rk.err = e.message; }
+  rk.busy = false; renderRanks();
+}
+const rkReq = r => r.id === 0 ? "where every agent starts" : [r.pts != null ? `${r.pts} points` : "", r.trades ? `${r.trades} closed trades` : "", r.acc != null ? `${Math.round(r.acc * 100)}% right` : ""].filter(Boolean).join(" · ");
+function renderRanks() {
+  const miss = $("#rk-missing");
+  miss.hidden = !rk.missing && !rk.err;
+  if (!miss.hidden) setHTML(miss, `<p class="muted small">${rk.missing ? "The Solana engine isn't running in this version, so there are no agents to rank yet." : esc(rk.err)}</p>`);
+  const d = rk.data; if (!d) return;
+  const byModel = Object.fromEntries(d.agents.map(a => [a.model, a]));
+  const top = d.agents[0];
+  $("#rk-meta").textContent = d.agents.length ? `${d.agents.length} agents · top: ${SOL_MODEL[top.model]?.name || top.model}, ${top.rank.name}` : "";
+  const ladder = $("#rk-ladder"), sig = d.agents.map(a => `${a.model}:${a.rank.id}`).join(",");
+  if (ladder._sig !== sig) {                        // rebuild only when someone changes rank (the cats keep typing)
+    ladder._sig = sig;
+    ladder.innerHTML = [...d.ranks].reverse().map(r => `<div class="rk-rung${r.agents.length ? " has" : ""}" data-r="${r.id}">
+        <div class="rk-badge">${rankChip(r, true)}<span class="muted small">vote ×${r.weight}</span></div>
+        <div class="rk-req small muted">${rkReq(r)}</div>
+        <div class="rk-agents">${r.agents.map(m => `<button class="rk-agent" type="button" data-agent="${m}" style="--c:${SOL_MODEL[m]?.col || "var(--gold)"}" title="Open ${esc(SOL_MODEL[m]?.name || m)}'s profile">
+            ${catBox()}<span class="rk-a-meta"><b>${esc(SOL_MODEL[m]?.name || m)}</b><span class="num rk-pts"></span><span class="rk-bar"><i></i></span><span class="small muted rk-pct"></span></span></button>`).join("")
+          || `<span class="muted small rk-empty">${r.id === 6 ? "Nobody has made it yet." : "Nobody here right now."}</span>`}</div></div>`).join("");
+    ladder.querySelectorAll(".rk-agent").forEach(b => { const a = byModel[b.dataset.agent]; if (a) b.querySelector(".cat-box").dataset.rank = a.rank.id; });
+  }
+  ladder.querySelectorAll(".rk-agent").forEach(b => {
+    const a = byModel[b.dataset.agent]; if (!a) return;
+    b.querySelector(".rk-pts").textContent = `${Math.round(a.points)} pts`;
+    b.querySelector(".rk-bar i").style.width = `${a.pct}%`;
+    b.querySelector(".rk-pct").textContent = a.next ? `${Math.round(a.pct)}% to ${a.next.name}` : "top of the ladder";
+  });
+  $("#rk-stand-meta").textContent = d.agents.length ? "by rank, then points" : "";
+  setHTML($("#rk-stand"), d.agents.map((a, i) => `<tr data-agent="${a.model}"><td class="num">${i + 1}</td>
+      <td class="sol-tok"><b style="color:${SOL_MODEL[a.model]?.col || "inherit"}">${esc(SOL_MODEL[a.model]?.name || a.model)}</b></td>
+      <td>${rankChip(a.rank, true)}</td><td class="num">${Math.round(a.points)}</td>
+      <td><div class="rk-to"><span class="rk-bar"><i style="width:${a.pct}%"></i></span><span class="num small">${a.next ? `${Math.round(a.pct)}%` : "top"}</span></div>
+        <span class="muted small">${a.next ? a.next.needs.map(n => n.what === "accuracy" ? `${Math.round(n.have * 100)}/${Math.round(n.need * 100)}% right` : n.what === "trades" ? `${n.have}/${n.need} trades` : `${Math.round(n.have)}/${n.need} pts`).join(" · ") : "Legend"}</span></td></tr>`).join("")
+    || `<tr><td colspan="5" class="muted sol-empty">No agents yet: they appear once the Solana crew has models.</td></tr>`);
+  setHTML($("#rk-log"), (d.log || []).map(l => `<li class="${l.rank.id > l.prev.id ? "up" : "down"}"><span class="rk-arrow">${l.rank.id > l.prev.id ? "▲" : "▼"}</span>
+      <b>${esc(SOL_MODEL[l.model]?.name || l.model)}</b> ${l.rank.id > l.prev.id ? "promoted to" : "dropped to"} ${rankChip(l.rank, true)}<em class="muted small">${solWhen(l.t)} · ${Math.round(l.points)} pts</em></li>`).join("")
+    || `<li class="muted small">No promotions yet. The first one comes with the first quiz grade: Interns become Junior Traders at 25 points.</li>`);
+}
+document.addEventListener("click", e => {
+  const a = e.target.closest("#tab-ranks [data-agent]"); if (!a) return;
+  showTab("sol"); setTimeout(() => openProfile(a.dataset.agent), 250);
+});
+setInterval(() => seen() && state.tab === "ranks" && loadRanks(), 4000);
+
 /* the preview board: every phase of the animation, one row each, looping, so it can be seen and tested */
 const CAT_ROWS = [
   { id: "idle", name: "Typing (idle)", note: "Paws take turns on the keys, the head bobs, the eyes blink now and then." },
@@ -3449,7 +3542,10 @@ function openCatBoard() {
   setHTML($("#cb-rows"), CAT_ROWS.map(r => `<div class="cb-row" data-row="${r.id}">
       <div class="cb-label"><b>${r.name}</b><span class="muted small">${r.note}</span><span class="cb-clock num small"></span></div>
       <div class="cb-cats">${["xgb", "lgbm", "rf"].map(m => `<div class="cb-cat">${catBox()}<span class="small">${SOL_MODEL[m].name}</span></div>`).join("")}</div>
-      <button class="btn xs" type="button" data-cb-play="${r.id}" title="Play the whole profit sequence on this row">Play</button></div>`).join(""));
+      <button class="btn xs" type="button" data-cb-play="${r.id}" title="Play the whole profit sequence on this row">Play</button></div>`).join("")
+    + `<div class="cb-row cb-ranks"><div class="cb-label"><b>Ranks: what each one wears</b><span class="muted small">Intern's lanyard, then ties, a pocket square, a tie bar, a gold tie with a pin; Legend adds a brass frame.</span></div>
+      <div class="cb-cats">${["Intern", "Junior Trader", "Trader", "Senior Trader", "Portfolio Manager", "Partner", "Legend"].map((n, i) => `<div class="cb-cat" data-rank-demo="${i}">${catBox()}<span class="small">${n}</span></div>`).join("")}</div></div>`);
+  $$("#cb-rows [data-rank-demo]").forEach(c => { c.querySelector(".cat-box").dataset.rank = c.dataset.rankDemo; });
   dlg.showModal?.() ?? dlg.setAttribute("open", "");
   catBoardLoop();
 }
@@ -3643,7 +3739,7 @@ function renderSolDebate() {
   const c = sol.state?.config || {}, floor = c.model_floor ?? 0.65, need = c.buy_threshold ?? 0.78;
   const series = models.map(m => ({ key: m, name: SOL_MODEL[m].name, col: SOL_MODEL[m].col, dash: SOL_MODEL[m].dash, pts: rs.map(r => ({ x: r.n, y: r.stances.find(s => s.model === m)?.prob })) }));
   const said = (r, i) => `<div class="sol-round${i === 0 || i === rs.length - 1 ? "" : " mid"}"><span class="sol-round-n">${i === 0 ? "Opening" : i === rs.length - 1 ? "Final" : `Round ${r.n}`}</span>
-      ${r.stances.filter(s => SOL_MODEL[s.model]).map(s => `<div class="sol-say"><span class="sol-who"><i style="background:${SOL_MODEL[s.model].col}"></i>${SOL_MODEL[s.model].name}</span><span class="sol-stance ${s.stance === "BUY" ? "buy" : ""}">${s.stance === "BUY" ? "BUY" : "PASS"} ${(s.prob * 100).toFixed(0)}%</span><span class="sol-says">${esc(s.says || "")}${s.moved ? ` <em class="muted">(${s.moved > 0 ? "+" : "−"}${Math.abs(s.moved * 100).toFixed(1)} pts)</em>` : ""}</span></div>`).join("")}</div>`;
+      ${r.stances.filter(s => SOL_MODEL[s.model]).map(s => `<div class="sol-say"><span class="sol-who"><i style="background:${SOL_MODEL[s.model].col}"></i>${SOL_MODEL[s.model].name}${i === 0 && d.weights?.[s.model] != null ? ` <em class="sol-w" title="its vote weight, from its rank">×${d.weights[s.model]}</em>` : ""}</span><span class="sol-stance ${s.stance === "BUY" ? "buy" : ""}">${s.stance === "BUY" ? "BUY" : "PASS"} ${(s.prob * 100).toFixed(0)}%</span><span class="sol-says">${esc(s.says || "")}${s.moved ? ` <em class="muted">(${s.moved > 0 ? "+" : "−"}${Math.abs(s.moved * 100).toFixed(1)} pts)</em>` : ""}</span></div>`).join("")}</div>`;
   const cp = k.compromise;
   setHTML(box, `<div class="sol-conv" id="sol-conv"></div>
     <div class="sol-deal ${k.verdict === "BUY" ? "buy" : ""}"><b>${k.verdict === "BUY" ? "✓ Deal: BUY" : k.agreed ? "– Agreed: PASS" : "✕ No deal: PASS"}</b>

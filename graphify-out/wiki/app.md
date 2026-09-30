@@ -264,3 +264,14 @@
   `.cp-conf-chart`), and "What it has done" (its call open -> final %, the crew's verdict, result and points).
 - Settings > MT5 connection (`#set-mt5`) and Mac wording: see mac.md.
 
+## Ranks (2026-09-30, Chat B)
+- Rail tab `data-tab="ranks"` (`#tab-ranks`, no default key; bind one in Keys): `loadRanks()` every 4 s from
+  `/api/sol/ranks`; `renderRanks()`: ladder top to bottom (`.rk-rung` per rank: chip, vote weight, requirements, the
+  agents on it as `.rk-agent` cards with a live cat, points, bar and "% to <next>"; rebuilt only when a rank changes),
+  standings table, promotions log. Clicking an agent opens its profile in the Solana tab.
+- `rankChip(rank, full)` (pips for 1-5, a star for Legend), `.bot-rank` under each crew name, `data-rank` on `.cat-box`
+  dresses the cat (Intern lanyard, navy / steel / burgundy / gold tie, pocket square, tie bar, pin, Legend's brass frame).
+  `crewRankChange()` = brass ring, chip pop, "Promoted" tag, notification + sound (a drop is a quiet notification).
+- Profile: rank chip in the header, `#cp-career` (next rank, % and one bar per requirement, last changes).
+  Debate transcript shows each model's vote weight (`.sol-w`). The animation board has a row with every rank's outfit.
+

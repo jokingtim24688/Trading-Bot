@@ -105,4 +105,5 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-26: Market merged into the Bot tab (chart left, live card right, no SL on its chart), notifications below the Bot header; see app.md "Market merged into the Bot tab".
 - 2026-09-30: Solana trenching backend `sol/` (see [sol.md](sol.md)), Bongo Cat avatars + preview board, Quiz Stocks/Trenching/Combined, Telegram /prof /loss /total, MT5 main agent + subagents review (7793203).
 - 2026-09-30: Mac support (b7787c0): installer `Trading Bot.command` that detects the Mac, MT5 bridge (`agent/mt5_remote.py`, `MT5 Bridge.bat`), Mac pop-ups/notifications, see [mac.md](mac.md). Agent profiles in the Solana tab: expand button on each avatar, `/api/sol/agent/{model}`, votes table in sol.db.
+- 2026-09-30: Rank system for the Solana crew (Intern -> Legend; rank = suit + vote weight) and a Ranks tab, see [sol.md](sol.md) and app.md.
 <!-- Chat B: add new lines above this marker -->

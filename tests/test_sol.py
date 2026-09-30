@@ -189,3 +189,62 @@ def test_agent_profile_votes_chart_and_activity(monkeypatch):
     assert [m["kind"] for m in done["chart"]["markers"]] == ["buy", "sell"]
     assert done["stats"]["debates"] == 1 and done["stats"]["trades"] == 1
     assert c.get("/api/sol/agent/nobody").status_code == 404
+
+
+def test_rank_ladder_rules_and_hysteresis():
+    from sol import ranks
+    f = ranks.rank_for
+    assert f(0, 0, None) == 0 and f(30, 0, None) == 1                 # the quiz grade alone makes a Junior
+    assert f(80, 5, None) == 2 and f(80, 4, None) == 1                 # Trader needs 5 closed trades
+    assert f(160, 15, 0.56) == 3 and f(160, 15, 0.50) == 2             # Senior needs 55 % right
+    assert f(5000, 500, 0.9) == 6                                      # Legend is the top
+    assert f(140, 15, 0.54, current=3) == 3                            # a little under Senior: keeps it
+    assert f(130, 15, 0.54, current=3) == 2                            # clearly under: drops one rung
+    assert f(10, 0, None, current=3) == 0                              # and all the way down when it has to
+    p = ranks.progress(2, 120, 9, 0.6)
+    assert p["name"] == "Senior Trader" and p["frac"] == pytest.approx(0.6, abs=0.01)   # trades 9/15 is the slowest
+    assert ranks.progress(6, 9999, 999, 0.9) is None
+
+
+def test_quiz_grade_replaces_instead_of_adding():
+    from sol import store
+    store.add_score("xgb", 36.0, quiz=True)
+    store.add_score("xgb", 40.0, quiz=True)
+    store.add_score("xgb", 12.5)
+    b = store.bots()["xgb"]
+    assert b["quiz"] == 40.0 and b["score"] == 12.5 and b["rank"] == 0
+
+
+def test_promotion_is_logged_announced_and_weights_the_debate():
+    from sol import debate, ranks, store
+    said = []
+    store.add_score("lgbm", 36.0, quiz=True)                          # quiz grade: Intern -> Junior Trader
+    store.add_score("rf", 5.0, quiz=True)
+    ch = ranks.update(["lgbm", "rf"], say=said.append)
+    assert [c["model"] for c in ch] == ["lgbm"] and ch[0]["to"]["name"] == "Junior Trader" and ch[0]["up"]
+    assert said and store.rank_log("lgbm")[0]["rank"] == 1 and store.bots()["lgbm"]["rank"] == 1
+    assert ranks.update(["lgbm"]) == []                                 # nothing new: no duplicate log rows
+    w = ranks.weights()
+    assert w["lgbm"] == 1.1 and w["rf"] == 1.0
+    even = debate.run({"xgb": 0.9, "lgbm": 0.6, "rf": 0.7}, weights={"xgb": 1.0, "lgbm": 1.0, "rf": 1.0})
+    heavy = debate.run({"xgb": 0.9, "lgbm": 0.6, "rf": 0.7}, weights={"xgb": 2.0, "lgbm": 1.0, "rf": 1.0})
+    assert heavy["consensus"]["score"] > even["consensus"]["score"]     # a Legend's vote pulls the crew its way
+    assert heavy["weights"]["xgb"] == 2.0
+
+
+def test_ranks_route_and_career_in_profile():
+    from fastapi.testclient import TestClient
+    from app import server
+    from sol import ranks, store
+    store.add_score("xgb", 40.0, quiz=True)
+    store.add_score("xgb", 60.0)
+    ranks.update(["xgb"])
+    c = TestClient(server.app)
+    d = c.get("/api/sol/ranks").json()
+    assert [r["name"] for r in d["ranks"]][0] == "Intern" and len(d["ranks"]) == 7
+    top = d["agents"][0]
+    assert top["model"] == "xgb" and top["rank"]["name"] == "Junior Trader" and top["points"] == 100.0
+    assert top["next"]["name"] == "Trader" and 0 <= top["pct"] < 100          # 100/75 pts but 0/5 trades
+    assert "xgb" in d["ranks"][1]["agents"] and d["log"][0]["model"] == "xgb"
+    prof = c.get("/api/sol/agent/xgb").json()
+    assert prof["career"]["rank"]["name"] == "Junior Trader" and prof["career"]["history"]

@@ -1201,4 +1201,15 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Video preview of a successful trade (scripted data, real UI): debate -> buy -> climb -> take profit +30 % -> the
   crew celebrates (close-up) -> LightGBM's profile. Tests: 69 passed.
 
+### 2026-09-30 (Chat B): rank system + Ranks tab
+- The crew climbs a trading-desk ladder: Intern, Junior Trader, Trader, Senior Trader, Portfolio Manager, Partner,
+  Legend. Needs points (trade points + latest quiz grade), closed trades and, from Senior up, accuracy. Promotes at
+  once, demotes only when clearly below (no flicker). Rank changes the suit (lanyard, tie colours, pocket square, tie
+  bar, gold tie + pin, Legend's brass frame) and the vote weight in the debate (1.0 to 2.0). Promotions: ring + chip
+  pop + "Promoted" tag + notification + Telegram; history in sol.db rank_log.
+- Fixed while doing it: quiz points used to add up on every training, so pressing Train again would have ranked
+  agents up without trading; they now hold the latest grade.
+- New Ranks tab: the ladder with the agents on each rank, their points and % to the next rank, standings, promotions.
+  Profiles show the rank and a Career section. Tests: 73 passed (4 new).
+
 <!-- Chat B: add new entries above this line -->

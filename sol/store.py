@@ -30,7 +30,13 @@ def conn():
         closed REAL);
     CREATE INDEX IF NOT EXISTS ix_votes_model ON votes(model, t);
     CREATE INDEX IF NOT EXISTS ix_votes_pos ON votes(position_id);
+    CREATE TABLE IF NOT EXISTS rank_log (id INTEGER PRIMARY KEY, model TEXT, t REAL, rank INTEGER, prev INTEGER,
+        points REAL);
     """)
+    have = {r[1] for r in c.execute("PRAGMA table_info(bots)")}
+    for col, typ in (("rank", "INTEGER DEFAULT 0"), ("rank_t", "REAL DEFAULT 0")):
+        if col not in have:                          # databases made before the rank system
+            c.execute(f"ALTER TABLE bots ADD COLUMN {col} {typ}")
     return c
 
 
@@ -158,11 +164,17 @@ def bots():
         return {r["model"]: dict(r) for r in c.execute("SELECT * FROM bots")}
 
 
+def _ensure_bot(c, model):
+    c.execute("INSERT OR IGNORE INTO bots (model, score, last_win, quiz, rank, rank_t) VALUES (?,0,0,0,0,0)", (model,))
+
+
 def add_score(model, pts, win=False, quiz=False):
+    """Trade points add up. Quiz points are the latest grade, not a running total (training again mustn't count
+    twice)."""
     with conn() as c:
-        c.execute("INSERT OR IGNORE INTO bots VALUES (?,0,0,0)", (model,))
+        _ensure_bot(c, model)
         if quiz:
-            c.execute("UPDATE bots SET quiz=quiz+? WHERE model=?", (pts, model))
+            c.execute("UPDATE bots SET quiz=? WHERE model=?", (pts, model))
         else:
             c.execute("UPDATE bots SET score=score+?, last_win=CASE WHEN ? THEN ? ELSE last_win END WHERE model=?",
                       (pts, int(win), now(), model))
@@ -233,4 +245,17 @@ def seen_snap(mint) -> dict:
     with conn() as c:
         r = c.execute("SELECT snap FROM seen WHERE mint=?", (mint,)).fetchone()
     return jload(r[0], {}) if r else {}
+
+
+# ---------- ranks ----------
+def set_rank(model, rank, prev, points):
+    with conn() as c:
+        _ensure_bot(c, model)
+        c.execute("UPDATE bots SET rank=?, rank_t=? WHERE model=?", (rank, now(), model))
+        c.execute("INSERT INTO rank_log (model, t, rank, prev, points) VALUES (?,?,?,?,?)", (model, now(), rank, prev, points))
+
+
+def rank_log(model, limit=12):
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM rank_log WHERE model=? ORDER BY t DESC LIMIT ?", (model, limit))]
 

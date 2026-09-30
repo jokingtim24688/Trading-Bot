@@ -26,17 +26,22 @@ def _says(m, p, stance, moved, rnd):
     return f"{'Up' if moved > 0 else 'Down'} to {p:.0%} after hearing the others."
 
 
-def run(probs: dict, scores: dict | None = None, need=0.78, floor=0.65, size_sol=0.1, tp_pct=30.0, trail_pct=10.0):
+def run(probs: dict, scores: dict | None = None, need=0.78, floor=0.65, size_sol=0.1, tp_pct=30.0, trail_pct=10.0,
+        weights: dict | None = None):
     """probs: {model: p} (the merged bot's own 'bot' answer is kept out of the argument and reported beside it).
-    scores: {model: points} so proven models pull harder. Returns rounds, consensus and the compromise trade."""
+    weights: {model: vote weight} from the rank system (sol/ranks.py); without them, scores {model: points} give the
+    proven models more pull. Returns rounds, consensus and the compromise trade."""
     t0 = time.perf_counter()
     cur = {m: float(p) for m, p in probs.items() if m != "bot"}
     if not cur:
         return {"rounds": [], "consensus": {"verdict": "PASS", "score": 0, "spread": 0, "agreed": False, "rounds": 0,
                                             "note": "no trained models"}, "ms": 0.0}
-    scores = scores or {}
-    lo = min(scores.get(m, 0) for m in cur)
-    trust = {m: 1.0 + max(0.0, scores.get(m, 0) - lo) / 100 for m in cur}    # 1.0 .. ~2.0
+    if weights:
+        trust = {m: max(0.5, float(weights.get(m, 1.0))) for m in cur}       # the rank's weight, 1.0 .. 2.0
+    else:
+        scores = scores or {}
+        lo = min(scores.get(m, 0) for m in cur)
+        trust = {m: 1.0 + max(0.0, scores.get(m, 0) - lo) / 100 for m in cur}    # 1.0 .. ~2.0
     rounds = [{"n": 0, "stances": [{"model": m, "prob": round(p, 4), "stance": _stance(p, need, floor),
                                     "says": _says(m, p, _stance(p, need, floor), 0, 0), "moved": 0.0}
                                    for m, p in cur.items()]}]
@@ -66,6 +71,6 @@ def run(probs: dict, scores: dict | None = None, need=0.78, floor=0.65, size_sol
                 "trail_pct": round(trail_pct * (1.2 - 0.4 * edge) if spread > AGREE_SPREAD / 2 else trail_pct, 1),
                 "note": "full size, all agree" if pct >= 0.99 else f"{pct:.0%} size: {'still split' if not agreed else 'close to the line'}"}
     ms = (time.perf_counter() - t0) * 1000
-    return {"rounds": rounds, "bot": probs.get("bot"), "ms": round(ms, 3),
+    return {"rounds": rounds, "bot": probs.get("bot"), "ms": round(ms, 3), "weights": {m: round(w, 2) for m, w in trust.items()},
             "consensus": {"score": round(score, 4), "spread": round(spread, 4), "agreed": agreed, "rounds": len(rounds) - 1,
                           "verdict": "BUY" if buy else "PASS", "compromise": comp, "need": need, "floor": floor}}
