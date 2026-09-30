@@ -32,6 +32,12 @@ def conn():
     CREATE INDEX IF NOT EXISTS ix_votes_pos ON votes(position_id);
     CREATE TABLE IF NOT EXISTS rank_log (id INTEGER PRIMARY KEY, model TEXT, t REAL, rank INTEGER, prev INTEGER,
         points REAL);
+    CREATE TABLE IF NOT EXISTS tweets (id INTEGER PRIMARY KEY, mint TEXT, symbol TEXT, model TEXT, beat TEXT,
+        tweet_id TEXT, author TEXT, followers INTEGER, likes INTEGER, url TEXT, text TEXT, t REAL, tweet_t REAL,
+        heat REAL, voices INTEGER, status TEXT, why TEXT, verdict TEXT, also TEXT);
+    CREATE INDEX IF NOT EXISTS ix_tweets_t ON tweets(t);
+    CREATE INDEX IF NOT EXISTS ix_tweets_model ON tweets(model, t);
+    CREATE INDEX IF NOT EXISTS ix_tweets_mint ON tweets(mint, t);
     """)
     have = {r[1] for r in c.execute("PRAGMA table_info(bots)")}
     for col, typ in (("rank", "INTEGER DEFAULT 0"), ("rank_t", "REAL DEFAULT 0")):
@@ -259,3 +265,47 @@ def rank_log(model, limit=12):
     with conn() as c:
         return [dict(r) for r in c.execute("SELECT * FROM rank_log WHERE model=? ORDER BY t DESC LIMIT ?", (model, limit))]
 
+
+
+# ---------- the tweet monitors ----------
+def record_tweet(row: dict) -> int:
+    """One coin a monitor picked out of X, with the post that put it there."""
+    cols = ("mint", "symbol", "model", "beat", "tweet_id", "author", "followers", "likes", "url", "text",
+            "tweet_t", "heat", "voices", "status", "why", "verdict", "also")
+    with conn() as c:
+        cur = c.execute(f"INSERT INTO tweets (t, {','.join(cols)}) VALUES ({','.join(['?'] * (len(cols) + 1))})",
+                        (now(), *(row.get(k) for k in cols)))
+        return cur.lastrowid
+
+
+def tweet_verdict(rid: int, status: str, verdict: str | None = None, why: str | None = None):
+    with conn() as c:
+        c.execute("UPDATE tweets SET status=?, verdict=COALESCE(?, verdict), why=COALESCE(?, why) WHERE id=?",
+                  (status, verdict, why, rid))
+
+
+def tweet_finds(limit=40, model=None) -> list[dict]:
+    q = "SELECT * FROM tweets" + (" WHERE model=?" if model else "") + " ORDER BY t DESC LIMIT ?"
+    with conn() as c:
+        return [dict(r) for r in c.execute(q, ((model, limit) if model else (limit,)))]
+
+
+def tweet_ids(since: float) -> set:
+    """Posts already handled, so the same tweet never costs a second look."""
+    with conn() as c:
+        return {r[0] for r in c.execute("SELECT tweet_id FROM tweets WHERE t>=?", (since,)) if r[0]}
+
+
+def tweet_voices(mint: str, since: float) -> int:
+    with conn() as c:
+        r = c.execute("SELECT COUNT(DISTINCT author) FROM tweets WHERE mint=? AND t>=?", (mint, since)).fetchone()
+    return int(r[0] or 0)
+
+
+def tweet_stats(model=None) -> dict:
+    where, args = (" WHERE model=?", (model,)) if model else ("", ())
+    with conn() as c:
+        r = c.execute(f"SELECT COUNT(*) n, SUM(status='traded') bought, SUM(status='blocked') blocked, "
+                      f"MAX(t) last FROM tweets{where}", args).fetchone()
+    return {"found": int(r["n"] or 0), "bought": int(r["bought"] or 0), "blocked": int(r["blocked"] or 0),
+            "last": r["last"]}

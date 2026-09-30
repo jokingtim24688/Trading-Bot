@@ -234,6 +234,28 @@
         <div id="sol-debate" class="sol-debate"></div>
       </div>
     </div>
+    <div class="panel sol-x" id="sol-x">
+      <div class="panel-head">
+        <h3>Tweet radar</h3><span id="solx-meta" class="muted small"></span>
+      </div>
+      <p class="solx-lead small">Every agent reads a different part of X and brings back coins worth a look. A find is
+        only a candidate: it still has to pass the six rug rules, the model floor, the debate and the subagents' veto,
+        exactly like a coin the scanner found. The radar only decides <em>which coins get looked at first</em>.</p>
+      <div class="solx-setup">
+        <div class="seg-row solx-prov" id="solx-prov" role="radiogroup" aria-label="Where the posts come from">
+          <button type="button" class="seg-opt on" data-p="off" role="radio" aria-checked="true">Off</button>
+          <button type="button" class="seg-opt" data-p="twitterapi" role="radio" aria-checked="false" title="twitterapi.io — $0.15 per 1,000 posts">twitterapi.io</button>
+          <button type="button" class="seg-opt" data-p="x" role="radio" aria-checked="false" title="The official X API — $0.005 per post read">X API</button>
+        </div>
+        <label class="solx-key"><span class="muted small">API key</span><input id="solx-key" type="password" autocomplete="off" spellcheck="false" placeholder="paste the key"></label>
+        <button id="solx-save" class="btn" type="button">Save key</button>
+        <button id="solx-run" class="btn primary" type="button">Start monitors</button>
+        <button id="solx-now" class="btn" type="button" title="Read every beat once, without waiting for the timer">Read now</button>
+        <span id="solx-cost" class="muted small"></span>
+      </div>
+      <div class="solx-beats" id="solx-beats"></div>
+      <div class="table-wrap solx-wrap"><table id="solx-finds"><thead><tr><th>Found</th><th>Coin</th><th>Agent</th><th>Heat</th><th>Voices</th><th>The post</th><th>What happened to it</th></tr></thead><tbody></tbody></table></div>
+    </div>
     <div class="panel sol-port">
       <div class="panel-head"><h3>Portfolio &amp; active trades</h3><span id="sol-port-meta" class="muted small"></span></div>
       <div class="sol-port-grid">

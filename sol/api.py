@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, HTTPException
 
 from app import settings
 
-from . import agents, engine, feeds, model, ranks, store, trench, wallet
+from . import agents, engine, feeds, model, ranks, store, trench, tweets, wallet
 
 router = APIRouter()
 EXIT = {"tp": "take_profit", "trail": "trailing_stop", "stop": "stop_loss", "timeout": "timeout", "manual": "manual",
@@ -230,6 +230,7 @@ def sol_agent(name: str):
         "model_info": {"auc": (meta.get("members") or {}).get(name), "weight": (meta.get("weights") or {}).get(name)},
         "career": {**_agent_rank(name, store.bots()),
                    "history": [{**r, "rank": ranks.info(r["rank"]), "prev": ranks.info(r["prev"])} for r in store.rank_log(name)]},
+        "tweets": tweets.agent_view(name),
     }
 
 
@@ -256,6 +257,50 @@ def sol_ranks():
                        "agents": [a["model"] for a in agents_ if a["rank"]["id"] == r["id"]]} for r in ranks.RANKS],
             "agents": sorted(agents_, key=lambda a: (-a["rank"]["id"], -a["points"])),
             "log": sorted(log, key=lambda r: -r["t"])[:30]}
+
+
+# ---------- each agent's tweet monitor ----------
+@router.get("/api/sol/tweets")
+def sol_tweets():
+    """Every agent's beat, what it read last round, and the coins it brought back (with what happened to each)."""
+    return tweets.view()
+
+
+@router.post("/api/sol/tweets/monitor")
+def sol_tweets_monitor(body: dict = Body(...)):
+    try:
+        return {"running": tweets.set_monitor(bool(body.get("on")))}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/api/sol/tweets/key")
+def sol_tweets_key(body: dict = Body(...)):
+    """Save the provider and its key. The key is written to data/settings.json and never read back by a route."""
+    try:
+        provider = tweets.save_key(str(body.get("provider") or "off"), body.get("key"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"provider": provider, "key_set": bool(tweets.cfg()["key"]), "cost": tweets.cost()}
+
+
+@router.post("/api/sol/tweets/beat")
+def sol_tweets_beat(body: dict = Body(...)):
+    """Turn one agent's monitor on or off, or give it search terms of your own."""
+    model_ = str(body.get("model") or "")
+    if model_ not in [b["model"] for b in tweets.beats()]:
+        raise HTTPException(404, "No agent with that name.")
+    tweets.set_beat(model_, body.get("on"), body.get("terms"))
+    return tweets.view()
+
+
+@router.post("/api/sol/tweets/round")
+def sol_tweets_round():
+    """Read every beat once, now, without waiting for the timer."""
+    if tweets.cfg()["provider"] == "off" or not tweets.cfg()["key"]:
+        raise HTTPException(400, "Save an X API key first — the monitors have nothing to read without one.")
+    _bg(tweets.round_once)
+    return {"started": True}
 
 
 # ---------- trenching quiz ----------

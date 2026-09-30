@@ -1218,4 +1218,35 @@ Each chat writes only in its own section below, and adds new entries just above 
 - New Ranks tab: the ladder with the agents on each rank, their points and % to the next rank, standings, promotions.
   Profiles show the rank and a Career section. Tests: 73 passed (4 new).
 
+### 2026-09-30 — Tweet radar: every agent's own monitor on X, and one-line installers (Chat B)
+- Each agent now has **its own tweet monitor** (`sol/tweets.py`) on a different beat, so four monitors don't keep
+  finding the same coin: XGBoost reads new launches, LightGBM the runners, RandomForest the crowd, CatBoost the
+  callers (plus any handles you add). Two providers: twitterapi.io ($0.15 / 1,000 posts) and the official X API
+  ($0.005 a post); off until a key is saved.
+- **The filters all still apply.** A find is a candidate, nothing more: mints are read out of the text and out of
+  pump.fun / Dexscreener / Birdeye / Solscan / gmgn / Axiom / Photon / BullX links, cashtags are looked up on
+  GeckoTerminal, and then every one goes through `engine.evaluate` — the six rug rules, the model floor, the
+  debate and the subagents' veto. The radar only decides *which coins get looked at first*.
+- Before that it has its own bar, so the app doesn't pay to look up spam: coin-spam wording, minimum likes,
+  minimum followers, minimum account age, maximum post age, and at least 2 different accounts on a coin unless
+  one big account (25k+) posts it alone. Heat (0-100) sorts what is left — loud, fresh, widely repeated, found by
+  a higher-ranked agent, and found by more than one beat all score higher — and only the top few a round get
+  checked.
+- New: Tweet radar panel in the Solana tab (provider, key, start/stop, Read now, a running cost estimate in
+  dollars a day, a card per agent with its beat and what it read, and the finds table with what happened to each),
+  and the same monitor inside each agent's profile. `GET /api/sol/tweets`, `POST /api/sol/tweets/{monitor,key,beat,round}`.
+- The X key is the first entry in `settings.SECRETS`: saved to `data/settings.json`, but `/api/status` and
+  `/api/settings` hand back the placeholder `__saved__` instead, and sending that placeholder back never wipes
+  the real key. No route ever returns it.
+- Cat animations, as asked: **typing is the only animation while an agent is doing anything** — watching,
+  debating, reading X, holding a trade — and profit is the only thing that changes it (green fur, arms in the
+  air waving, $ raining and locking on the eyes for 2 s, then back to typing). Checked in the browser, not just
+  in the CSS; the preview board row is relabelled "Typing (everything else)".
+- **One-line installers**: `install.ps1` (PowerShell) and `install.sh` (bash, macOS + Linux). They check Python,
+  git and — on a Mac — the chip, Homebrew and libomp, install only what is missing after asking, download the app,
+  make a Desktop shortcut on Windows, and start it. Run the same line later and it just updates. The bash one was
+  run end to end in the sandbox. Links are at the top of the README.
+- Tests: 79 passed (6 new, including one that proves a coin everyone is tweeting about is still thrown out by the
+  rug filter and nothing is bought).
+
 <!-- Chat B: add new entries above this line -->

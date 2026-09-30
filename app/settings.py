@@ -89,6 +89,21 @@ DEFAULTS = {
     "sol_min_liq_usd": 5000,
     "sol_scan_s": 10,
     "sol_paper_start": 10.0,
+    # Each agent's own tweet monitor (sol/tweets.py). Off until a key is saved; a find still goes through every
+    # filter (rug rules -> model floor -> debate -> subagents), it only decides which coins get looked at first.
+    "x_provider": "off",                   # "off" | "twitterapi" (twitterapi.io) | "x" (official X API v2)
+    "x_api_key": "",                       # stays on this machine; routes only ever report whether it is set
+    "x_scan_s": 300,                       # seconds between rounds (every agent reads its own beat once a round)
+    "x_per_beat": 15,                      # posts pulled per agent per round - this is what the provider bills
+    "x_min_likes": 4,                      # a post nobody liked is not a signal
+    "x_min_followers": 400,                # nor is one from an account nobody follows
+    "x_min_account_days": 30,              # brand-new accounts are how coin spam is posted
+    "x_max_age_min": 45,                   # older than this and the move already happened
+    "x_min_voices": 2,                     # distinct accounts on the same coin before it is worth a look
+    "x_big_voice": 25000,                  # unless one account this big posts it alone
+    "x_max_per_round": 6,                  # coins actually evaluated per round, best heat first
+    "x_accounts": "",                      # extra handles to follow, comma separated, no @
+    "x_beats": {},                         # per-agent overrides: {"xgb": {"on": false, "terms": "..."}}
     # Owned by the UI (Keybinds and Sounds pages); the server only stores them so they survive and ride in backups
     "keybinds": {},                        # {"bindings": {"man.buy": "B", ...}, "groups": {"app": true, ...}}
     "sounds": {},                          # {"master": {...}, "events": {"profit": {...}, ...}}
@@ -116,6 +131,9 @@ DEFAULTS = {
     "mcp_autostart": True,
     "settings_version": 8,
 }
+
+
+SECRETS = ("x_api_key",)        # never returned by a route: the app only learns whether one is set
 
 
 def load() -> dict:
@@ -158,9 +176,20 @@ def load() -> dict:
     return s
 
 
+KEPT = "__saved__"      # what the app is shown instead of a secret, and what it may send back unchanged
+
+
+def public(s: dict | None = None) -> dict:
+    """Settings as the window may see them: a saved secret becomes a placeholder, so it never rides in a poll."""
+    s = dict(s if s is not None else load())
+    for k in SECRETS:
+        s[k] = KEPT if s.get(k) else ""
+    return s
+
+
 def save(updates: dict) -> dict:
     s = load()
-    s.update({k: v for k, v in updates.items() if k in DEFAULTS})
+    s.update({k: v for k, v in updates.items() if k in DEFAULTS and not (k in SECRETS and v == KEPT)})
     PATH.write_text(json.dumps(s, indent=2))
     return s
 

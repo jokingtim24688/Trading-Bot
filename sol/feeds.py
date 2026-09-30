@@ -72,6 +72,21 @@ def trending_pools(pages=1, dex=None) -> list[dict]:
     return [s for s in out if s["mint"]]
 
 
+def token_pools(mint: str) -> list[dict]:
+    """Every pool of one mint, best liquidity first — how a coin named in a post becomes a snapshot."""
+    js = _get(f"{GT}/tokens/{mint}/pools", "geckoterminal")
+    out = [pool_snapshot(p) for p in (js or {}).get("data", [])]
+    return sorted([s for s in out if s["mint"]], key=lambda s: -s["liq_usd"])
+
+
+def search_pools(query: str, limit=6) -> list[dict]:
+    """Search Solana pools by ticker or name — how a $CASHTAG in a post becomes a mint."""
+    js = _get("https://api.geckoterminal.com/api/v2/search/pools", "geckoterminal",
+              {"query": query[:40], "network": "solana", "page": 1})
+    out = [pool_snapshot(p) for p in (js or {}).get("data", [])]
+    return sorted([s for s in out if s["mint"]], key=lambda s: -s["liq_usd"])[:limit]
+
+
 def candles(pool: str, limit=300) -> list[list[float]]:
     """1-minute candles, oldest first: [t, open, high, low, close, volume_usd]."""
     js = _get(f"{GT}/pools/{pool}/ohlcv/minute", "geckoterminal", {"aggregate": 1, "limit": limit, "currency": "usd"})

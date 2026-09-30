@@ -60,3 +60,47 @@ writes `bots.rank`/`rank_t` + `rank_log`, and `engine.announce_rank` sends Teleg
 Routes: `GET /api/sol/ranks` (ranks with who's on them, agents with points / trades / accuracy / next{needs, frac} / pct,
 log), `career` in `/api/sol/agent/{model}`, `rank` in `bots[]` of `/api/sol/state`.
 
+
+## Tweet radar (`sol/tweets.py`, 2026-09-30)
+Every agent has **its own monitor on X**, on a different beat, so four monitors don't keep finding the same coin:
+
+| Beat | Whose | What it reads |
+|---|---|---|
+| New launches | 1st crew member (XGBoost) | brand-new mints, the minute someone posts them |
+| Runners | 2nd (LightGBM) | coins already moving, before the move is over |
+| Crowd | 3rd (RandomForest) | what a lot of different accounts keep repeating |
+| Callers | 4th (CatBoost) | the accounts with a name to lose, plus the handles in `x_accounts` |
+
+Providers: **twitterapi.io** (`X-API-Key`, `/twitter/tweet/advanced_search`, $0.00015 a post) and the **official X
+API v2** (`Bearer`, `/2/tweets/search/recent`, $0.005 a post). `x_provider = "off"` until a key is saved, and the
+key is in `settings.SECRETS`: `/api/status` and `/api/settings` return the placeholder `__saved__`, sending the
+placeholder back never overwrites it, and no route ever returns the real one.
+
+**A find is a candidate, nothing more.** `_check()` turns it into a snapshot (`feeds.token_pools` for a mint,
+`feeds.search_pools` for a cashtag) and hands it to `engine.evaluate`, which runs the same gates as a scanner
+find: the six rug rules, the model floor, the debate, the subagents' veto, and auto-trade before anything is
+bought. The snapshot is tagged (`found_via`, `found_by`, `found_url`, `found_heat`, `found_model`) so the feed
+knows where it came from. The radar only decides **which coins get looked at first**.
+
+Its own bar, before any of that (nothing else is paid for): coin-spam wording, `x_min_likes` (scaled per beat),
+`x_min_followers`, `x_min_account_days`, `x_max_age_min`, and `x_min_voices` different accounts on a coin unless
+one over `x_big_voice` posts it alone. Mints come out of the text and out of pump.fun / Dexscreener / Birdeye /
+Solscan / gmgn / Axiom / Photon / BullX links; wrapped SOL, USDC and USDT are never candidates. **Heat** (0-100)
+then sorts what is left: likes, followers, views, freshness, how many voices, verified, a bonus when a second
+beat found it too, and × the finding agent's rank weight — the same weight that tips its vote in the debate.
+Only `x_max_per_round` coins a round are actually checked; a post is never read twice (`store.tweet_ids`).
+
+Settings: `x_provider`, `x_api_key`, `x_scan_s` (300), `x_per_beat` (15), `x_min_likes` (4), `x_min_followers`
+(400), `x_min_account_days` (30), `x_max_age_min` (45), `x_min_voices` (2), `x_big_voice` (25000),
+`x_max_per_round` (6), `x_accounts`, `x_beats` (per-agent on/off and search terms).
+Store: `tweets` table (`record_tweet`, `tweet_verdict`, `tweet_finds`, `tweet_ids`, `tweet_voices`, `tweet_stats`).
+Routes: `GET /api/sol/tweets`, `POST /api/sol/tweets/monitor {on}`, `/key {provider, key}`, `/beat {model, on, terms}`,
+`/round`; `tweets` in `GET /api/sol/agent/{model}`.
+UI: Tweet radar panel in the Solana tab (provider, key, start/stop, Read now, a cost estimate in dollars a day, a
+card per agent, and the finds table with what happened to each) and the same monitor in each agent's profile.
+
+## The avatars, in one line
+Two animations only. **Typing** runs the whole time an agent is doing anything — watching, debating, reading X,
+holding a trade. **Profit** is the only thing that changes it: green fur, arms in the air waving, $ raining and
+locking on the eyes for 2 s, then back to typing. Nothing else touches the cat's pose (a promotion pulses a ring
+round the frame, not the cat).

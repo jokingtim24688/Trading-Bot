@@ -81,7 +81,7 @@ def _update_status() -> dict | None:
 def status():
     s = settings.load()
     meta = mt5_service.model_meta(s["symbol"]) or {}
-    return {"settings": s, "jobs": jobs.status(), "model_ready": mt5_service.model_exists(s["symbol"]),
+    return {"settings": settings.public(s), "jobs": jobs.status(), "model_ready": mt5_service.model_exists(s["symbol"]),
             "model": {k: meta.get(k) for k in ("suggested_threshold", "breakeven_win_pct", "exit_rule")},
             "data_ready": (ROOT / "data" / f"{s['symbol']}_M1.parquet").exists(), "resources": _resources(),
             "version": {**VERSION, "update": _update_status()}, "platform": platform_info.info()}
@@ -110,7 +110,7 @@ def mt5_bridge_test(body: dict = Body(default={})):
 
 @app.post("/api/settings")
 def save_settings(body: dict = Body(...)):
-    return settings.save(body)
+    return settings.public(settings.save(body))
 
 
 @app.post("/api/settings/backup")

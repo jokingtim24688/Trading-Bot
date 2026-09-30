@@ -4,7 +4,23 @@ A desktop app for trading MetaTrader 5 on **1-minute candles**. It includes a ma
 tuned for a **Ryzen 5 7600 + RTX 4060** PC and **Hermes**, an AI assistant with long-term memory that can
 also help with anything else.
 
-## Start it
+## Install it in one line
+Paste this into **PowerShell** (Windows):
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/jokingtim24688/Trading-Bot/HEAD/install.ps1 | iex"
+```
+or into **Terminal** (macOS and Linux):
+```bash
+curl -fsSL https://raw.githubusercontent.com/jokingtim24688/Trading-Bot/HEAD/install.sh | bash
+```
+Either one checks what your computer already has (Python, git, and on a Mac the chip, Homebrew and `libomp`),
+installs only what is missing — asking first — downloads the app to your user folder, and opens it. Run the same
+line again later and it just updates. Nothing needs administrator rights, and neither one touches MetaTrader 5 or
+its logins. To look before you leap: add `-Check` on Windows, or download the `.sh` and run it with `--no-launch`.
+MetaTrader 5 still has to be installed and logged in for the MT5 side (Windows only — on a Mac see
+[On a Mac](#on-a-mac)); the Solana side needs nothing else.
+
+## Start it by hand
 **On a Mac?** See [On a Mac](#on-a-mac) below. On Windows:
 
 1. Install **Python 3.11** (64-bit) and **MetaTrader 5**. Open MT5, log in (use a demo account first), and press **Ctrl+E** to enable Algo Trading.

@@ -106,6 +106,18 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
+- 2026-09-30, **FYI, no action needed** (tweet-radar commit): the user asked for a tweet monitor per agent and an
+  installer link, and Chat B built both, touching your lane. Pull before editing:
+  **`app/settings.py`** — new `x_*` keys for the monitors, plus `SECRETS = ("x_api_key",)`, `KEPT = "__saved__"`
+  and `public()`. `save()` now drops a key whose value is the placeholder, so the app can post the whole settings
+  object back without wiping a secret. Add future secrets to `SECRETS` and they behave the same.
+  **`app/server.py`** — `/api/status` and `POST /api/settings` return `settings.public(...)` instead of the raw
+  settings (only the X key is masked today; `telegram_token` is untouched).
+  **`sol/store.py`** — new `tweets` table + `record_tweet`/`tweet_verdict`/`tweet_finds`/`tweet_ids`/
+  `tweet_voices`/`tweet_stats`. **`sol/feeds.py`** — `token_pools()` and `search_pools()`.
+  **`sol/api.py`** — `/api/sol/tweets*` routes and `tweets` in the agent profile.
+  New: `sol/tweets.py`, `install.ps1`, `install.sh`, tests in `tests/test_sol.py`. Map: wiki sol.md (Tweet radar).
+  Nothing in `agent/` or the MT5 path changed.
 - 2026-09-30, **FYI, no action needed** (commit b7787c0 + the profile commit after it): the user asked for Mac
   support and Chat B did it in your lane too. Pull before editing: `agent/broker.py`, `app/mt5_service.py`,
   `mcp_server/mt5_mcp.py` (if MetaTrader5 won't import they use `agent/mt5_remote.RemoteMT5`, a bridge to MT5 on a
