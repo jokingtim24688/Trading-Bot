@@ -629,7 +629,7 @@
         <label class="snd-ctl"><span>Each one stays for <em id="note-secs-v"></em></span><input type="range" id="note-secs" min="0.6" max="6" step="0.1"></label>
         <label class="check"><input type="checkbox" id="pref-tpsl"> Take profit, stop loss and closed-trade notifications</label>
         <label class="check"><input type="checkbox" id="pref-screen"> Pop up at the top right of the screen when the app isn't in front</label>
-        <label class="check" id="desk-row" hidden><input type="checkbox" id="pref-desktop"> Also show Windows' own pop-up (bottom right)</label>
+        <label class="check" id="desk-row" hidden><input type="checkbox" id="pref-desktop"> <span id="desk-label">Also show Windows' own pop-up (bottom right)</span></label>
       </div>
       <div class="pop-row" id="pop-row" hidden>
         <label class="inline">Screen pop-ups appear on <select id="pop-screen"></select></label>
@@ -664,6 +664,7 @@
     <div class="set-layout">
       <nav class="set-nav" id="set-nav" aria-label="Settings sections">
         <a href="#set-trading" class="on">Trading<span class="dot"></span></a>
+        <a href="#set-mt5">MT5 connection<span class="dot"></span></a>
         <a href="#set-money">Bot money rules<span class="dot"></span></a>
         <a href="#set-news">News pause<span class="dot"></span></a>
         <a href="#set-manual">Manual trading<span class="dot"></span></a>
@@ -689,6 +690,18 @@
           <label class="check"><input type="checkbox" name="auto_promote_demo"> Move from Paper to Demo automatically when the Paper gate is passed</label>
           <label class="check"><input type="checkbox" name="use_learned"> Apply the rules the bot learned from its own trades</label>
           <span class="help">Blocks the hours, sides and setups that kept losing. See "What the bot has learned" on the Agent tab.</span>
+        </fieldset>
+        <fieldset class="panel" id="set-mt5"><legend>MT5 connection<small>direct on Windows; through the MT5 bridge on a Mac or Linux</small></legend>
+          <p class="span-all mt5-where" id="mt5-where"></p>
+          <label>MT5 bridge address<input name="mt5_bridge_url" placeholder="http://192.168.1.20:18812" spellcheck="false" autocomplete="off"></label>
+          <label>Bridge token<input name="mt5_bridge_token" type="password" autocomplete="off" spellcheck="false" placeholder="the --token you gave the bridge"></label>
+          <ol class="span-all tg-steps mt5-steps">
+            <li>On the Windows PC or VM that runs MetaTrader 5 (logged in): install Python, then run <code>pip install MetaTrader5 numpy</code>.</li>
+            <li>Copy <code>agent/mt5_remote.py</code> there (or the whole Trading-Bot folder) and start it:
+              <code>python mt5_remote.py serve --token pick-a-secret</code>. Windows may ask to allow it through the firewall: allow it on private networks.</li>
+            <li>Enter that PC's address and the same token here, Save, then <button class="btn xs" type="button" id="mt5-bridge-test">Test the bridge</button> <span id="mt5-bridge-status" class="muted small"></span></li>
+          </ol>
+          <span class="help">Parallels / VMware / UTM on the same Mac work too: use the VM's IP address. The bridge only carries what the app asks MT5 (prices, positions, orders); nothing is stored there.</span>
         </fieldset>
         <fieldset class="panel" id="set-money"><legend>Bot money rules<small>stake, stop and target for every bot trade</small></legend>
           <label>Stake per trade<span class="u" data-u="% of balance"><input name="stake_pct" type="number" step="0.01" min="0.01"></span></label>

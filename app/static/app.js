@@ -157,6 +157,7 @@ async function pollStatus() {
   try {
     const s = await api("/api/status"); state.status = s;
     renderVersion(s.version);
+    if (s.platform && state.platformOS !== s.platform.os) { state.platformOS = s.platform.os; applyPlatform(s.platform); }
     if (!state.settings) { state.settings = s.settings; initFromSettings(); }
     state.settings = { ...state.settings, ...s.settings };
     const r = s.resources || {};
@@ -2143,7 +2144,8 @@ const actById = id => KEY_ACTIONS.find(a => a.id === id);
 const RESERVED = { "Tab": "used to move between buttons", "Ctrl+C": "copy", "Ctrl+V": "paste", "Ctrl+X": "cut", "Ctrl+A": "select all",
   "Ctrl+Z": "undo", "Ctrl+Y": "redo", "Ctrl+R": "reload", "Ctrl+Shift+R": "reload", "F5": "reload", "Ctrl+W": "close", "Ctrl+F": "find",
   "Ctrl+P": "print", "Alt+F4": "close the window", "F11": "full screen", "F12": "developer tools", "Ctrl+Shift+I": "developer tools",
-  "Ctrl++": "zoom in", "Ctrl+-": "zoom out", "Ctrl+0": "zoom reset" };
+  "Ctrl++": "zoom in", "Ctrl+-": "zoom out", "Ctrl+0": "zoom reset",
+  "Ctrl+Q": "quit (Mac)", "Ctrl+H": "hide the app (Mac)", "Ctrl+M": "minimise (Mac)", "Ctrl+,": "settings (Mac)" };
 const CODE_BASE = { Minus: "-", Equal: "+", BracketLeft: "[", BracketRight: "]", Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/",
   Backslash: "\\", Backquote: "`", NumpadAdd: "+", NumpadSubtract: "-", NumpadMultiply: "Num *", NumpadDivide: "Num /", NumpadDecimal: "Num .", NumpadEnter: "Enter", Space: "Space" };
 function comboOf(e) {                            // "Ctrl+Alt+Shift+Key": letters as printed on the key, the +/= key is always "+"
@@ -2159,8 +2161,12 @@ function comboOf(e) {                            // "Ctrl+Alt+Shift+Key": letter
 const splitCombo = c => { const m = String(c).match(/^((?:Ctrl\+|Alt\+|Shift\+)*)(.+)$/); return { mods: m[1].split("+").filter(Boolean), base: m[2] }; };
 const KEY_NAME = { ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→", Escape: "Esc", "-": "−", Backspace: "⌫", Delete: "Del", PageUp: "PgUp", PageDown: "PgDn", Insert: "Ins" };
 const keyName = b => KEY_NAME[b] || b;
-const keyHTML = c => { const { mods, base } = splitCombo(c); return [...mods, keyName(base)].map(x => `<kbd>${esc(x)}</kbd>`).join(""); };
-const keyPlain = c => { const { mods, base } = splitCombo(c); return [...mods, keyName(base)].join("+"); };
+/* on a Mac the same shortcuts use ⌘ where Windows uses Ctrl (comboOf already reads ⌘ as Ctrl), so show them that way */
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgentData?.platform || navigator.platform || navigator.userAgent);
+const MOD_NAME = IS_MAC ? { Ctrl: "⌘", Alt: "⌥", Shift: "⇧" } : { Ctrl: "Ctrl", Alt: "Alt", Shift: "Shift" };
+const modName = m => MOD_NAME[m] || m;
+const keyHTML = c => { const { mods, base } = splitCombo(c); return [...mods.map(modName), keyName(base)].map(x => `<kbd>${esc(x)}</kbd>`).join(""); };
+const keyPlain = c => { const { mods, base } = splitCombo(c); return [...mods.map(modName), keyName(base)].join(IS_MAC ? "" : "+"); };
 const overlap = (a, b) => !a.tabs || !b.tabs || a.tabs.some(t => b.tabs.includes(t));
 
 const keys = { data: null, capturing: null, undo: null, filter: "", flash: null, synced: false };
@@ -2228,7 +2234,7 @@ function renderKeymap() {                        // a small keyboard: lit keys d
     const list = byBase.get(b) || [], top = list.find(x => x.a.group === "manual" && keys.data.groups.manual) || list.find(x => keys.data.groups[x.a.group]) || list[0];
     const cls = !top ? "" : keys.data.groups[top.a.group] ? ` ${top.a.group}` : " off";
     const tip = list.length ? list.map(x => `${keyPlain(bindOf(x.a))}: ${x.a.label}`).join("\n") : `${keyName(b)} is free`;
-    const mod = top ? top.mods.map(m => ({ Shift: "⇧", Ctrl: "Ctrl", Alt: "Alt" }[m])).join(" ") : "";
+    const mod = top ? top.mods.map(m => ({ Shift: "⇧", Ctrl: IS_MAC ? "⌘" : "Ctrl", Alt: IS_MAC ? "⌥" : "Alt" }[m])).join(" ") : "";
     return `<button class="kcap${cls}${b === "Space" ? " wide" : ""}" type="button" data-cap="${esc(b)}" title="${esc(tip)}"><b>${esc(keyName(b))}</b>${top ? `<small>${mod ? `${mod} ` : ""}${esc(top.a.short)}${list.length > 1 ? ` +${list.length - 1}` : ""}</small>` : ""}</button>`;
   };
   setHTML(box, KB_ROWS.map((r, i) => `<div class="krow r${i}">${r.map(cap).join("")}</div>`).join("") + `<div class="krow r4">${[...KB_EXTRA, ...extra].map(cap).join("")}</div>`);
@@ -2256,7 +2262,7 @@ function startCapture(id) {
     if (e.key === "Escape" && plain) { endCapture(); renderKeys(); return; }
     if ((e.key === "Backspace" || e.key === "Delete") && plain) { assign(id, null); return; }
     const combo = comboOf(e), btn = $(`[data-bind="${id}"]`);
-    if (!combo) { if (btn) btn.innerHTML = `<span class="cap-hint">${[e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift"].filter(Boolean).join(" + ")} + …</span>`; return; }
+    if (!combo) { if (btn) btn.innerHTML = `<span class="cap-hint">${[(e.ctrlKey || e.metaKey) && modName("Ctrl"), e.altKey && modName("Alt"), e.shiftKey && modName("Shift")].filter(Boolean).join(" + ")} + …</span>`; return; }
     if (RESERVED[combo]) { keysNote(`${keyHTML(combo)} is ${RESERVED[combo]}. Pick another key.`, "warn"); return; }
     assign(id, combo);
   };
@@ -2715,6 +2721,27 @@ async function saveSettingsNow() {               // the token has to be saved be
   if (!$("#savebar").classList.contains("is-dirty")) return;
   state.settings = await api("/api/settings", { method: "POST", body: formValues() }); initFromSettings(true); updateDirty();
 }
+/* which computer the app runs on (from /api/status): Mac / Windows / Linux wording, the MT5 bridge section */
+function applyPlatform(pf) {
+  if (!pf) return;
+  document.documentElement.dataset.os = pf.os;
+  const w = $("#mt5-where");
+  if (w) w.innerHTML = pf.mt5_native
+    ? `This ${pf.os === "windows" ? "PC" : "computer"} talks to MetaTrader 5 directly. The bridge below is only for running the app on a Mac or Linux.`
+    : `This is a ${pf.os === "mac" ? `Mac${pf.apple_silicon ? " (Apple silicon)" : " (Intel)"}` : "Linux computer"}. MetaTrader 5's Python connection only exists on Windows, so the app reaches MT5 through the bridge: MT5 runs on a Windows PC or in a Windows VM, and everything else (charts, the bot, Solana, Hermes, the quiz) runs here.`;
+  const dl = $("#desk-label");
+  if (dl) dl.textContent = pf.os === "mac" ? "Also show a Mac notification (Notification Center)" : pf.os === "windows" ? "Also show Windows' own pop-up (bottom right)" : "Also show a system notification";
+}
+$("#mt5-bridge-test")?.addEventListener("click", async () => {
+  const b = $("#mt5-bridge-test"), st = $("#mt5-bridge-status"), f = $("#settings-form");
+  b.disabled = true; st.className = "muted small"; st.textContent = "Testing…";
+  try {
+    const r = await api("/api/mt5/bridge/test", { method: "POST", body: { url: f.elements.mt5_bridge_url.value, token: f.elements.mt5_bridge_token.value } });
+    if (r.ok) { st.className = "small up"; st.textContent = `Connected (MetaTrader5 ${r.version}). ${r.account ? `Account ${r.account.login} on ${r.account.server}${r.account.demo ? " (demo)" : " (real money)"}.` : "The terminal isn't logged in yet."}${r.terminal_connected ? "" : " MT5 isn't connected to the broker."}${r.algo_trading ? "" : " Turn on Algo Trading in MT5 before the bot trades."}`; }
+    else { st.className = "small tg-err"; st.textContent = r.error; }
+  } catch (e) { st.className = "small tg-err"; st.textContent = e.message; }
+  b.disabled = false;
+});
 async function loadTelegram() {
   const el = $("#tg-status"); if (!el) return;
   let s; try { s = await api("/api/telegram/status"); } catch (e) { el.textContent = e.status === 404 ? "Waits for its backend." : e.message; return; }
@@ -3781,7 +3808,8 @@ function renderTrench() {
     + tile("Question creators", `${cr.running ?? 0} running`, `at least ${cr.wanted ?? 2} while the app is open`, (cr.running ?? 0) > 0));
   $("#qt-train").disabled = busy || !(st.questions > 0); $("#qt-train").textContent = training ? "Training…" : "Train the crew now";
   $("#qt-download").disabled = !!dl.running; $("#qt-download").textContent = dl.running ? "Downloading…" : "Download fresh trenching data";
-  $("#qt-hint").textContent = dl.error ? `Download: ${dl.error}` : !st.real ? "The starter set is preloaded so you can train now; real data replaces it as it downloads." : "";
+  const miss = Object.entries(m.problems || {}).filter(([k]) => k !== "cat").map(([k, why]) => `${SOL_MODEL[k]?.name || k} ${why}`);
+  $("#qt-hint").textContent = miss.length ? miss.join(" · ") : dl.error ? `Download: ${dl.error}` : !st.real ? "The starter set is preloaded so you can train now; real data replaces it as it downloads." : "";
   const prog = $("#qt-prog"); prog.hidden = !busy;
   if (busy) {
     const pct = training ? (m.progress || 0) : (dl.progress || 0);
@@ -3939,7 +3967,7 @@ $("#quiz-report-copy").onclick = async () => {
     label.textContent = "Copied ✓"; b.classList.add("done"); toast("Report copied. Paste it into your chat with Claude.");
     setTimeout(() => { label.textContent = "Copy report for Claude"; b.classList.remove("done"); }, 1800);
   }
-  catch (e) { ta.value = report.md; ta.hidden = false; ta.focus(); ta.select(); toast("Press Ctrl+C to copy the selected report, then paste it to Claude."); }
+  catch (e) { ta.value = report.md; ta.hidden = false; ta.focus(); ta.select(); toast(`Press ${IS_MAC ? "⌘C" : "Ctrl+C"} to copy the selected report, then paste it to Claude.`); }
 };
 setInterval(() => !document.hidden && state.tab === "quiz" && Date.now() - report.loaded > 30000 && loadReport(false), 5000);
 

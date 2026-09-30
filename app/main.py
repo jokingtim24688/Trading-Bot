@@ -1,7 +1,7 @@
 """Desktop entry point: starts the local server and opens the app window.
 
-Double-click `Trading Bot.bat` (or run `pythonw -m app.main`). Falls back to the default browser if
-pywebview isn't installed.
+Double-click `Trading Bot.bat` on Windows or `Trading Bot.command` / `Trading Bot.app` on a Mac (or run
+`python -m app.main`). Falls back to the default browser if pywebview isn't installed.
 """
 import json
 import os
@@ -17,6 +17,11 @@ LOG = Path(__file__).resolve().parent.parent / "logs" / "app.log"
 if sys.stdout is None or sys.stderr is None:      # pythonw.exe (no console window): send output to logs/app.log
     LOG.parent.mkdir(exist_ok=True)
     sys.stdout = sys.stderr = open(LOG, "a", encoding="utf-8", buffering=1)
+
+if sys.platform == "darwin":                     # opened from the Finder / a .app: no Homebrew in PATH otherwise
+    _extra = [p for p in ("/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", str(Path.home() / ".local" / "bin"))
+              if Path(p).is_dir()]
+    os.environ["PATH"] = os.pathsep.join(dict.fromkeys(_extra + os.environ.get("PATH", "").split(os.pathsep)))
 
 import uvicorn
 
@@ -98,6 +103,76 @@ class _Win:
         self.u.ShowWindow(hwnd, 0)
 
 
+class _Mac:
+    """The same jobs as _Win with AppKit (pywebview's Cocoa backend brings PyObjC): the pop-up floats above full-screen
+    apps on every Space, shows without activating the app (so it never takes focus), and sits at the top right of the
+    chosen screen. AppKit wants the main thread, so every call is handed to it and waited for. Also keeps macOS' App Nap
+    from slowing the app down while it's in the background (alerts would lag)."""
+    STATUS_LEVEL = 25                               # NSStatusWindowLevel: above normal and floating windows
+    ALL_SPACES, STATIONARY, IGNORES_CYCLE, FULLSCREEN_AUX = 1 << 0, 1 << 4, 1 << 6, 1 << 8
+
+    def __init__(self):
+        import AppKit
+        from PyObjCTools import AppHelper
+        self.ak, self.helper, self._activity = AppKit, AppHelper, None
+
+    def _main(self, fn, timeout=2.0):
+        """Run fn on the main thread and return its result (None if it didn't finish in time)."""
+        done, box = threading.Event(), {}
+
+        def run():
+            try:
+                box["v"] = fn()
+            except Exception as e:                  # noqa: BLE001
+                box["e"] = e
+            done.set()
+        self.helper.callAfter(run)
+        done.wait(timeout)
+        return box.get("v")
+
+    def keep_awake(self):
+        pi = self.ak.NSProcessInfo.processInfo()
+        opts = getattr(self.ak, "NSActivityUserInitiatedAllowingIdleSystemSleep", 0x00EFFFFF)
+        self._activity = pi.beginActivityWithOptions_reason_(opts, "Trade alerts and the trading bot")
+
+    def find(self, title):
+        return self._main(lambda: next((w for w in self.ak.NSApp.windows() if str(w.title()) == title), None))
+
+    def in_front(self, _handle=None):
+        app = self.ak.NSWorkspace.sharedWorkspace().frontmostApplication()
+        return bool(app) and app.processIdentifier() == os.getpid()
+
+    def monitors(self):
+        def read():
+            out = []
+            for i, sc in enumerate(self.ak.NSScreen.screens()):
+                f, v = sc.frame(), sc.visibleFrame()     # points, origin at the bottom left, y going up
+                out.append({"full": (f.origin.x, f.origin.y, f.origin.x + f.size.width, f.origin.y + f.size.height),
+                            "work": (v.origin.x, v.origin.y, v.origin.x + v.size.width, v.origin.y + v.size.height),
+                            "primary": i == 0})
+            return out
+        return self._main(read) or []
+
+    def prepare(self, win):
+        def run():
+            win.setLevel_(self.STATUS_LEVEL)
+            win.setCollectionBehavior_(self.ALL_SPACES | self.STATIONARY | self.IGNORES_CYCLE | self.FULLSCREEN_AUX)
+            win.setHidesOnDeactivate_(False)
+        self._main(run)
+
+    def show_at(self, win, mon, css_w, css_h):
+        left, bottom, right, top = mon["work"]
+        rect = self.ak.NSMakeRect(right - css_w - 12, top - css_h - 12, css_w, css_h)
+
+        def run():
+            win.setFrame_display_(rect, True)
+            win.orderFrontRegardless()              # shown, but the app isn't activated
+        self.helper.callAfter(run)
+
+    def hide(self, win):
+        self.helper.callAfter(lambda: win.orderOut_(None))
+
+
 class Popups:
     """Custom pop-ups at the top right of the screen while the app isn't in front: minimised, behind other windows or
     under a full-screen app (Windows' own toasts can't be moved or styled, and Focus Assist hides them during
@@ -106,7 +181,7 @@ class Popups:
     pywebview exposes the public methods to both pages' JavaScript; internals start with "_" so it leaves them alone."""
 
     def __init__(self, port: int):
-        self._port, self._win, self._hwnd, self._main, self._w32 = port, None, None, None, None
+        self._port, self._win, self._handle, self._main, self._native = port, None, None, None, None   # native: _Win / _Mac
         self._height, self._shown, self._ready, self._pending, self._trail = 110, False, False, [], set()
         self._cfg = {"secs": 2, "screen": True, "tpsl": True, "monitor": 0}
         try:
@@ -142,15 +217,15 @@ class Popups:
 
     def feed(self):
         """True when TP/SL alerts reach the screen from here (so the page doesn't send them twice)."""
-        return bool(self._w32 and self._hwnd)
+        return bool(self._native and self._handle)
 
     def screens(self):
-        if not self._w32:
+        if not self._native:
             return []
         try:
             return [{"i": i, "label": f"{'Main screen' if m['primary'] else f'Screen {i + 1}'} "
                                       f"({m['full'][2] - m['full'][0]}×{m['full'][3] - m['full'][1]})"}
-                    for i, m in enumerate(self._w32.monitors())]
+                    for i, m in enumerate(self._native.monitors())]
         except Exception:
             return []
 
@@ -170,8 +245,8 @@ class Popups:
 
     def idle(self):
         self._shown = False
-        if self._w32 and self._hwnd:
-            self._w32.hide(self._hwnd)
+        if self._native and self._handle:
+            self._native.hide(self._handle)
         elif self._win:
             self._win.hide()
 
@@ -179,25 +254,25 @@ class Popups:
     def _show(self, height=None):
         self._shown = True
         h = height or self._height
-        if self._w32 and not self._hwnd:
-            self._hwnd = self._w32.find(POP_TITLE)
-            if self._hwnd:
-                self._w32.prepare(self._hwnd)
-        if self._w32 and self._hwnd:
-            mons = self._w32.monitors()
+        if self._native and not self._handle:
+            self._handle = self._native.find(POP_TITLE)
+            if self._handle:
+                self._native.prepare(self._handle)
+        if self._native and self._handle:
+            mons = self._native.monitors()
             i = int(self._cfg.get("monitor") or 0)
             mon = mons[i] if 0 <= i < len(mons) else (mons[0] if mons else None)
             if mon:
-                self._w32.show_at(self._hwnd, mon, POP_W, h)
+                self._native.show_at(self._handle, mon, POP_W, h)
                 return
         self._win.resize(POP_W, h)                # other systems: pywebview's own calls
         self._win.show()
 
     def _in_front(self):
-        if not self._w32:
+        if not self._native:
             return True
-        self._main = self._main or self._w32.find(MAIN_TITLE)
-        return self._w32.in_front(self._main)
+        self._main = self._main or self._native.find(MAIN_TITLE)
+        return self._native.in_front(self._main)
 
     _WATCHDOG = {"agent_restart": ("Bot restarted", "info"), "agent_failed": ("Bot stopped", "err"),
                 "agent_stuck": ("Bot looks stuck", "err"), "mt5_down": ("MT5 is down", "err"), "mt5_up": ("MT5 is back", "ok")}
@@ -247,22 +322,24 @@ class Popups:
 
 
 def _start_popups(popups):
-    """Runs once the window loop is up: make the pop-up a non-activating tool window on Windows and start reading the
-    events feed; elsewhere pywebview moves it to the top right of the main screen."""
-    if sys.platform == "win32":
+    """Runs once the window loop is up: make the pop-up a non-activating, always-on-top window (Windows: Win32, Mac:
+    AppKit) and start reading the events feed; elsewhere pywebview moves it to the top right of the main screen."""
+    if sys.platform in ("win32", "darwin"):
         try:
-            popups._w32 = _Win()
+            popups._native = _Win() if sys.platform == "win32" else _Mac()
+            if sys.platform == "darwin":
+                popups._native.keep_awake()
             for _ in range(50):                    # the native windows appear a moment after start
-                popups._hwnd = popups._w32.find(POP_TITLE)
-                if popups._hwnd:
+                popups._handle = popups._native.find(POP_TITLE)
+                if popups._handle:
                     break
                 time.sleep(0.1)
-            if popups._hwnd:
-                popups._w32.prepare(popups._hwnd)
+            if popups._handle:
+                popups._native.prepare(popups._handle)
             threading.Thread(target=popups._watch, daemon=True).start()
         except Exception:
-            popups._w32 = popups._hwnd = None
-    if not popups._w32:
+            popups._native = popups._handle = None
+    if not popups._native:
         try:
             import webview
             s = webview.screens[0]
@@ -299,6 +376,13 @@ def main():
         os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", ""), "--disable-background-timer-throttling",
         "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows",
         "--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling"]))
+    if sys.platform == "darwin":                  # the menu bar says "Trading Bot", not "Python"
+        try:
+            from Foundation import NSBundle
+            b = NSBundle.mainBundle()
+            (b.localizedInfoDictionary() or b.infoDictionary())["CFBundleName"] = "Trading Bot"
+        except Exception:                         # noqa: BLE001 - cosmetic
+            pass
     try:
         import webview
         popups = Popups(port)
@@ -341,6 +425,11 @@ def _fatal(exc: BaseException):
         import ctypes
         ctypes.windll.user32.MessageBoxW(None, f"Trading Bot couldn't start:\n\n{exc}\n\nDetails: {LOG}",
                                          "Trading Bot", 0x10)
+    elif sys.platform == "darwin":
+        import subprocess
+        msg = f"{exc}\n\nDetails: {LOG}".replace("\\", "\\\\").replace('"', '\\"')
+        subprocess.run(["osascript", "-e", f'display alert "Trading Bot couldn\'t start" message "{msg}" as critical'],
+                       capture_output=True, timeout=120)
 
 
 if __name__ == "__main__":

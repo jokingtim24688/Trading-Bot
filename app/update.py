@@ -1,6 +1,8 @@
-"""Bring this copy of the app up to date with GitHub. Run by `Trading Bot.bat` before the app opens:
+"""Bring this copy of the app up to date with GitHub. Run by `Trading Bot.bat` (Windows) or `Trading Bot.command` (Mac)
+before the app opens:
 
-    .venv\\Scripts\\python.exe -m app.update
+    .venv\\Scripts\\python.exe -m app.update          (Windows)
+    .venv/bin/python -m app.update                 (Mac / Linux)
 
 Unlike a bare `git pull --ff-only` it copes with the things that silently kept old versions around:
 - the folder is on another branch, or its branch doesn't track GitHub's -> it switches to BRANCH;
@@ -26,6 +28,20 @@ STATUS = ROOT / "data" / "update_status.json"
 LOG = ROOT / "logs" / "update.log"
 
 
+def have_git() -> bool:
+    """git that works. On a Mac, /usr/bin/git is only Apple's stub until the Command Line Tools are installed; calling it
+    then pops up an installer, so it counts as missing (the Mac installer sets the tools up)."""
+    g = shutil.which("git")
+    if not g:
+        return False
+    if sys.platform == "darwin" and g == "/usr/bin/git":
+        try:
+            return subprocess.run(["xcode-select", "-p"], capture_output=True, timeout=10).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+    return True
+
+
 def _git(*args, timeout=120) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=timeout,
                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -38,7 +54,7 @@ def _out(*args) -> str:
 
 def version() -> dict:
     """The commit this copy runs, for the app to show."""
-    if not (ROOT / ".git").exists() or not shutil.which("git"):
+    if not (ROOT / ".git").exists() or not have_git():
         return {"commit": None, "date": None, "branch": None}
     return {"commit": _out("rev-parse", "--short", "HEAD") or None,
             "date": _out("log", "-1", "--format=%cI") or None,
@@ -71,8 +87,10 @@ def update(branch: str = BRANCH) -> dict:
         st["message"] = ("This folder isn't a git copy (it was probably downloaded as a ZIP), so it can't update "
                          "itself. Re-install it with `git clone` (see README), then it updates on every start.")
         return st
-    if not shutil.which("git"):
-        st["message"] = "Git isn't installed, so the app can't update itself. Install it from https://git-scm.com."
+    if not have_git():
+        st["message"] = ("Git isn't installed, so the app can't update itself. " + (
+            "On a Mac run `xcode-select --install` (or open Trading Bot.command again, it offers to)." if sys.platform == "darwin"
+            else "Install it from https://git-scm.com."))
         return st
     st["before"] = _out("rev-parse", "--short", "HEAD")
     f = _git("fetch", "origin", branch, timeout=180)

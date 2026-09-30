@@ -1,6 +1,7 @@
 """MT5 MCP server: lets Claude read M1 data and manage trades in a running MetaTrader 5 terminal.
 
-Windows only (the MetaTrader5 package talks to a local terminal64.exe).
+Windows: the MetaTrader5 package talks to a local terminal64.exe. Mac / Linux: calls go to MT5 on a Windows PC or VM
+through the MT5 bridge (agent/mt5_remote.py; address in Settings > MT5 bridge).
 Safety: order tools refuse real-money accounts unless MT5_MCP_ALLOW_REAL=1, and refuse any order whose
 stop-loss risk exceeds MT5_MCP_MAX_RISK_PCT (default 1.0) of equity. Every order requires a stop loss.
 
@@ -10,9 +11,16 @@ Claude Desktop / Claude Code config: see mcp_server/README.md
 """
 import json
 import os
+import sys
+from pathlib import Path
 from typing import Literal
 
-import MetaTrader5 as mt5
+try:
+    import MetaTrader5 as mt5
+except ImportError:            # Mac / Linux: MT5 on a Windows PC or VM, through the bridge (agent/mt5_remote.py)
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from agent.mt5_remote import RemoteMT5
+    mt5 = RemoteMT5()
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 

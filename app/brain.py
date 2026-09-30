@@ -12,6 +12,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -161,8 +162,13 @@ _setup = {"stage": "", "pct": 0.0, "error": "", "busy": False}
 _lock = threading.Lock()
 
 
+MAC_OLLAMA = ("/opt/homebrew/bin/ollama", "/usr/local/bin/ollama", "/Applications/Ollama.app/Contents/Resources/ollama",
+              str(Path.home() / "Applications" / "Ollama.app" / "Contents" / "Resources" / "ollama"))
+
+
 def ollama_exe() -> str | None:
-    """Where Ollama is installed (PATH, or the Windows installer's default folders)."""
+    """Where Ollama is installed: PATH, the Windows installer's default folders, or on a Mac Homebrew / Ollama.app
+    (apps opened from the Finder don't get the shell's PATH, so those are checked by name)."""
     found = shutil.which("ollama")
     if found:
         return found
@@ -172,7 +178,16 @@ def ollama_exe() -> str | None:
                 p = Path(base, *sub)
                 if p.exists():
                     return str(p)
+    if sys.platform == "darwin":
+        for p in MAC_OLLAMA:
+            if Path(p).exists():
+                return p
     return None
+
+
+def brew_exe() -> str | None:
+    """Homebrew on a Mac (Apple silicon or Intel), for installing Ollama."""
+    return shutil.which("brew") or next((p for p in ("/opt/homebrew/bin/brew", "/usr/local/bin/brew") if Path(p).exists()), None)
 
 
 def _same_model(a: str, b: str) -> bool:
@@ -268,8 +283,9 @@ def local_state(s: dict) -> dict:
     elif _setup["error"]:
         state, step = "error", _setup["error"]
     elif not alive and not ollama_exe():
-        state, step = "not_installed", ("Ollama isn't installed. Press Set up to install it (Windows winget), or get it "
-                                       "from https://ollama.com/download, then press Set up.")
+        how = "with Homebrew" if sys.platform == "darwin" else "with winget" if os.name == "nt" else ""
+        state, step = "not_installed", (f"Ollama isn't installed. Press Set up to install it{' ' + how if how else ''}, "
+                                       "or get it from https://ollama.com/download, then press Set up.")
     elif not alive:
         state, step = "stopped", "Ollama isn't running. Press Set up to start it."
     else:
@@ -280,23 +296,30 @@ def local_state(s: dict) -> dict:
 
 
 def install_ollama() -> str:
-    """Install Ollama with winget (Windows). Runs in the background; prepare() finishes the job afterwards."""
+    """Install Ollama: winget on Windows, Homebrew on a Mac. Runs in the background; prepare() finishes the job."""
     if ollama_exe():
         return "Ollama is already installed."
-    winget = shutil.which("winget")
-    if not winget:
-        return "winget isn't available here. Install Ollama from https://ollama.com/download, then press Set up."
+    if sys.platform == "darwin":
+        brew = brew_exe()
+        if not brew:
+            return ("Homebrew isn't installed. Get Ollama for Mac from https://ollama.com/download (open it once), "
+                    "then press Set up.")
+        cmd, tool = [brew, "install", "ollama"], "Homebrew"
+    else:
+        winget = shutil.which("winget")
+        if not winget:
+            return "winget isn't available here. Install Ollama from https://ollama.com/download, then press Set up."
+        cmd, tool = [winget, "install", "-e", "--id", "Ollama.Ollama", "--silent",
+                     "--accept-package-agreements", "--accept-source-agreements"], "winget"
 
     def run():
         _setup.update(busy=True, stage="installing Ollama", pct=0.0, error="")
         try:
-            r = subprocess.run([winget, "install", "-e", "--id", "Ollama.Ollama", "--silent",
-                                "--accept-package-agreements", "--accept-source-agreements"],
-                               capture_output=True, text=True, timeout=900,
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=900,
                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             _setup["busy"] = False
             if not ollama_exe():
-                _setup.update(stage="", error=f"Installing Ollama didn't finish (winget exit {r.returncode}). "
+                _setup.update(stage="", error=f"Installing Ollama didn't finish ({tool} exit {r.returncode}). "
                                               "Get it from https://ollama.com/download.")
                 return
             prepare()

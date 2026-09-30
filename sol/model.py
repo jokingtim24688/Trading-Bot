@@ -5,6 +5,7 @@ watched separately). When training ends they are MERGED into one bot: a single f
 holding every member plus a stacking judge that learned how much to trust each one. Pressing Train again splits
 them. predict() on the merged bot is one call and takes well under 5 ms for a token.
 """
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -85,15 +86,41 @@ def _fast(members: dict) -> dict:
     return {m: FastForest(e) if m == "rf" and not isinstance(e, FastForest) else e for m, e in members.items()}
 
 
+_avail = {"at": 0.0, "list": [], "problems": {}}
+PACKAGES = {"xgb": "xgboost", "lgbm": "lightgbm", "rf": "scikit-learn", "cat": "catboost"}
+
+
+def _explain(m: str, e: Exception) -> str:
+    t = f"{type(e).__name__}: {e}"
+    if m == "cat" and isinstance(e, ImportError):
+        return "not installed (optional)"
+    if any(k in t for k in ("libomp", "OpenMP", "Library not loaded", "libgomp")):
+        return ("needs the OpenMP library: on a Mac run `brew install libomp` (Trading Bot.command does it for you)"
+                if sys.platform == "darwin" else "needs the OpenMP runtime (libgomp / libomp)")
+    if isinstance(e, ImportError):
+        return f"not installed: pip install {PACKAGES[m]}"
+    return t[:200]
+
+
 def available() -> list[str]:
-    out = []
+    """The crew members that load on this computer (checked at most once a minute)."""
+    if time.time() - _avail["at"] < 60 and _avail["at"]:
+        return list(_avail["list"])
+    out, problems = [], {}
     for m in MEMBERS:
         try:
             _make(m)
             out.append(m)
-        except Exception:
-            pass
+        except Exception as e:                  # noqa: BLE001 - XGBoostError / OSError when a library is missing
+            problems[m] = _explain(m, e)
+    _avail.update(at=time.time(), list=out, problems=problems)
     return out
+
+
+def problems() -> dict:
+    """Why a crew member can't load, e.g. {"xgb": "needs the OpenMP library: ... brew install libomp"}."""
+    available()
+    return dict(_avail["problems"])
 
 
 def load() -> bool:
@@ -148,7 +175,9 @@ def train(X: np.ndarray, y: np.ndarray, synthetic_share: float = 0.0, on_progres
         raise ValueError("Need at least 60 answered questions with both good and bad buys to train.")
     names = available()
     if len(names) < 2:
-        raise RuntimeError("Install at least two of xgboost, lightgbm, scikit-learn (pip install -r requirements.txt).")
+        why = "; ".join(f"{m}: {p}" for m, p in problems().items() if m != "cat")
+        raise RuntimeError("At least two of XGBoost, LightGBM and RandomForest must load to train"
+                           + (f" ({why})." if why else "."))
     state.update(training=True, merged=False, progress=0.0, stage="splitting the bot into its models", error="",
                  members={m: {"stage": "waiting", "auc": None} for m in names})
     t0 = time.time()

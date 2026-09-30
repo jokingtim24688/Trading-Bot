@@ -14,7 +14,7 @@ from agent import learn, ledger, progression, score as scoring
 from agent.pro import SETUP_NAMES
 
 from . import update as update_mod
-from . import backup, botlive, brain, bridge, manual, memory, mt5_service, review, settings, sounds, stats, telegram, watch, watchdog
+from . import backup, botlive, brain, bridge, manual, memory, mt5_service, platform_info, review, settings, sounds, stats, telegram, watch, watchdog
 from .jobs import LOGS, jobs
 from sol import api as sol_api
 from .settings import ROOT
@@ -84,7 +84,28 @@ def status():
     return {"settings": s, "jobs": jobs.status(), "model_ready": mt5_service.model_exists(s["symbol"]),
             "model": {k: meta.get(k) for k in ("suggested_threshold", "breakeven_win_pct", "exit_rule")},
             "data_ready": (ROOT / "data" / f"{s['symbol']}_M1.parquet").exists(), "resources": _resources(),
-            "version": {**VERSION, "update": _update_status()}}
+            "version": {**VERSION, "update": _update_status()}, "platform": platform_info.info()}
+
+
+@app.post("/api/mt5/bridge/test")
+def mt5_bridge_test(body: dict = Body(default={})):
+    """Settings > MT5 bridge > Test: can this Mac / Linux computer reach MT5 on the Windows side?"""
+    from agent.mt5_remote import RemoteMT5
+    s = settings.load()
+    url = (body.get("url") if body.get("url") is not None else s.get("mt5_bridge_url")) or ""
+    token = (body.get("token") if body.get("token") is not None else s.get("mt5_bridge_token")) or ""
+    if not url.strip():
+        return {"ok": False, "error": "Enter the bridge's address first, e.g. http://192.168.1.20:18812."}
+    r = RemoteMT5(url.strip() if "://" in url else f"http://{url.strip()}", token)
+    try:
+        p = r.ping()
+    except (ConnectionError, LookupError) as e:
+        return {"ok": False, "error": str(e)}
+    term, acc = p.get("terminal"), p.get("account")
+    return {"ok": True, "version": p.get("version"), "terminal_connected": bool(term and getattr(term, "connected", False)),
+            "algo_trading": bool(term and getattr(term, "trade_allowed", False)),
+            "account": None if not acc else {"login": acc.login, "server": acc.server, "name": acc.name,
+                                              "demo": acc.trade_mode == 0}}
 
 
 @app.post("/api/settings")

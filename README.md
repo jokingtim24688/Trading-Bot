@@ -5,12 +5,29 @@ tuned for a **Ryzen 5 7600 + RTX 4060** PC and **Hermes**, an AI assistant with 
 also help with anything else.
 
 ## Start it
+**On a Mac?** See [On a Mac](#on-a-mac) below. On Windows:
+
 1. Install **Python 3.11** (64-bit) and **MetaTrader 5**. Open MT5, log in (use a demo account first), and press **Ctrl+E** to enable Algo Trading.
 2. Get the app with git, so it can update itself: install [Git](https://git-scm.com), then in PowerShell
    `git clone -b claude/laughing-bell-3vt2c7 https://github.com/jokingtim24688/Trading-Bot.git`.
    (A ZIP download works but never updates.)
 3. Double-click **`Trading Bot.bat`**. The first launch sets everything up. After that it updates itself from GitHub
    on every start, then opens. What the update did is in `logs\update.log` and in the app's Settings.
+
+### On a Mac
+1. Get the app with git: open **Terminal** and run
+   `git clone -b claude/laughing-bell-3vt2c7 https://github.com/jokingtim24688/Trading-Bot.git`
+   (if the Mac asks to install the Command Line Tools, click Install, then run the line again).
+2. In the Finder, open the **Trading-Bot** folder and double-click **`Trading Bot.command`**. It checks your Mac and
+   sets up what's missing, asking first: macOS 12 or newer, Apple silicon or Intel, Homebrew, Python 3.12, `libomp`
+   (XGBoost and LightGBM need it on a Mac) and git. Then it opens the app and makes **`Trading Bot.app`** in the same
+   folder: use that from now on (drag it to the Dock). `bash "Trading Bot.command" --check` only says what it finds.
+3. If the Mac says the file can't be opened because it's from an unidentified developer: right-click it → **Open**.
+
+Everything runs on the Mac: charts, the Solana bot, Hermes, the quiz, Telegram. **MetaTrader 5 itself is the one
+exception**: its Python connection only exists on Windows. Run MT5 on a Windows PC or in a Windows VM (Parallels,
+VMware Fusion, UTM), double-click **`MT5 Bridge.bat`** there (it shows an address and a token), and enter both in the
+app under **Settings → MT5 connection**. The app, the trading agent and the MCP bridge then use that MT5.
 
 ### Stuck on an old version?
 Open PowerShell in the Trading-Bot folder (right-click the desktop shortcut → *Open file location*, then type

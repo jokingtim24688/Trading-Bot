@@ -10,8 +10,9 @@ from .risk import SymbolSpec
 
 try:
     import MetaTrader5 as mt5   # Windows only
-except ImportError:            # allows importing the package elsewhere (tests, docs)
-    mt5 = None
+except ImportError:            # Mac / Linux: MT5 on a Windows PC or VM, through the bridge (agent/mt5_remote.py)
+    from .mt5_remote import RemoteMT5
+    mt5 = RemoteMT5()
 
 
 class Journal:

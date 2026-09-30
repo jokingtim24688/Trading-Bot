@@ -5,8 +5,9 @@ from pathlib import Path
 
 try:
     import MetaTrader5 as mt5
-except ImportError:
-    mt5 = None
+except ImportError:                       # not Windows: talk to MT5 on a Windows PC / VM through the bridge
+    from agent.mt5_remote import RemoteMT5
+    mt5 = RemoteMT5()
 
 from .settings import load
 
@@ -26,6 +27,8 @@ def _ensure():
         path = load().get("terminal_path") or None
         ok = mt5.initialize(path=path) if path else mt5.initialize()
         if not ok:
+            if getattr(mt5, "is_remote", False):      # Mac / Linux: the bridge says what's wrong in its own words
+                raise MT5Unavailable(mt5.last_error()[1])
             raise MT5Unavailable(f"Can't reach the MT5 terminal ({mt5.last_error()[1]}). Open MetaTrader 5 and log in, then retry.")
 
 

@@ -1,10 +1,13 @@
-"""Windows pop-up notifications (toasts) for take-profit and stop-loss hits, so you see them with the app minimised or
-behind other windows. Setting `desktop_alerts` (default off since the window shows its own custom pop-ups at the top
-right; this adds Windows' own on top). Uses `winotify` when installed, otherwise PowerShell's own
-toast API; does nothing on other systems. Shown from a background thread, so a slow toast never holds up the app.
+"""The system's own notifications for take-profit and stop-loss hits, so you see them with the app minimised or behind
+other windows. Setting `desktop_alerts` (default off since the window shows its own custom pop-ups at the top right;
+this adds the system's own on top). Windows: `winotify` when installed, otherwise PowerShell's toast API. Mac: the
+Notification Center through `osascript`. Linux: `notify-send` when it's there. Shown from a background thread, so a slow
+notification never holds up the app.
 """
 import os
+import shutil
 import subprocess
+import sys
 import threading
 
 from .settings import load
@@ -40,15 +43,26 @@ def _powershell(title: str, msg: str):
                    capture_output=True, timeout=20, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
+def mac_command(title: str, msg: str) -> list[str]:
+    """The osascript call for a Mac notification (AppleScript strings: backslashes and quotes escaped)."""
+    esc = lambda t: t.replace("\\", "\\\\").replace('"', '\\"')      # noqa: E731
+    return ["osascript", "-e", f'display notification "{esc(msg)}" with title "{esc(title)}" subtitle "{APP_ID}"']
+
+
 def show(title: str, msg: str):
-    """Pop up a Windows notification (if on Windows and `desktop_alerts` is on)."""
-    if os.name != "nt" or not load().get("desktop_alerts", False):
+    """Pop up the system's notification (if `desktop_alerts` is on)."""
+    if not load().get("desktop_alerts", False):
         return
 
     def run():
         try:
-            if not _winotify(title, msg):
-                _powershell(title, msg)
+            if os.name == "nt":
+                if not _winotify(title, msg):
+                    _powershell(title, msg)
+            elif sys.platform == "darwin":
+                subprocess.run(mac_command(title, msg), capture_output=True, timeout=10)
+            elif shutil.which("notify-send"):
+                subprocess.run(["notify-send", "-a", APP_ID, title, msg], capture_output=True, timeout=10)
         except Exception as e:                      # noqa: BLE001 - a missing toast must never break the watcher
             print(f"(desktop alert skipped: {e})", flush=True)
     threading.Thread(target=run, name="toast", daemon=True).start()

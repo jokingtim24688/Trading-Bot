@@ -51,7 +51,7 @@ body {
   border: 1px solid rgba(255,255,255,.07);
   box-shadow: var(--shadow-float);
 }
-@supports not (backdrop-filter: blur(1px)) { .glass { background: var(--surface); } }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .glass { background: var(--surface); } }
 
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); }
@@ -690,7 +690,7 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
 .btn.danger { background: var(--down); color: #1a0907; border-color: var(--down); font-weight: 600; }
 .btn.danger:hover { background: #e86b63; }
 .dlg { max-width: 440px; width: calc(100vw - 32px); padding: 20px 22px; border-radius: var(--r-lg); border: 1px solid rgba(224,87,79,.45); color: var(--text); background: rgba(22,26,31,.97); box-shadow: var(--shadow-float); }
-.dlg::backdrop { background: rgba(8,9,11,.6); backdrop-filter: blur(3px); }
+.dlg::backdrop { background: rgba(8,9,11,.6); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 .dlg[open] { animation: dlg-in .26s var(--ease-spring) both; }
 @keyframes dlg-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 .dlg h3 { margin: 0 0 8px; color: var(--down); }
@@ -828,7 +828,7 @@ label.waiting { opacity: .5; }
   background: rgba(24,28,34,.96); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
   border: 1px solid rgba(255,255,255,.08); box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 14px 38px rgba(0,0,0,.5);
   animation: note-in .38s var(--ease-spring) both; }
-@supports not (backdrop-filter: blur(1px)) { .ntf { background: #181c22; } }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .ntf { background: #181c22; } }
 .ntf::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--gold); }
 .ntf.tp::before, .ntf.ok::before { background: var(--up); } .ntf.sl::before, .ntf.err::before { background: var(--down); } .ntf.info::before { background: var(--gold); }
 .ntf-ic { width: 20px; height: 20px; fill: none; stroke: var(--gold); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -1412,7 +1412,7 @@ body.on-bot .notes { top: var(--notes-top, 170px); }
 
 /* the preview board */
 .cat-board { width: min(1000px, 94vw); max-width: none; max-height: 92vh; padding: 0; overflow: hidden; border-radius: var(--r-lg); border: 1px solid var(--line); color: var(--text); background: rgba(22,26,31,.98); box-shadow: var(--shadow-float); }
-.cat-board::backdrop { background: rgba(8,9,11,.6); backdrop-filter: blur(3px); }
+.cat-board::backdrop { background: rgba(8,9,11,.6); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 .cat-board[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); animation: dlg-in .26s var(--ease-spring) both; }
 .cb-tools .check { display: inline-flex; align-items: center; gap: 8px; }
 .cb-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; padding: 18px 20px 14px; border-bottom: 1px solid var(--line-soft); }
@@ -1567,3 +1567,7 @@ body.on-bot .notes { top: var(--notes-top, 170px); }
 .sol-check ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
 .sol-check li { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px; font-size: 12px; }
 .sol-check li.ok .sol-sub { color: var(--up); } .sol-check li.no .sol-sub { color: var(--down); }
+
+/* Settings > MT5 connection */
+.mt5-where { margin: 0 0 6px; font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 820px; }
+.mt5-steps code { font: 500 12px var(--mono); color: var(--gold); }

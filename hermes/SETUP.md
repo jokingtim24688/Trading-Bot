@@ -68,3 +68,11 @@ Programs have to be in memory while they run. What this setup keeps on disk:
 - The chat model (about 2 GB) runs on the CPU, only while it's answering, then unloads. It never uses VRAM.
 - The app (~150–250 MB) and the agent (~300–500 MB with 5,000 M1 bars) are the only things in RAM.
   The top bar shows live RAM and VRAM use.
+
+## On a Mac
+- Ollama: press **Set up** on the Hermes tab (installs it with Homebrew), or get Ollama for Mac from ollama.com and
+  open it once. The app finds it in Homebrew's folders or in `/Applications/Ollama.app`.
+- Hermes Agent runs natively on macOS, no WSL: install it as its README says, and the app starts `hermes gateway`
+  with your login shell (`bash -lc`), so `hermes` only needs to be on your PATH there. `hermes_wsl_distro` is ignored.
+- The MCP bridge (`mcp_server/mt5_mcp.py`) talks to MT5 through the MT5 bridge (Settings → MT5 connection).
+

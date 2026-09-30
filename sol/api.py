@@ -41,7 +41,8 @@ def sol_state():
                   "trained_at": m.get("trained_at"), "n_samples": m.get("n_samples"),
                   "synthetic": m.get("synthetic", 0) > 0.5, "synthetic_share": m.get("synthetic"),
                   "device": "cpu", "method": "stacking (split to train, merged into one bot)",
-                  "metrics": m.get("metrics"), "members": model.state["members"], "available": model.available()},
+                  "metrics": m.get("metrics"), "members": model.state["members"], "available": model.available(),
+                  "problems": model.problems()},
         "training": {"running": model.state["training"] or tr["running"], "progress": model.state["progress"],
                      "stage": model.state["stage"] or tr["stage"], "error": tr["error"] or model.state["error"]},
         "dataset": {"running": dl["running"], "progress": dl["progress"], "stage": dl["stage"],
@@ -172,7 +173,7 @@ def trench_state():
             "model": {"loaded": model.loaded(), "merged": model.state["merged"] and not model.state["training"],
                       "training": model.state["training"], "progress": model.state["progress"],
                       "stage": model.state["stage"], "members": model.state["members"],
-                      "metrics": model.meta().get("metrics")},
+                      "metrics": model.meta().get("metrics"), "problems": model.problems()},
             "bots": engine.bots_view()}
 
 

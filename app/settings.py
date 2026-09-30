@@ -71,7 +71,10 @@ DEFAULTS = {
     "telegram_token": "",
     "telegram_chat_id": "",                # filled in by "Find my chat" after you message your bot
     "telegram_events": ["tp", "sl", "open", "close", "watchdog"],   # also possible: "be", "trail"
-    "telegram_commands": True,             # answer /prof /loss /total (only from your saved chat)
+    "telegram_commands": True,
+    # MT5 from a Mac / Linux: the bridge running next to MT5 on a Windows PC or VM (agent/mt5_remote.py)
+    "mt5_bridge_url": "",                  # e.g. http://192.168.1.20:18812 ("" = none; Windows uses MT5 directly)
+    "mt5_bridge_token": "",             # answer /prof /loss /total (only from your saved chat)
     # Quiz: which school the Quiz tab trains ("stocks" = MT5 setups, "trenching" = Solana meme coins, "combined")
     "quiz_mode": "trenching",
     "quiz_min_creators": 2,                # question creators kept running while the app is open (per school)
