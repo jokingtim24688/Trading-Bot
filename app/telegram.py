@@ -77,7 +77,7 @@ def status() -> dict:
     s = load()
     return {"enabled": bool(s.get("telegram_enabled")), "token_set": bool(s.get("telegram_token")),
             "chat_set": bool(str(s.get("telegram_chat_id") or "").strip()), "events": s.get("telegram_events"),
-            "sent": _last["sent"], "error": _last["error"]}
+            "sent": _last["sent"], "error": _last["error"], "commands": commands_status()}
 
 
 # ---------- event alerts ----------
@@ -129,3 +129,104 @@ def _start():
     if _thread is None or not _thread.is_alive():
         _thread = threading.Thread(target=_worker, name="telegram", daemon=True)
         _thread.start()
+
+
+def notify_text(text: str, kind: str = "close"):
+    """Queue a ready-made alert (the Solana bot uses this) under one of the usual event kinds."""
+    s = load()
+    if not s.get("telegram_enabled") or kind not in (s.get("telegram_events") or []):
+        return
+    try:
+        _q.put_nowait(text)
+    except queue.Full:
+        return
+    _start()
+
+
+# ---------- commands: /prof /loss /total ----------
+COMMANDS = {"/prof": "all the money earned (winning trades)", "/loss": "all the money lost (losing trades)",
+            "/total": "profit and loss combined", "/help": "this list"}
+_cmd = {"thread": None, "offset": 0, "answered": 0, "last": "", "error": ""}
+
+
+def money_summary() -> dict:
+    """Closed-trade profit and loss per account: MT5 (paper / demo / real, in account money) and Solana (paper / live,
+    in SOL). Open trades are not counted until they close."""
+    from agent import ledger
+    out = {"mt5": {}, "sol": {}}
+    for mode in ("paper", "demo", "real"):
+        rows = [r for r in ledger.recent(100_000, mode) if r["status"] == "closed"]
+        if rows:
+            prof = sum(r["pnl"] for r in rows if (r["pnl"] or 0) > 0)
+            loss = sum(r["pnl"] for r in rows if (r["pnl"] or 0) < 0)
+            out["mt5"][mode] = {"prof": prof, "loss": loss, "total": prof + loss, "n": len(rows)}
+    try:
+        from sol import store
+        for mode in ("paper", "live"):
+            r = store.realized(mode)
+            if r["n"]:
+                out["sol"][mode] = {"prof": r["prof"], "loss": r["loss"], "total": r["prof"] + r["loss"], "n": r["n"]}
+    except Exception:                                   # noqa: BLE001 - no Solana data yet
+        pass
+    return out
+
+
+def command_reply(text: str) -> str | None:
+    cmd = (text or "").strip().split()[0].split("@")[0].lower() if (text or "").strip() else ""
+    if cmd in ("/help", "/start"):
+        return "Commands:\n" + "\n".join(f"{c} — {d}" for c, d in COMMANDS.items())
+    if cmd not in ("/prof", "/loss", "/total"):
+        return None
+    key = cmd[1:]
+    m = money_summary()
+    title = {"prof": "💰 Money earned", "loss": "🔻 Money lost", "total": "📊 Profit + loss combined"}[key]
+    lines = [title]
+    usd = lambda v: f"{'+' if v >= 0 else '-'}${abs(v):,.2f}"
+    sol = lambda v: f"{'+' if v >= 0 else '-'}{abs(v):.4f} SOL"
+    for mode, r in m["mt5"].items():
+        lines.append(f"MT5 {mode}: {usd(r[key])}  ({r['n']} trades)")
+    for mode, r in m["sol"].items():
+        lines.append(f"Solana {mode}: {sol(r[key])}  ({r['n']} trades)")
+    if len(lines) == 1:
+        lines.append("No closed trades yet.")
+    return "\n".join(lines)
+
+
+def _commands_loop():
+    while True:
+        s = load()
+        token, chat = s.get("telegram_token", ""), str(s.get("telegram_chat_id") or "").strip()
+        if not (s.get("telegram_commands", True) and token and ":" in token and chat):
+            threading.Event().wait(15)
+            continue
+        try:
+            ups = _call(token, "getUpdates", offset=_cmd["offset"], timeout=25, allowed_updates=["message"])
+            _cmd["error"] = ""
+        except ValueError as e:
+            _cmd["error"] = str(e)
+            threading.Event().wait(20)
+            continue
+        for u in ups:
+            _cmd["offset"] = max(_cmd["offset"], u["update_id"] + 1)
+            msg = u.get("message") or {}
+            if str((msg.get("chat") or {}).get("id")) != chat:
+                continue                                # only you: other chats can't read your money
+            reply = command_reply(msg.get("text", ""))
+            if reply:
+                try:
+                    _call(token, "sendMessage", chat_id=chat, text=reply)
+                    _cmd["answered"] += 1
+                    _cmd["last"] = msg.get("text", "")
+                except ValueError as e:
+                    _cmd["error"] = str(e)
+
+
+def start_commands():
+    if _cmd["thread"] is None or not _cmd["thread"].is_alive():
+        _cmd["thread"] = threading.Thread(target=_commands_loop, name="telegram-commands", daemon=True)
+        _cmd["thread"].start()
+
+
+def commands_status() -> dict:
+    return {"on": bool(load().get("telegram_commands", True)), "listening": bool(_cmd["thread"] and _cmd["thread"].is_alive()),
+            "answered": _cmd["answered"], "last": _cmd["last"], "error": _cmd["error"], "commands": COMMANDS}

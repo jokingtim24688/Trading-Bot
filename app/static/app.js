@@ -130,7 +130,7 @@ function showTab(name) {
   if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); loadProgress(); loadCalendar(); loadBacktest(); loadWatchdog(); }
   if (name === "settings") onSettingsOpen();
   if (name === "train") pollTrainLog();
-  if (name === "quiz") { loadQuiz(); loadReport(false); }
+  if (name === "quiz") { loadQuiz(); loadReport(false); loadTrench(true); }
 }
 $$(".rail-btn").forEach(b => b.onclick = () => showTab(b.dataset.tab));
 document.addEventListener("click", e => { const g = e.target.closest("[data-goto]"); if (g) { if (g.tagName === "A") e.preventDefault(); showTab(g.dataset.goto); } });
@@ -2721,6 +2721,9 @@ async function loadTelegram() {
   el.className = `small ${s.error ? "tg-err" : "muted"}`;
   el.textContent = s.error ? `Last try failed: ${s.error}` : !s.token_set ? "No token saved yet." : !s.chat_set ? "Token saved. Message your bot, then press Find my chat."
     : `Connected${s.enabled ? "" : " (switched off above)"}.${s.sent ? ` ${s.sent} alert${s.sent === 1 ? "" : "s"} sent.` : ""}`;
+  const c = s.commands, cs = $("#tg-cmd-status");
+  if (cs) cs.textContent = !c ? "" : !c.on ? "Commands are off." : !s.token_set || !s.chat_set ? "Commands start once the token and your chat are saved."
+    : `${c.listening ? "Listening for commands" : "Starting…"}${c.answered ? ` · ${c.answered} answered` : ""}${c.error ? ` · last error: ${c.error}` : ""}`;
 }
 $("#tg-detect").onclick = async () => {
   const b = $("#tg-detect"); b.disabled = true;
@@ -3115,7 +3118,7 @@ const SOL_MODEL = {                              // identity colours, checked fo
   xgb: { name: "XGBoost", col: "#3987e5" }, lgbm: { name: "LightGBM", col: "#d95926" },
   rf: { name: "RandomForest", col: "#199e70" }, cat: { name: "CatBoost", col: "#8c9098", dash: true },
 };
-const SOL_EXIT = { take_profit: "Take profit", trailing_stop: "Trailing stop", timeout: "20-min timeout", manual: "Closed by you", kill: "Panic sell" };
+const SOL_EXIT = { take_profit: "Take profit", trailing_stop: "Trailing stop", stop_loss: "Stop loss", timeout: "20-min timeout", manual: "Closed by you", kill: "Panic sell" };
 const sol = { state: null, feed: [], pos: [], trades: [], pnl: null, sel: null, filter: "all", missing: false, busy: false, t: 0,
               debate: null, debateKey: "", knownPos: null, knownTrades: null, ws: null, wsTried: 0 };
 const solPx = v => v == null || isNaN(v) ? "—" : Math.abs(v) >= 1 ? fmt(v, 4) : Number(v).toPrecision(4);
@@ -3153,25 +3156,111 @@ function solSocket() {                           // optional push; the 2 s poll 
     sol.ws = ws;
   } catch (e) { sol.ws = null; }
 }
-/* the crew: one small avatar per model at the top of the tab. Idle they type at a laptop; when a model makes points it
-   turns green for 2 s and dollar signs drop over its eyes, shake and fall; then it goes back to typing. */
-const BOT_FACE = `<svg viewBox="0 0 64 64" aria-hidden="true">
-  <circle class="bf-bg" cx="32" cy="32" r="30"/>
-  <g class="bf-body"><line x1="32" y1="15" x2="32" y2="9" class="bf-ant"/><circle cx="32" cy="8" r="2.4" class="bf-tip"/>
-    <rect x="17" y="15" width="30" height="22" rx="9" class="bf-head"/>
-    <g class="bf-eyes"><circle cx="26.5" cy="26" r="2.7"/><circle cx="37.5" cy="26" r="2.7"/></g>
-    <g class="bf-cash"><text x="26.5" y="29.5">$</text><text x="37.5" y="29.5">$</text></g></g>
-  <path d="M19 38h26l2 9H17z" class="bf-lid"/><rect x="21" y="40" width="22" height="1.6" rx=".8" class="bf-glow"/>
-  <rect x="13" y="47" width="38" height="4" rx="2" class="bf-base"/>
-  <rect x="21" y="44" width="7" height="5" rx="2.5" class="bf-hand l"/><rect x="36" y="44" width="7" height="5" rx="2.5" class="bf-hand r"/>
+/* the crew: one suited Bongo Cat per main agent (model) at the top of the tab, in a square frame. Idle they type;
+   when a model makes profit the cat turns profit-green, throws its arms up and waves, $ rain from the top of the frame
+   (canvas layer), two $ land on its eyes and shake, stay locked for 2 s, then clear and the cat goes back to typing.
+   Phases are classes on .cat-box (p-drop -> p-shake -> p-hold -> p-back); CSS does the motion, JS only the timing. */
+const CAT_T = { drop: 600, shake: 300, hold: 2000, back: 600 };      // ~3.5 s in all, with the 2 s hold
+const CAT_PHASES = ["p-drop", "p-shake", "p-hold", "p-back"];
+const CAT_BODY = "M16 106C16 80 22 64 32 55L35.5 35Q37 31.5 40 34L49.5 43Q60 36 70.5 43L80 34Q83 31.5 84.5 35L88 55C98 64 104 80 104 106Z";
+const CAT_ARM = `<rect class="cat-sleeve" x="-5.6" y="0" width="11.2" height="16" rx="5.6"/><circle class="cat-shoulder" r="5.6"/>
+  <g class="cat-hand"><rect class="cat-cuff" x="-6.2" y="13.4" width="12.4" height="4.6" rx="2.2"/>
+    <ellipse class="cat-fur cat-paw" cx="0" cy="22.6" rx="6.9" ry="6.1"/><ellipse class="cat-bean" cx="0" cy="21.2" rx="2.7" ry="2.1"/>
+    <circle class="cat-bean" cx="-3.5" cy="25.2" r="1.25"/><circle class="cat-bean" cx="0" cy="26.4" r="1.3"/><circle class="cat-bean" cx="3.5" cy="25.2" r="1.25"/></g>`;
+const CAT_SVG = `<svg class="cat" viewBox="0 0 120 120" aria-hidden="true">
+  <rect class="cat-desk" x="0" y="104" width="120" height="16"/><path class="cat-desk-edge" d="M0 104.5H120"/>
+  <g class="cat-me">
+    <path class="cat-fur cat-body" d="${CAT_BODY}"/>
+    <g clip-path="url(#cat-body-clip)">
+      <path class="cat-suit" d="M0 74Q30 68 50 76L60 97L70 76Q90 68 120 74V112H0Z"/>
+      <path class="cat-shirt" d="M50 76L70 76L60 97Z"/>
+      <path class="cat-lapel" d="M50 76L45.5 85L53 87.5M70 76L74.5 85L67 87.5"/>
+      <path class="cat-collar" d="M50 75.4L58.6 77L53.4 83.2ZM70 75.4L61.4 77L66.6 83.2Z"/>
+      <path class="cat-tie" d="M57.6 77.3H62.4L61.4 81H58.6ZM58.6 81H61.4L63 90.6L60 94.6L57 90.6Z"/>
+    </g>
+    <path class="cat-outline" d="${CAT_BODY}"/>
+    <ellipse class="cat-blush" cx="40.5" cy="66" rx="3.6" ry="2.1"/><ellipse class="cat-blush" cx="79.5" cy="66" rx="3.6" ry="2.1"/>
+    <g class="cat-eyes"><ellipse cx="48" cy="59" rx="3" ry="3.4"/><ellipse cx="72" cy="59" rx="3" ry="3.4"/></g>
+    <path class="cat-mouth" d="M55 64.4q2.5 3 5 0q2.5 3 5 0"/>
+    <g class="cat-cash"><text x="48" y="63.4">$</text><text x="72" y="63.4">$</text></g>
+  </g>
+  <g class="cat-laptop"><path class="cat-lt-lid" d="M104 106L109.5 73.5L124 71.5V106Z"/><path class="cat-lt-glow" d="M105.8 103L110.6 75.6"/>
+    <path class="cat-lt-base" d="M97 111.5L124 105.5V110L99 115.5Z"/></g>
+  <g class="cat-kb" transform="translate(24 94.5) rotate(-3)">
+    <path class="cat-kb-side" d="M70 13L74.73 0V3L70 16Z"/><path class="cat-kb-front" d="M0 13H70V16H0Z"/>
+    <path class="cat-kb-top" d="M4.73 0H74.73L70 13H0Z"/><path class="cat-kb-keys" d="M5.62 1.4H72.82L69.11 11.6H1.91Z"/>
+  </g>
+  <g transform="translate(36 78)"><g class="cat-arm l">${CAT_ARM}</g></g>
+  <g transform="translate(84 78)"><g class="cat-arm r">${CAT_ARM}</g></g>
 </svg>`;
-function crewBots() {                            // the backend's bots[], else a stand-in from what the tab already knows
+const catBox = (extra = "") => `<div class="cat-box ${extra}">${CAT_SVG}<canvas class="cat-rain" aria-hidden="true"></canvas></div>`;
+const cat = { freeze: false };
+const catSpeed = box => parseFloat(getComputedStyle(box).getPropertyValue("--cs")) || 1;
+function catPhase(box, phase) {
+  box.classList.remove(...CAT_PHASES);
+  if (phase) box.classList.add(phase);
+  box.dataset.phase = phase ? phase.slice(2) : "idle";
+}
+function catProfit(box, done) {                  // the whole profit sequence on one avatar
+  if (!box) return;
+  (box._catT || []).forEach(clearTimeout);
+  const k = catSpeed(box), T = CAT_T;
+  if (!motionOK()) {                             // reduced motion: green with $ eyes for 2 s, no rain or waving
+    catPhase(box, "p-hold");
+    box._catT = [setTimeout(() => { catPhase(box, null); done?.(); }, T.hold)];
+    return;
+  }
+  catPhase(box, "p-drop");
+  catRain(box, (T.drop + T.shake + T.hold - 250) * k);
+  box._catT = [setTimeout(() => catPhase(box, "p-shake"), T.drop * k),
+    setTimeout(() => catPhase(box, "p-hold"), (T.drop + T.shake) * k),
+    setTimeout(() => catPhase(box, "p-back"), (T.drop + T.shake + T.hold) * k),
+    setTimeout(() => { catPhase(box, null); done?.(); }, (T.drop + T.shake + T.hold + T.back) * k)];
+}
+function catRain(box, ms) {                      // gold and green $ falling from the top of the frame, past the keyboard
+  const cv = box.querySelector(".cat-rain"); if (!cv) return;
+  const w = box.clientWidth, h = box.clientHeight, dpr = Math.min(2, devicePixelRatio || 1);
+  if (!w || !h) return;
+  if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const c = cv.getContext("2d"), rain = box._rain ||= { parts: [], until: 0, raf: 0, last: 0, n: 0 };
+  rain.until = Math.max(rain.until, performance.now() + ms);
+  if (rain.raf) return;
+  const spawnEvery = 1000 / 8;                   // ~8 a second per avatar
+  let acc = spawnEvery;
+  const step = now => {
+    const k = catSpeed(box), dt = cat.freeze ? 0 : Math.min(0.05, (now - (rain.last || now)) / 1000) / k;
+    rain.last = now;
+    if (!cat.freeze && now < rain.until) {
+      acc += dt * 1000 * k;
+      while (acc >= spawnEvery) {
+        acc -= spawnEvery;
+        rain.parts.push({ x: w * (0.08 + Math.random() * 0.84), y: -h * 0.12, vy: h * (0.35 + Math.random() * 0.3),
+          r: (Math.random() - 0.5) * 0.6, vr: (Math.random() - 0.5) * 3, s: h * (0.12 + Math.random() * 0.06),
+          col: rain.n++ % 2 ? "#4ade80" : "#f5c542" });
+      }
+    }
+    c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
+    rain.parts = rain.parts.filter(p => {
+      p.vy += h * 1.15 * dt; p.y += p.vy * dt; p.r += p.vr * dt;
+      if (p.y > h + p.s) return false;
+      c.save(); c.translate(p.x, p.y); c.rotate(p.r);
+      c.font = `800 ${p.s}px "IBM Plex Mono", monospace`; c.textAlign = "center"; c.textBaseline = "middle";
+      c.lineWidth = Math.max(1.5, p.s * 0.14); c.strokeStyle = "#101216"; c.strokeText("$", 0, 0);
+      c.fillStyle = p.col; c.fillText("$", 0, 0); c.restore();
+      return true;
+    });
+    if (rain.parts.length || now < rain.until) rain.raf = requestAnimationFrame(step);
+    else { rain.raf = 0; rain.last = 0; c.clearRect(0, 0, w, h); }
+  };
+  rain.raf = requestAnimationFrame(step);
+}
+window.__cat = { profit: catProfit, phase: catPhase, rain: catRain, state: cat };
+function crewBots() {                            // the main agents only: the backend's bots[], else the default crew
   const st = sol.state || {};
   if (Array.isArray(st.bots) && st.bots.length) return st.bots.filter(b => SOL_MODEL[b.model]);
-  const d = sol.feed.find(r => r.status === "passed" && r.ensemble), open = sol.pos[0];
-  const doing = !st.scanner?.running ? "resting" : open ? `trading ${open.symbol}` : d ? `debating ${d.symbol}` : "watching";
+  const d = sol.feed.find(r => r.status === "passed" && r.ensemble);
   const ms = d ? solModels(d.ensemble) : ["xgb", "lgbm", "rf"];
-  return ms.map(m => ({ model: m, score: null, doing }));
+  return ms.map(m => ({ model: m, score: null }));
 }
 function renderCrew() {
   const box = $("#sol-crew"), bots = crewBots(), sig = bots.map(b => b.model).join(",");
@@ -3179,9 +3268,9 @@ function renderCrew() {
     box._sig = sig;
     box.innerHTML = bots.map(b => `<div class="bot-pf" data-model="${b.model}" style="--c:${SOL_MODEL[b.model].col}">
         <span class="bot-score num" title="${SOL_MODEL[b.model].name}'s points for being right"></span>
-        <div class="bot-av">${BOT_FACE}</div>
-        <div class="bot-meta"><b>${SOL_MODEL[b.model].name}</b><span class="bot-doing"></span></div></div>`).join("")
-      + `<span class="crew-total num" title="All the models' points together"></span>`;
+        ${catBox()}<b class="bot-name">${SOL_MODEL[b.model].name}</b></div>`).join("")
+      + `<span class="crew-total num" title="All the main agents' points together"></span>
+         <div class="crew-side"><span class="crew-state muted small"></span><button class="btn xs ghost" type="button" id="cat-board-open" title="See and test every phase of the avatar animation">Preview animations</button></div>`;
   }
   let total = 0, known = false;
   bots.forEach(b => {
@@ -3190,19 +3279,80 @@ function renderCrew() {
     if (sc.textContent !== txt) sc.textContent = txt;
     sc.classList.toggle("up", b.score > 0); sc.classList.toggle("down", b.score < 0);
     if (b.score != null) { total += b.score; known = true; }
-    const dn = el.querySelector(".bot-doing"); if (dn.textContent !== (b.doing || "")) dn.textContent = b.doing || "";
-    el.classList.toggle("resting", b.doing === "resting");
     const prev = sol.lastWin?.[b.model];
     if (b.last_win && prev != null && b.last_win > prev) crewWin(b.model);
     (sol.lastWin ||= {})[b.model] = b.last_win || 0;
   });
   box.querySelector(".crew-total").textContent = known ? `Σ ${total >= 0 ? "+" : "−"}${Math.abs(Math.round(total))} pts` : "Σ – pts";
+  const cr = sol.state?.crew, m = sol.state?.model, stTxt = cr?.training ? `Training: split into ${bots.length} models${m && sol.state?.training?.progress != null ? ` · ${Math.round(sol.state.training.progress * 100)}%` : ""}`
+    : cr?.merged ? "Merged into one bot" : "";
+  const cs = box.querySelector(".crew-state"); if (cs.textContent !== stTxt) cs.textContent = stTxt;
 }
-function crewWin(model) {                        // green for 2 s, dollar-sign eyes, then back to typing
-  const el = $(`#sol-crew .bot-pf[data-model="${model}"]`); if (!el) return;
-  el.classList.remove("win"); void el.offsetWidth; el.classList.add("win");
-  clearTimeout(el._winT); el._winT = setTimeout(() => el.classList.remove("win"), 2000);
+function crewWin(model) {                        // profit: the whole cat sequence on that agent
+  catProfit($(`#sol-crew .bot-pf[data-model="${model}"] .cat-box`));
 }
+/* the preview board: every phase of the animation, one row each, looping, so it can be seen and tested */
+const CAT_ROWS = [
+  { id: "idle", name: "Typing (idle)", note: "Paws take turns on the keys, the head bobs, the eyes blink now and then." },
+  { id: "drop", name: "Profit: $ drop in, green", note: "Fur turns profit-green, arms fly up, $ start raining and two $ fall toward the eyes." },
+  { id: "shake", name: "$ shake / arms waving", note: "The two $ land on the eyes and shake; both arms wave side to side." },
+  { id: "hold", name: "$ fall away (2s hold)", note: "The $ stay locked on the eyes for 2 s while the rest fall past the keyboard and out." },
+  { id: "back", name: "Back to typing after 2s", note: "The $ clear, the fur goes back to white, the arms come down and typing resumes." }];
+const catBoard = { timers: [] };
+function openCatBoard() {
+  const dlg = $("#cat-board");
+  setHTML($("#cb-rows"), CAT_ROWS.map(r => `<div class="cb-row" data-row="${r.id}">
+      <div class="cb-label"><b>${r.name}</b><span class="muted small">${r.note}</span><span class="cb-clock num small"></span></div>
+      <div class="cb-cats">${["xgb", "lgbm", "rf"].map(m => `<div class="cb-cat">${catBox()}<span class="small">${SOL_MODEL[m].name}</span></div>`).join("")}</div>
+      <button class="btn xs" type="button" data-cb-play="${r.id}" title="Play the whole profit sequence on this row">Play</button></div>`).join(""));
+  dlg.showModal?.() ?? dlg.setAttribute("open", "");
+  catBoardLoop();
+}
+function catBoardStop() {
+  catBoard.timers.forEach(t => { clearTimeout(t); clearInterval(t); });
+  catBoard.timers = [];
+  $$("#cb-rows .cat-box").forEach(b => { (b._catT || []).forEach(clearTimeout); catPhase(b, null); });
+}
+function catBoardLoop() {                        // each row repeats its own phase
+  catBoardStop();
+  const k = $("#cat-board").classList.contains("slow") ? 4 : 1, T = CAT_T, rows = {};
+  CAT_ROWS.forEach(r => { rows[r.id] = { boxes: $$(`#cb-rows .cb-row[data-row="${r.id}"] .cat-box`), clock: $(`#cb-rows .cb-row[data-row="${r.id}"] .cb-clock`), t0: 0 }; });
+  const all = (id, ph) => rows[id].boxes.forEach(b => catPhase(b, ph));
+  const rain = (id, ms) => rows[id].boxes.forEach(b => catRain(b, ms));
+  const every = (ms, fn) => { fn(); catBoard.timers.push(setInterval(fn, ms)); };
+  every(1700 * k, () => { rows.drop.t0 = performance.now(); all("drop", null); requestAnimationFrame(() => { all("drop", "p-drop"); rain("drop", 900 * k); }); });
+  all("shake", "p-shake");
+  every(900 * k, () => { rows.shake.t0 = performance.now(); rows.shake.boxes.forEach(b => { b.classList.remove("p-shake"); void b.offsetWidth; b.classList.add("p-shake"); }); });
+  all("hold", "p-hold"); rows.hold.t0 = performance.now();
+  every(1000, () => rain("hold", 1400 * k));
+  every((T.hold + T.back + 900) * k, () => {
+    rows.back.t0 = performance.now(); all("back", "p-hold");
+    catBoard.timers.push(setTimeout(() => all("back", "p-back"), T.hold * k), setTimeout(() => all("back", null), (T.hold + T.back) * k));
+  });
+  const tick = () => {
+    const now = performance.now();
+    rows.idle.clock.textContent = "loop";
+    rows.drop.clock.textContent = `${Math.round((now - rows.drop.t0) / k)} ms since profit`;
+    rows.shake.clock.textContent = `landed ${Math.round((now - rows.shake.t0) / k)} ms ago`;
+    rows.hold.clock.textContent = "held: $ locked on the eyes";
+    const b = (now - rows.back.t0) / k;
+    rows.back.clock.textContent = b < T.hold ? `hold ${(b / 1000).toFixed(1)} s of 2.0 s` : b < T.hold + T.back ? "clearing…" : "typing again";
+  };
+  catBoard.timers.push(setInterval(tick, 100));
+}
+document.addEventListener("click", e => {
+  if (e.target.closest("#cat-board-open")) { openCatBoard(); return; }
+  const p = e.target.closest("[data-cb-play]");
+  if (p) {                                        // the full sequence on this row, then back to its loop
+    catBoardStop();
+    const boxes = $$(`#cb-rows .cb-row[data-row="${p.dataset.cbPlay}"] .cat-box`);
+    boxes.forEach((b, i) => catProfit(b, i === boxes.length - 1 ? () => catBoardLoop() : null));
+  }
+});
+$("#cb-play").onclick = () => { catBoardStop(); const bs = $$("#cb-rows .cat-box"); bs.forEach((b, i) => catProfit(b, i === bs.length - 1 ? () => catBoardLoop() : null)); };
+$("#cb-slow").onchange = e => { $("#cat-board").classList.toggle("slow", e.target.checked); catBoardLoop(); };
+$("#cb-close").onclick = () => { catBoardStop(); $("#cat-board").close?.(); $("#cat-board").removeAttribute("open"); };
+$("#cat-board").addEventListener("close", catBoardStop);
 function solNotify() {                           // a trade opened or closed: a notification and the usual sounds
   const ids = new Set(sol.pos.map(p => p.id)), tids = new Set(sol.trades.map(t => t.id));
   if (sol.knownPos) sol.pos.filter(p => !sol.knownPos.has(p.id)).forEach(p => {
@@ -3344,7 +3494,7 @@ function renderSolDebate() {
     return;
   }
   const k = d.consensus || {}, rs = d.rounds, models = [...new Set(rs.flatMap(r => r.stances.map(s => s.model)))].filter(m => SOL_MODEL[m]);
-  $("#sol-debate-meta").textContent = `${rs.length - 1} round${rs.length === 2 ? "" : "s"} · ${k.agreed ? "they agreed" : "no deal"}${d.time ? ` · ${solTime(d.time)}` : ""}`;
+  $("#sol-debate-meta").textContent = `${rs.length - 1} round${rs.length === 2 ? "" : "s"} · ${k.agreed ? "they agreed" : "no deal"}${d.ms != null ? ` · decided in ${d.ms < 1 ? d.ms.toFixed(2) : Math.round(d.ms)} ms` : ""}${d.time ? ` · ${solTime(d.time)}` : ""}`;
   const c = sol.state?.config || {}, floor = c.model_floor ?? 0.65, need = c.buy_threshold ?? 0.78;
   const series = models.map(m => ({ key: m, name: SOL_MODEL[m].name, col: SOL_MODEL[m].col, dash: SOL_MODEL[m].dash, pts: rs.map(r => ({ x: r.n, y: r.stances.find(s => s.model === m)?.prob })) }));
   const said = (r, i) => `<div class="sol-round${i === 0 || i === rs.length - 1 ? "" : " mid"}"><span class="sol-round-n">${i === 0 ? "Opening" : i === rs.length - 1 ? "Final" : `Round ${r.n}`}</span>
@@ -3354,6 +3504,8 @@ function renderSolDebate() {
     <div class="sol-deal ${k.verdict === "BUY" ? "buy" : ""}"><b>${k.verdict === "BUY" ? "✓ Deal: BUY" : k.agreed ? "– Agreed: PASS" : "✕ No deal: PASS"}</b>
       <span>Consensus ${Math.round((k.score ?? 0) * 100)}% · spread ${((k.spread ?? 0) * 100).toFixed(1)} pts</span>
       ${cp ? `<span class="sol-comp">Compromise: ${cp.size_sol != null ? `${cp.size_sol} SOL` : ""}${cp.size_pct != null ? ` (${Math.round(cp.size_pct)}% of a normal trade)` : ""}${cp.tp_pct != null ? ` · TP +${cp.tp_pct}%` : ""}${cp.trail_pct != null ? ` · trail −${cp.trail_pct}%` : ""}${cp.note ? `. ${esc(cp.note)}` : ""}</span>` : ""}</div>
+    ${d.review ? `<div class="sol-check ${d.review.final === "BUY" ? "ok" : ""}"><div class="sol-check-head"><b>Main agent: ${d.review.final === "BUY" ? "BUY" : "PASS"}</b><span class="muted small">${esc(d.review.says || "")}</span></div>
+      <ul>${(d.review.subagents || []).map(x => `<li class="${x.verdict === "approve" ? "ok" : "no"}"><span class="sol-sub">${x.verdict === "approve" ? "✓" : "✕"} ${esc(x.role)}</span><span class="muted">${esc(x.says || "")}</span></li>`).join("")}</ul></div>` : ""}
     <div class="sol-transcript">${rs.map(said).join("")}${rs.length > 2 ? `<button class="btn xs sol-more" type="button">Show all ${rs.length - 2} middle rounds</button>` : ""}</div>`);
   const lo = Math.min(0.4, ...series.flatMap(s => s.pts.map(p => p.y ?? 1))) - 0.03;
   solChart($("#sol-conv"), series, { xLabel: n => n === 0 ? "open" : `R${n}`, yMin: Math.max(0, lo), yMax: 1, yFmt: v => `${Math.round(v * 100)}%`, refs: [{ y: need, label: `BUY ${Math.round(need * 100)}%` }, { y: floor, label: `floor ${Math.round(floor * 100)}%` }], endLabels: true, height: 150 });
@@ -3597,6 +3749,78 @@ function drawCurve(vals, max) {
   g.fillStyle = "#c9a24a"; g.beginPath(); g.arc(X(vals.length - 1), Y(vals[vals.length - 1]), 3, 0, 7); g.fill();
 }
 
+/* Quiz school picker (Stocks / Trenching / Combined) and the Trenching school panel */
+const trench = { st: null, q: null, busy: false };
+function applyQuizMode(mode) {
+  $$("#quiz-modes .qm-opt").forEach(b => { const on = b.dataset.mode === mode; b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); });
+  $("#quiz-trench").hidden = mode === "stocks";
+  $("#tab-quiz .quiz-grid").hidden = mode === "trenching";
+  $("#qm-note").textContent = { stocks: "Stocks: the MT5 quiz below.", trenching: "Trenching: the Solana crew's quiz.", combined: "Both: trenching first, stocks below." }[mode] || "";
+}
+async function loadTrench(withQ = false) {
+  if (trench.busy) return; trench.busy = true;
+  try {
+    const st = await api("/api/trench/state"); trench.st = st; $("#quiz-modes").hidden = false; applyQuizMode(st.mode);
+    if (st.mode !== "stocks") { renderTrench(); if (withQ || !trench.q) loadTrenchQ(); }
+  } catch (e) { if (e.status === 404) { $("#quiz-modes").hidden = true; applyQuizMode("stocks"); } }
+  trench.busy = false;
+}
+async function loadTrenchQ() {
+  try { trench.q = await api("/api/trench/question"); } catch (e) { trench.q = null; }
+  renderTrenchQ();
+}
+const qtAgo = t => { const s = Date.now() / 1000 - t; return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} days ago`; };
+function renderTrench() {
+  const st = trench.st, m = st.model || {}, dl = st.download || {}, tr = st.train || {}, cr = st.creators || {};
+  const training = m.training || tr.running, busy = training || dl.running;
+  $("#qt-status").textContent = training ? `Training: split into ${Object.keys(m.members || {}).length || "its"} models` : m.merged && m.loaded ? "Merged into one bot" : "Not trained yet";
+  const tile = (k, v, sub = "", live = false) => `<div class="qt-stat"><span>${k}</span><b class="num">${live ? '<i class="live-dot"></i>' : ""}${v}</b>${sub ? `<small class="muted">${sub}</small>` : ""}</div>`;
+  setHTML($("#qt-stats"), tile("Questions on disk", (st.questions ?? 0).toLocaleString(), "read line by line, not kept in memory")
+    + tile("Labelled moments", (st.samples ?? 0).toLocaleString(), `${(st.real ?? 0).toLocaleString()} real · ${(st.starter ?? 0).toLocaleString()} starter`)
+    + tile("Good buys", st.good_share != null ? `${Math.round(st.good_share * 100)}%` : "–", "most fresh coins are a PASS")
+    + tile("Question creators", `${cr.running ?? 0} running`, `at least ${cr.wanted ?? 2} while the app is open`, (cr.running ?? 0) > 0));
+  $("#qt-train").disabled = busy || !(st.questions > 0); $("#qt-train").textContent = training ? "Training…" : "Train the crew now";
+  $("#qt-download").disabled = !!dl.running; $("#qt-download").textContent = dl.running ? "Downloading…" : "Download fresh trenching data";
+  $("#qt-hint").textContent = dl.error ? `Download: ${dl.error}` : !st.real ? "The starter set is preloaded so you can train now; real data replaces it as it downloads." : "";
+  const prog = $("#qt-prog"); prog.hidden = !busy;
+  if (busy) {
+    const pct = training ? (m.progress || 0) : (dl.progress || 0);
+    $("#qt-stage").textContent = training ? (m.stage || tr.stage || "training") : dl.stage || "downloading";
+    $("#qt-pct").textContent = `${Math.round(pct * 100)}%`; $("#qt-bar").style.width = `${Math.round(pct * 100)}%`;
+  }
+  const met = m.metrics || {}, aucs = met.members || {}, bots = Object.fromEntries((st.bots || []).map(b => [b.model, b]));
+  const names = Object.keys(aucs).length ? Object.keys(aucs) : Object.keys(m.members || {});
+  const bar = (label, col, auc, pts, live) => `<div class="qt-grade"><span class="qt-g-name"><i style="background:${col}"></i>${label}</span>
+      <div class="qt-g-track" title="How well it tells good buys from bad on questions it never saw (0.5 = guessing, 1 = perfect)"><b style="width:${auc == null ? 0 : Math.max(0, Math.min(100, (auc - 0.5) * 200))}%;background:${col}"></b></div>
+      <span class="num small">${live ? esc(live) : auc == null ? "–" : `AUC ${auc.toFixed(3)}`}</span><span class="num small ${pts > 0 ? "up" : pts < 0 ? "down" : "muted"}">${pts == null ? "" : `${pts > 0 ? "+" : ""}${Math.round(pts)} pts`}</span></div>`;
+  setHTML($("#qt-crew"), names.length ? names.map(k => bar(SOL_MODEL[k]?.name || k, SOL_MODEL[k]?.col || "var(--muted)", aucs[k] ?? m.members?.[k]?.auc ?? null, bots[k]?.quiz_score ?? null,
+      training && m.members?.[k]?.stage !== "done" ? (m.members?.[k]?.stage || "") : "")).join("")
+    + (met.auc != null && !training ? bar("Merged bot", "var(--gold)", met.auc, null) + `<p class="muted small qt-foot">Graded on ${(met.n_test ?? 0).toLocaleString()} questions none of them saw while learning.</p>` : "")
+    : `<p class="muted small">Not trained yet. Press <b>Train the crew now</b>: it takes about a minute on the starter set.</p>`);
+}
+function renderTrenchQ() {
+  const q = trench.q, box = $("#qt-q");
+  if (!q) { setHTML(box, `<p class="muted small">The question creators are still writing the first questions.</p>`); return; }
+  const f = q.features || {}, liq = Math.pow(10, f.log_liq || 0) - 1, vol = Math.pow(10, f.log_vol_5m || 0) - 1;
+  const row = (k, v) => `<tr><td class="muted">${k}</td><td class="num">${v}</td></tr>`;
+  const crew = q.crew ? Object.entries(q.crew).filter(([k]) => k !== "bot").map(([k, p]) => `<span class="qt-ans" style="--c:${SOL_MODEL[k]?.col || "var(--muted)"}"><i></i>${SOL_MODEL[k]?.name || k} ${Math.round(p * 100)}%</span>`).join("") : "";
+  const botSays = q.crew?.bot != null ? (q.crew.bot >= (sol.state?.config?.buy_threshold ?? 0.78) ? "BUY" : "PASS") : null;
+  setHTML(box, `<div class="qt-q-head"><b>${esc(q.symbol || "?")}</b><span class="tag">${q.source === "starter" ? "starter set" : "real"}</span>
+      <span class="sol-verdict ${q.answer === "BUY" ? "buy" : ""}">Answer: ${q.answer}</span>${botSays ? `<span class="small ${botSays === q.answer ? "up" : "down"}">merged bot said ${botSays} ${botSays === q.answer ? "✓" : "✕"}</span>` : ""}</div>
+    <table class="qt-f"><tbody>${row("Liquidity", solUsd(liq))}${row("Age", solAge(f.age_min))}${row("Buys / sells, 5 min", `${Math.round(f.buys_5m ?? 0)} / ${Math.round(f.sells_5m ?? 0)}`)}
+      ${row("Buy share", `${Math.round((f.buy_ratio ?? 0) * 100)}%`)}${row("Volume, 5 min", solUsd(vol))}${row("Move, 5 min", solPct(f.chg_5m))}${row("Top 10 wallets hold", `${Math.round(f.top10_pct ?? 0)}%`)}</tbody></table>
+    ${q.hints?.length ? `<p class="small">Signs: ${q.hints.map(esc).join(" · ")}</p>` : ""}<p class="muted small">${esc(q.lesson || "")}</p>${crew ? `<div class="qt-answers">${crew}</div>` : ""}`);
+}
+$("#quiz-modes").addEventListener("click", async e => {
+  const b = e.target.closest(".qm-opt"); if (!b) return;
+  applyQuizMode(b.dataset.mode);
+  try { await api("/api/quiz/mode", { method: "POST", body: { mode: b.dataset.mode } }); } catch (err) { toast(err.message, true); }
+  loadTrench(true);
+});
+$("#qt-train").onclick = async () => { try { await api("/api/trench/train", { method: "POST", body: {} }); toast("Training: the crew splits into its models, then merges back into one bot."); } catch (e) { toast(e.message, true); } loadTrench(); };
+$("#qt-download").onclick = async () => { try { await api("/api/trench/download", { method: "POST", body: {} }); } catch (e) { toast(e.message, true); } loadTrench(); };
+$("#qt-next").onclick = () => loadTrenchQ();
+setInterval(() => seen() && state.tab === "quiz" && loadTrench(), 2000);
 async function loadQuiz() {
   let r; try { r = await api("/api/quiz/state"); } catch (e) { return; }
   const st = r.state || {}, qz = r.quiz, pol = r.policy;

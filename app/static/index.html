@@ -12,6 +12,14 @@
 <script src="/static/vendor/lightweight-charts.js"></script>
 </head>
 <body>
+<svg class="cat-defs" width="0" height="0" aria-hidden="true" focusable="false">
+  <defs>
+    <clipPath id="cat-body-clip" clipPathUnits="userSpaceOnUse"><path d="M16 106C16 80 22 64 32 55L35.5 35Q37 31.5 40 34L49.5 43Q60 36 70.5 43L80 34Q83 31.5 84.5 35L88 55C98 64 104 80 104 106Z"/></clipPath>
+    <pattern id="cat-keys" patternUnits="userSpaceOnUse" x="0" y="1.4" width="5.8" height="3.4" patternTransform="skewX(-20)">
+      <rect x=".45" y=".42" width="4.9" height="2.5" rx=".7" fill="#56606d"/><rect x=".45" y=".42" width="4.9" height=".7" rx=".35" fill="#6b7582"/>
+    </pattern>
+  </defs>
+</svg>
 <div class="backdrop" aria-hidden="true"></div>
 
 <nav class="rail glass" aria-label="Sections">
@@ -410,6 +418,30 @@
 
   <!-- QUIZ SCHOOL -->
   <section id="tab-quiz" class="tab">
+    <div class="panel quiz-modes" id="quiz-modes">
+      <div class="panel-head"><h3>What should the quiz train?</h3><span id="qm-note" class="muted small"></span></div>
+      <div class="qm-opts" role="radiogroup" aria-label="Quiz school">
+        <button class="qm-opt" type="button" role="radio" aria-checked="false" data-mode="stocks"><b>Stocks</b><span>MT5 charts: the 18 pro gold setups, the traps and the stay-outs. Trains the MT5 bot.</span></button>
+        <button class="qm-opt" type="button" role="radio" aria-checked="false" data-mode="trenching"><b>Trenching</b><span>Fresh Solana meme coins: buy or pass, graded on +25 % before −12 % within 30 minutes. Trains the Solana crew.</span>
+          <em class="qm-rec">Recommended<small>the bot trades the trenches, and one school at a time trains fastest</small></em></button>
+        <button class="qm-opt" type="button" role="radio" aria-checked="false" data-mode="combined"><b>Combined</b><span>Both schools at once. Each bot still learns only from its own market, so neither gets confused.</span></button>
+      </div>
+    </div>
+    <div class="panel quiz-trench" id="quiz-trench" hidden>
+      <div class="panel-head"><h3>Trenching school</h3><span id="qt-status" class="muted small"></span></div>
+      <p class="muted small qt-intro">Every question is a real moment of a fresh Solana coin: liquidity, age, buys and sells in the last 5 minutes, the move so far and how much the top wallets hold. The answer is <b>BUY</b> if the price then hit +25 % before −12 % within 30 minutes, otherwise <b>PASS</b>. Training splits the bot into its models, each learns from every question, they're graded on questions they never saw, then they merge back into one bot. Questions are kept on disk, not in memory.</p>
+      <div class="qt-stats" id="qt-stats"></div>
+      <div class="row-inline">
+        <button id="qt-train" class="btn primary" type="button">Train the crew now</button>
+        <button id="qt-download" class="btn" type="button">Download fresh trenching data</button>
+        <span id="qt-hint" class="muted small"></span>
+      </div>
+      <div id="qt-prog" class="build-prog" hidden><div class="build-line"><span id="qt-stage" class="small"></span><span id="qt-pct" class="muted small num"></span></div><div class="bar"><i id="qt-bar"></i></div></div>
+      <div class="qt-cols">
+        <div><h4 class="qt-h">The crew's grades</h4><div id="qt-crew" class="qt-crew"></div></div>
+        <div><h4 class="qt-h">A question from the bank <button id="qt-next" class="btn xs" type="button">Another</button></h4><div id="qt-q" class="qt-q"></div></div>
+      </div>
+    </div>
     <div class="quiz-grid">
       <div class="quiz-side">
         <div class="panel">
@@ -739,6 +771,17 @@
             <label class="check"><input type="checkbox" name="telegram_events" value="be"> Stop to break-even</label>
             <label class="check"><input type="checkbox" name="telegram_events" value="trail"> Trailing stop moved</label>
             <label class="check"><input type="checkbox" name="telegram_events" value="watchdog"> Bot restarted, stuck, or MT5 down</label></div>
+          <div class="span-all tg-cmds">
+            <label class="check"><input type="checkbox" name="telegram_commands"> Answer commands from my phone</label>
+            <ul class="tg-cmd-list">
+              <li><code>/prof</code><span>all the money earned (winning trades added up)</span></li>
+              <li><code>/loss</code><span>all the money lost (losing trades added up)</span></li>
+              <li><code>/total</code><span>profit and loss combined: what you actually have from trading</span></li>
+              <li><code>/help</code><span>this list</span></li>
+            </ul>
+            <span class="help">Only your own chat (the one Find my chat saved) gets answers. Counts closed trades: MT5 paper, demo and real in account money, and the Solana bot's paper and live trades in SOL.</span>
+            <span id="tg-cmd-status" class="muted small"></span>
+          </div>
         </fieldset>
         <fieldset class="panel" id="set-display"><legend>Display<small>this PC only</small></legend>
           <label class="check"><input type="checkbox" id="pref-motion"> Reduce animations</label>
@@ -787,6 +830,15 @@
 
 
 
+<dialog id="cat-board" class="cat-board" aria-labelledby="cb-title">
+  <div class="cb-head">
+    <div><h3 id="cb-title">Avatar animations</h3><p class="muted small">Every phase of the main agents' avatars, one row each, looping. Play runs the whole profit sequence (about 3.5 s, with the 2 s hold).</p></div>
+    <div class="cb-tools"><label class="check small"><input type="checkbox" id="cb-slow"> Slow motion (4×)</label>
+      <button class="btn xs primary" type="button" id="cb-play">Play profit on every row</button>
+      <button class="btn xs" type="button" id="cb-close">Close</button></div>
+  </div>
+  <div id="cb-rows" class="cb-rows"></div>
+</dialog>
 <dialog id="sol-live-dlg" class="dlg glass" aria-labelledby="sol-live-h">
   <form method="dialog">
     <h3 id="sol-live-h">Trade from your Solana wallet?</h3>

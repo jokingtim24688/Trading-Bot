@@ -100,6 +100,7 @@ def main():
     spec_digits = max(0, int(round(-np.log10(spec.point)))) if spec.point else 5
     probs = {"buy": None, "sell": None, "need": None, "setups": []}
     from .quiz import load_policy
+    from sol import agents as desk
     quiz_pol = load_policy()               # its answer is recorded on every trade, so the app can measure if it helps
     if args.quiz_filter:
         print("quiz agent second opinion: " + ("on" if quiz_pol else "off (no trained quiz agent yet)"))
@@ -399,6 +400,19 @@ def main():
             if not ok:
                 journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side, prob=round(prob, 3), note=reason)
                 say(bar_time, f"skipped {side}", reason)
+                continue
+
+            # main agent for this symbol asks its subagents; one veto = no trade (microseconds, see sol/agents.py)
+            try:
+                pl_, _ = plan_for(side)
+                rv = desk.review("mt5", cfg.symbol, side.upper(), float(prob), desk.mt5_subagents(
+                    side, float(prob), cfg.threshold, pl_ and abs(pl_["tp"] - pl_["price"]),
+                    pl_ and abs(pl_["price"] - pl_["sl"]), bars["close"].to_numpy()[-6:], qa and qa.get("action")))
+            except Exception:                  # noqa: BLE001 - a review that can't run never blocks on its own
+                rv = None
+            if rv and rv["final"] == "PASS":
+                journal.log(event="skip", bar_time=bar_time, symbol=cfg.symbol, side=side, prob=round(prob, 3), note=rv["says"])
+                say(bar_time, f"skipped {side}", rv["says"])
                 continue
 
             setup = primary_setup(probs["setups"], side)

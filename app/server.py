@@ -16,11 +16,13 @@ from agent.pro import SETUP_NAMES
 from . import update as update_mod
 from . import backup, botlive, brain, bridge, manual, memory, mt5_service, review, settings, sounds, stats, telegram, watch, watchdog
 from .jobs import LOGS, jobs
+from sol import api as sol_api
 from .settings import ROOT
 
 STATIC = Path(__file__).parent / "static"
 AGENT_MAGIC = 260923
 app = FastAPI(title="Trading Bot")
+app.include_router(sol_api.router)
 
 
 @app.exception_handler(mt5_service.MT5Unavailable)
@@ -1074,12 +1076,20 @@ def _watchers():
 
 
 @app.on_event("startup")
+def _trenching():
+    """Solana bot: load the merged model, watch open positions, keep 2+ trenching question creators running."""
+    sol_api.startup()
+    telegram.start_commands()
+
+
+@app.on_event("startup")
 def _question_bank():
     """One question creator keeps the quiz question bank up to date at all times (below normal priority)."""
     s = settings.load()
     if s.get("quiz_bank_auto", True) and not jobs.jobs["bank"].running:
         try:
-            jobs.start("bank", ["-m", "agent.quiz", "bank", "--watch", "--symbol", s["symbol"], "--point", str(s["point"])])
+            jobs.start("bank", ["-m", "agent.quiz", "bank", "--watch", "--symbol", s["symbol"], "--point", str(s["point"]),
+                                "--workers", str(max(2, int(s.get("quiz_min_creators", 2))))])
         except RuntimeError:
             pass
 

@@ -71,6 +71,21 @@ DEFAULTS = {
     "telegram_token": "",
     "telegram_chat_id": "",                # filled in by "Find my chat" after you message your bot
     "telegram_events": ["tp", "sl", "open", "close", "watchdog"],   # also possible: "be", "trail"
+    "telegram_commands": True,             # answer /prof /loss /total (only from your saved chat)
+    # Quiz: which school the Quiz tab trains ("stocks" = MT5 setups, "trenching" = Solana meme coins, "combined")
+    "quiz_mode": "trenching",
+    "quiz_min_creators": 2,                # question creators kept running while the app is open (per school)
+    # Solana trenching bot (sol/): paper by default; live needs SOL_PRIVATE_KEY in .env and a typed LIVE
+    "sol_trade_size_sol": 0.1,
+    "sol_max_open": 3,
+    "sol_tp_pct": 30.0,
+    "sol_trail_pct": 10.0,
+    "sol_timeout_min": 20,
+    "sol_buy_threshold": 0.78,
+    "sol_model_floor": 0.65,
+    "sol_min_liq_usd": 5000,
+    "sol_scan_s": 10,
+    "sol_paper_start": 10.0,
     # Owned by the UI (Keybinds and Sounds pages); the server only stores them so they survive and ride in backups
     "keybinds": {},                        # {"bindings": {"man.buy": "B", ...}, "groups": {"app": true, ...}}
     "sounds": {},                          # {"master": {...}, "events": {"profit": {...}, ...}}

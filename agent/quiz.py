@@ -926,7 +926,7 @@ def _bank_update(symbol, point, workers, prog, should_yield=None, low=False):
     return bank, meta, df
 
 
-def _bank_cycle(symbol, point, parent):
+def _bank_cycle(symbol, point, parent, workers=2):
     """One background update, run in its own process so its memory is handed back when it ends. Exit code 0 = up to
     date, 3 = stepped aside for a build (or the app closed)."""
     _lower_priority()
@@ -946,10 +946,10 @@ def _bank_cycle(symbol, point, parent):
             why[:] = ["stopped: the app closed (it carries on next time)"]
         return gone
 
-    prog = _Progress(1, path=BANK_STATUS, prefix="quiz_bank_w")
+    prog = _Progress(workers, path=BANK_STATUS, prefix="quiz_bank_w")
     try:
         with _BankLock():
-            r = _bank_update(symbol, point, 1, prog, should_yield=should_yield, low=True)
+            r = _bank_update(symbol, point, workers, prog, should_yield=should_yield, low=True)
     except SystemExit as e:                              # no history yet
         prog.set(f"waiting for history: {e}", 0.0, done=True)
         raise SystemExit(0)
@@ -962,17 +962,18 @@ def _bank_cycle(symbol, point, parent):
     prog.set(f"up to date: {meta['good']:,} questions ready", 1.0, done=True)
 
 
-def bank_watch(symbol: str = "XAUUSD", point: float = 0.01, every: float = 60):
+def bank_watch(symbol: str = "XAUUSD", point: float = 0.01, every: float = 60, workers: int = 2):
     """Keeps one question creator turning history into questions at all times: whenever the history changes (a data
     fetch or a history download) it updates the bank. Idle and nearly free in between."""
     import multiprocessing as mp
     _lower_priority()
     last, parent = None, os.getpid()
-    print("question bank: one question creator keeps the bank up to date in the background", flush=True)
+    workers = max(2, workers)
+    print(f"question bank: {workers} question creators keep the bank up to date in the background", flush=True)
     while True:
         sig = _history_sig(symbol)
         if sig and sig != last and not BUILD_REQUEST.exists():
-            p = mp.Process(target=_bank_cycle, args=(symbol, point, parent))
+            p = mp.Process(target=_bank_cycle, args=(symbol, point, parent, workers))
             p.start()
             p.join()
             if p.exitcode == 0:
@@ -1769,7 +1770,7 @@ def main():
     k.add_argument("--symbol", default="XAUUSD")
     k.add_argument("--point", type=float, default=0.01)
     k.add_argument("--watch", action="store_true", help="keep running and update whenever the history changes")
-    k.add_argument("--workers", type=int, default=1, help="question creators for a one-off update (default 1)")
+    k.add_argument("--workers", type=int, default=1, help="question creators (at least 2 with --watch)")
     t = sub.add_parser("train")
     t.add_argument("--max-rounds", type=int, default=0, help="0 = loop until everything is finished or Stop")
     t.add_argument("--lr", type=float, default=0.01)
@@ -1781,7 +1782,7 @@ def main():
         build(a.symbol, a.questions, point=a.point, seed=a.seed, workers=a.workers)
     elif a.cmd == "bank":
         if a.watch:
-            bank_watch(a.symbol, a.point)
+            bank_watch(a.symbol, a.point, workers=max(2, a.workers))
         else:
             with _BankLock():
                 _bank_update(a.symbol, a.point, a.workers, _Progress(a.workers, path=BANK_STATUS, prefix="quiz_bank_w"))
