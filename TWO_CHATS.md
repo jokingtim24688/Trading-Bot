@@ -38,8 +38,7 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: idle. Last (2026-09-24): Keys page, Sounds page (your own sounds via /api/sounds), custom top-right
-notifications in the app and on screen, speed pass (hidden-window polling, shared positions, no timer throttling).
+Status: building the Solana tab (UI) against the /api/sol/* spec handed to Chat A on 2026-09-30.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -107,6 +106,89 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
+- 2026-09-30, from the user: **a Solana meme-coin trading engine with an ML ensemble whose models "argue" each trade
+  out, shown in a new "Solana" tab.** The user's words: "we will run multiple [models] that will argue with each other
+  about each trade till they compromise and make the trade" and "that prompt was for the backend … make sure this is
+  a new tab not a whole app makeover". Chat B is building the tab (same theme) against the API below; please build
+  the backend. Put it in its own package, e.g. `solana/` (not `agent/`), with its own tests under `tests/`, and mount
+  its routes on the existing server (one `app.include_router(...)` in `app/server.py`).
+  **The user's spec, module by module:**
+  - **Config** from `.env`: `HELIUS_RPC_URL`, `SOLANA_PRIVATE_KEY`, `PAPER_TRADING=True` (paper is the default). SQLite
+    `trading_app.db` (e.g. `data/trading_app.db`) with tables `scanned_tokens`, `skilled_wallets`, `training_samples`,
+    `active_positions`, `trade_history`. Libraries: `xgboost`, `lightgbm`, `catboost`, `scikit-learn`
+    (`StackingClassifier`, `VotingClassifier`), `pandas`, `numpy`, `joblib`, `httpx` (async), `solders`.
+  - **`rug_filter.py`, strict gatekeeper** (DexScreener + `api.rugcheck.xyz/v1/tokens/{mint}/report/summary`). Block
+    if ANY fails: (1) `mintAuthority` or `freezeAuthority` not null; (2) LP locked/burned < 95%; (3) top 10 holders
+    > 25% of supply OR the largest non-LP holder > 5%; (4) USD liquidity < $20,000 OR token age < 10 min; (5) 5-min buys
+    < 50 OR 5-min buy/sell ratio < 1.3; (6) RugCheck flags "Danger". Every block needs the exact reason(s) for the feed.
+  - **`skill_scraper.py`, "skill, not luck" dataset** (async, Helius). Import trades only from wallets passing ALL:
+    >= 50 closed meme-coin trades in 30 days; win rate strictly between 55% and 82%; profit factor >= 2.0; net PnL still
+    positive without the top 2 winning trades. Per trade, the entry snapshot: `liq_to_mcap_ratio`,
+    `vol_5m_to_liq_ratio`, `buy_sell_ratio_5m`, `unique_buyers_5m_ratio`, `price_change_5m`, `price_change_1h`,
+    `top10_holder_pct`, `token_age_minutes`. Label 1 only if it hit +25% within 30 min without first dipping below
+    -12%, else 0.
+  - **`ensemble_ml.py`**: train in parallel (`concurrent.futures` + `StackingClassifier(n_jobs=-1)`):
+    `XGBClassifier(n_estimators=250, max_depth=5, learning_rate=0.05, tree_method="hist", device="cuda")`,
+    `LGBMClassifier(n_estimators=250, num_leaves=31, learning_rate=0.05, n_jobs=-1)`,
+    `RandomForestClassifier(n_estimators=200, max_depth=8, n_jobs=-1)`; LogisticRegression stacker (or soft voting);
+    save `models/super_ensemble.joblib`. `predict_ensemble(features)` -> `xgb_prob`, `lgbm_prob`, `rf_prob`,
+    `ensemble_score` in under 5 ms. BUY only when `ensemble_score >= 0.78` AND no model below 0.65.
+  - **`trader.py`**: Paper (default): Jupiter quote (`quote-api.jup.ag/v6/quote`), minus 2% simulated slippage and the
+    priority fee, a virtual position in SQLite, prices every 5 s. Live: Jupiter swap + `solders` `Keypair` signing,
+    anti-MEV slippage caps. Exits: +30% take profit, -10% trailing stop, 20-minute timeout; plus manual panic sell.
+  **The add-on: the debate ("argue until they compromise").** For every coin that passes the rug filter, the models
+  (XGB, LGBM, RF, and CatBoost if you add it) debate before any trade:
+  - Round 0: each model states a stance (BUY if its prob >= 0.65, else PASS), its probability, and one plain sentence
+    with its top 2-3 reasons from its own feature contributions (XGB `pred_contribs`, LGBM `pred_contrib`; RF can use
+    per-tree path contributions or permutation deltas), e.g. "BUY 0.84: buy/sell ratio 2.1 and 5-min volume at 0.9x
+    liquidity; top-10 holders at 22% hold me back".
+  - Each round every model moves toward the others (e.g. DeGroot: `p_i <- (1-a)*p_i + a*sum_j w_j*p_j`, where `w_j` is
+    each model's recent out-of-sample accuracy, so better models pull harder, and a model with strong evidence moves
+    less). Stop when the spread (max - min) < 0.05 or after ~6 rounds.
+  - Verdict: BUY when the consensus >= 0.78 and every final stance >= 0.65 (the user's rule applied to the debated
+    probabilities). **The compromise:** when they agree but some started far apart, trade smaller and tighter, e.g.
+    size = normal x agreement (1 - starting spread), tighter trailing stop. If they never converge: PASS, "no deal".
+  - Keep every debate (JSON) so the tab can replay it, and log which model was right after each trade closes. That
+    feeds `w_j` over time, so the arguing gets better as it learns. The user is learning ML with this; plain sentences
+    in the debate matter.
+  **API for the tab** (Chat B builds the UI against these; add fields freely, but please keep these names):
+  - `GET /api/sol/state` -> `{scanner: {running, scanned, passed, blocked, last_scan (epoch), error},
+    mode: "paper"|"live", auto_trade, wallet: {key_loaded, pubkey, sol_balance}, paper: {balance_sol, start_sol},
+    model: {loaded, trained_at, n_samples, synthetic, device: "cuda"|"cpu", method: "stacking"|"voting",
+    metrics: {auc, precision_at_buy, n_test}}, training: {running, progress 0-1, stage, error},
+    dataset: {running, progress 0-1, stage, wallets_checked, wallets_skilled, samples, error},
+    apis: {helius, dexscreener, rugcheck, jupiter} (each true/false/null), config: {trade_size_sol, max_open,
+    tp_pct: 30, trail_pct: 10, timeout_min: 20, buy_threshold: 0.78, model_floor: 0.65}}`.
+  - `GET /api/sol/feed?limit=100` -> newest first `[{mint, symbol, name, pair, seen (epoch), status:
+    "passed"|"blocked"|"error", reasons: [..], liquidity_usd, age_min, buys_5m, sells_5m, price_usd,
+    ensemble: null | {xgb_prob, lgbm_prob, rf_prob, cat_prob?, ensemble_score, signal: "BUY"|"PASS", latency_ms},
+    debate: null | {verdict: "BUY"|"PASS", consensus, rounds, agreed}}]`.
+  - `GET /api/sol/debate/{mint}` -> `{mint, symbol, time, rounds: [{n, stances: [{model: "xgb"|"lgbm"|"rf"|"cat",
+    prob, stance: "BUY"|"PASS", says, moved}]}], consensus: {score, spread, agreed, verdict, rounds,
+    compromise: null | {size_sol, size_pct, tp_pct, trail_pct, note}}}`.
+  - `GET /api/sol/positions` -> `[{id, mint, symbol, mode, entry_price, last_price, size_sol, opened_at (epoch),
+    pnl_pct, pnl_sol, peak_pct, stop_pct, tp_pct, timeout_at (epoch)}]`.
+  - `GET /api/sol/trades?limit=200` -> `[{id, mint, symbol, mode, entry_price, exit_price, size_sol, pnl_sol, pnl_pct,
+    opened_at, closed_at, exit_reason: "take_profit"|"trailing_stop"|"timeout"|"manual"}]`.
+  - `GET /api/sol/pnl` -> `{points: [{t, cum_sol}], wins, losses, win_rate, realized_sol, open_sol}`.
+  - `POST /api/sol/scanner {run: bool}`; `POST /api/sol/autotrade {on: bool}`; `POST /api/sol/train` (409 while
+    running); `POST /api/sol/dataset {wallets?: [addresses]}` (409 while running);
+    `POST /api/sol/positions/{id}/close` -> `{ok, exit_price, pnl_pct}`.
+  - `POST /api/sol/mode {mode, confirm?}`: going live needs `confirm: "LIVE"`, a loaded key and a model not trained on
+    synthetic data, else 400 `{detail}` saying which.
+  - Optional push: `WS /api/sol/ws` sending `{type: "feed"|"debate"|"position"|"trade"|"training"|"dataset"|"state",
+    data}`. The tab polls every 2 s if there's no socket.
+  **What I found while checking (to save you time):** this sandbox can't reach DexScreener, RugCheck or Jupiter (the
+  network policy blocks them), so test with recorded JSON. Jupiter has been moving off `quote-api.jup.ag/v6`: make the
+  base URL a setting and fall back to `https://lite-api.jup.ag/swap/v1` (same quote and swap bodies). DexScreener has
+  no "new pairs" endpoint: `token-profiles/latest/v1` + `token-boosts/latest/v1` filtered to `chainId == "solana"`,
+  then `tokens/v1/solana/{up to 30 mints}` for pairs. RugCheck's summary has the risks, score and `lpLockedPct` but
+  not the authorities or holders: use the full `/report` (`mintAuthority`, `freezeAuthority`, `topHolders`,
+  `knownAccounts`) or Helius `getAccountInfo` / `getTokenLargestAccounts`. Leave LP/AMM accounts out of both holder
+  checks, or every token fails. Unique buyers need Helius (DexScreener has none). With no GPU, `device="cuda"` needs a
+  CPU fallback. For under 5 ms per prediction, predict with `n_jobs=1` / one thread and XGB on CPU. Safety, please: the
+  key never leaves the backend (no route returns it), live mode needs the typed confirm, and fail closed when an API
+  is down (a coin you can't check is blocked, with the reason "rugcheck unavailable").
 - **Done (Chat A, 9cb15fd):** `desktop_alerts` now defaults to false; settings v7 turns it off once in existing settings files, and after that it stays however the user sets it.
   2026-09-24, from the user: **notifications must be custom and sit at the top right of the screen** (several at
   once, newest below the others, each fading after 1.2 s). Windows' own toasts can't be moved or styled, so the window
