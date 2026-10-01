@@ -1319,6 +1319,15 @@ Each chat writes only in its own section below, and adds new entries just above 
   path fix, commission templates, Strategy Analyzer settings (1OZ, 30 min, commission, slippage 1,
   $400), Sim101 run, going live. Links checked against NinjaTrader's support pages (Aug 2026).
 
+### 2026-10-01: NinjaTrader backtest exposes a replay flaw - SmallAccountPro has no edge
+- SmallAccountProNT compiles on the user's PC. Strategy Analyzer, 1OZ DEC26, 30 min, Jan-Sep 2026,
+  $400: 126 trades, 47.6% won, -$328.75 (commission still $0 - template had no 1OZ rate).
+- Cause of the gap: `ea/sap_replay.py` filled stops at the stop price even when the trail/break-even,
+  set from the bar's high/low, was already past the price - an impossible fill. Fixed (fills at the
+  open when the bar opens past the stop). With real fills the futures setup is $400 -> $75 (-81%),
+  and the MT5 M15 settings lose too. The earlier +535% / +486% / +82% results were this artifact.
+- Told the user not to fund it. NinjaTrader's numbers agree with the fixed replay.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

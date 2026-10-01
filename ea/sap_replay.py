@@ -117,7 +117,8 @@ for i in range(202, n):
         hit_sl = lo_x <= pos["sl"] if b == 1 else hi_x >= pos["sl"]
         hit_tp = hi_x >= pos["tp"] if b == 1 else lo_x <= pos["tp"]
         if hit_sl or hit_tp:
-            px = pos["sl"] if hit_sl else pos["tp"]
+            # a stop moved past the price (trail/BE from the last bar's extreme) fills at the open, not at the stop
+            px = (min(pos["sl"], O[i]) if b == 1 else max(pos["sl"], O[i] + SPREAD)) if hit_sl else pos["tp"]
             pnl = (px - pos["entry"]) * b * usd_per_price(pos["entry"]) * pos["lots"]
             bal += pnl; day_pnl += pnl; weekly[T[i].strftime("%G-W%V")] += pnl
             wins += pnl > 0; losses += pnl <= 0
