@@ -32,7 +32,7 @@
 //| Nothing here guarantees profit.                                   |
 //+------------------------------------------------------------------+
 #property copyright "Trading Bot"
-#property version   "1.00"
+#property version   "1.01"
 #property description "ICT-style FVG + Order Block + liquidity sweep EA for gold, with killzone/trend filters, correct risk-based sizing and self-learning setup weights."
 #property strict
 
@@ -127,6 +127,13 @@ datetime g_dayStamp        = 0;
 int      g_tradesToday     = 0;
 int      g_lastTradedBar   = -1;
 
+input group "=== HUD ==="
+input bool   ShowHUD                 = true;         // Show the on-chart Trades/Earned/Lost/Subtotal panel
+
+int    g_hudTrades = 0;
+double g_hudEarned = 0, g_hudLost = 0;
+#define HUD_PREFIX "CSICT_HUD_"
+
 int g_hATR_setup = INVALID_HANDLE;
 int g_hEMA_fast_setup = INVALID_HANDLE;
 int g_hEMA_fast_trend = INVALID_HANDLE;
@@ -171,6 +178,59 @@ double Learn_Penalty(SetupKind k)
    // Scale: avgR of -1.0 (losing a full stop on average) => full penalty.
    double frac = MathMin(1.0, -avgR / 1.0);
    return frac * LearnMaxPenalty;
+  }
+
+//================================= HUD panel ===================================
+// Same minimal style as CandleSense.mq5 v1.40: just Trades / Earned / Lost / Subtotal.
+void HUD_Label(string name, int x, int y, string text, color clr)
+  {
+   string full = HUD_PREFIX + name;
+   if(ObjectFind(0, full) < 0)
+     {
+      ObjectCreate(0, full, OBJ_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, full, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, full, OBJPROP_XDISTANCE, x);
+      ObjectSetInteger(0, full, OBJPROP_YDISTANCE, y);
+      ObjectSetInteger(0, full, OBJPROP_FONTSIZE, 10);
+      ObjectSetString(0, full, OBJPROP_FONT, "Consolas");
+      ObjectSetInteger(0, full, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, full, OBJPROP_HIDDEN, true);
+     }
+   ObjectSetString(0, full, OBJPROP_TEXT, text);
+   ObjectSetInteger(0, full, OBJPROP_COLOR, clr);
+  }
+
+void HUD_Create()
+  {
+   if(!ShowHUD) return;
+   ObjectCreate(0, HUD_PREFIX+"bg", OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_XDISTANCE, 8);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_YDISTANCE, 18);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_XSIZE, 150);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_YSIZE, 78);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_BGCOLOR, clrBlack);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_COLOR, clrDimGray);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_BACK, false);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_SELECTABLE, false);
+   HUD_Label("title", 16, 24, "CandleSenseICT", clrGold);
+   HUD_Update();
+  }
+
+void HUD_Update()
+  {
+   if(!ShowHUD) return;
+   double subtotal = g_hudEarned + g_hudLost;
+   HUD_Label("trades",   16, 42, StringFormat("Trades: %d", g_hudTrades), clrWhite);
+   HUD_Label("earned",   16, 58, StringFormat("Earned: %.2f", g_hudEarned), clrLimeGreen);
+   HUD_Label("lost",     16, 74, StringFormat("Lost: %.2f", g_hudLost), clrTomato);
+   HUD_Label("subtotal", 16, 90, StringFormat("Subtotal: %.2f", subtotal), subtotal >= 0 ? clrLimeGreen : clrTomato);
+  }
+
+void HUD_Remove()
+  {
+   ObjectsDeleteAll(0, HUD_PREFIX);
   }
 
 //================================= Helpers ===================================
@@ -493,7 +553,6 @@ void ManageOpenTrades()
 //=========================== Learn from closed deals ============================
 void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest &request, const MqlTradeResult &result)
   {
-   if(!UseLearning) return;
    if(trans.type != TRADE_TRANSACTION_DEAL_ADD) return;
    if(!HistoryDealSelect(trans.deal)) return;
    if(HistoryDealGetInteger(trans.deal, DEAL_MAGIC) != MagicNumber) return;
@@ -502,6 +561,12 @@ void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest 
    ulong posId = HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID);
    double profit = HistoryDealGetDouble(trans.deal, DEAL_PROFIT) + HistoryDealGetDouble(trans.deal, DEAL_SWAP) + HistoryDealGetDouble(trans.deal, DEAL_COMMISSION);
    double volume = HistoryDealGetDouble(trans.deal, DEAL_VOLUME);
+
+   g_hudTrades++;
+   if(profit >= 0) g_hudEarned += profit; else g_hudLost += profit;
+   HUD_Update();
+
+   if(!UseLearning) return;
    double openPrice = 0, slAtOpen = 0;
    // Look back through history for the opening deal of this position to recover the original risk.
    for(int i = HistoryDealsTotal() - 1; i >= 0; i--)
@@ -544,6 +609,7 @@ int OnInit()
       return INIT_FAILED;
      }
 
+   HUD_Create();
    PrintFormat("CandleSenseICT v1.00 loaded on %s %s. Killzones %s, learning %s.",
                _Symbol, EnumToString(SetupTF), UseKillzones?"on":"off", UseLearning?"on":"off");
    return INIT_SUCCEEDED;
@@ -555,6 +621,7 @@ void OnDeinit(const int reason)
    if(g_hEMA_fast_setup != INVALID_HANDLE) IndicatorRelease(g_hEMA_fast_setup);
    if(g_hEMA_fast_trend != INVALID_HANDLE) IndicatorRelease(g_hEMA_fast_trend);
    if(g_hEMA_slow_trend != INVALID_HANDLE) IndicatorRelease(g_hEMA_slow_trend);
+   HUD_Remove();
   }
 
 void OnTick()
