@@ -1115,6 +1115,24 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Caveats recorded: this assumes each bot actually has an edge (multiplying no-edge bots
   multiplies losses), and correlations tend toward 1 in a crisis.
 
+### 2026-10-01: tested a buy-low/sell-high bot at 0.1% risk (ea/meanrev_study.py)
+- User felt basic manual trading beats these returns and asked to test a simple mean-reversion
+  bot. Ran 36 parameter combinations on the real gold day with the true 45pt spread.
+- 23 of 36 settings lost money over the full day. The best made $124 from $100 in 5.8 hours -
+  but that was chosen with hindsight after seeing every result, so it means nothing.
+- **Sizing finding**: 0.1% risk is not achievable at $100. 0.1% of $100 is $0.10, but the
+  minimum 0.01 lot with a 200pt stop risks $2.00 - 20x the intended risk. 0.1% per trade only
+  becomes real above a $2,000 balance.
+- **Two of my own hypotheses were wrong, recorded honestly**: I predicted the cherry-picked
+  setting would collapse out-of-sample - instead the unseen half did BETTER (26/36 settings
+  profitable vs 0/36 in-sample). I then guessed the first half was trending; measuring showed
+  both halves ranged (8.0% and 1.7% efficiency). The real difference was movement: the second
+  half walked 34,968 points versus 15,857 in a similar range - more than twice the oscillation,
+  which is precisely what a mean-reversion strategy is paid for.
+- Conclusion for the user: results were dominated by how much the market moved, not by the
+  settings. 5.8 hours of one day cannot establish an edge either way - months of data are needed,
+  which the app's Train tab downloads.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
