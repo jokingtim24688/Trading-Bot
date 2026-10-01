@@ -1207,6 +1207,27 @@ Each chat writes only in its own section below, and adds new entries just above 
   until it can evaluate - previously a not-ready first tick burned the whole M15 bar. The first
   tick after launch checks for a setup. Status line now shows the real $ risked.
 
+### 2026-10-01: SmallAccountPro.mq5 from the user's own spec, replayed on real gold
+- User wrote a detailed spec (EMA21/50/200 + RSI + Bollinger pullback, $5 minimum risk, 1.8 R:R,
+  ATR stop clamped 100-500 pts, 80%-of-free-margin guard, $ break-even/trail, $15 daily breaker,
+  60 s start-up countdown + immediate initial trade, Comment() HUD). Built it as
+  `ea/SmallAccountPro.mq5`, native MQL5 only. Deviations, all flagged to the user: sizing uses
+  OrderCalcProfit with tick value only as fallback (tick value was ~10x off on gold before); lots
+  round UP so the stop loses at least $5; initial trade waits until EMA21/50 and RSI slope agree.
+  Not compiled here (no MetaEditor) - written to avoid the usual warnings (explicit casts,
+  checked returns, no MQL4 calls).
+- `ea/sap_replay.py` mirrors it on the 6 months of real M15 gold (EA targets M1/M5, so this is an
+  approximation). The rules were written by the user before seeing this data, so it is a fair
+  out-of-sample test:
+  - $1,000 / 1:100 (fixed $5 risk): 1,320 trades, 50% win rate, +$816 (+82%), 7% max drawdown,
+    17 of 26 weeks positive, average +$31/week vs the $100 goal.
+  - Holds in both halves (+38% Mar-Jun, +45% Jun-Sep) and at a 70-point spread (+48%).
+  - $100 / 1:100: an early losing run took it to ~$46, where 0.01 lots of gold ($46 margin) no
+    longer fits 80% of free margin, so it locked itself out after 5 weeks: -54%.
+  - $100 / 1:500: survived the same run (59% drawdown) and finished at $916.
+- First strategy today with a consistent result on both halves of real data. Caveats: M15 not
+  M1/M5, intrabar management approximated, no live/demo trades yet.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
