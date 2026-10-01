@@ -1328,6 +1328,15 @@ Each chat writes only in its own section below, and adds new entries just above 
   and the MT5 M15 settings lose too. The earlier +535% / +486% / +82% results were this artifact.
 - Told the user not to fund it. NinjaTrader's numbers agree with the fixed replay.
 
+### 2026-10-01: honest re-search for a gold edge (22 years, real fills)
+- Got 2004-2025 gold 15m (BaseMax/XAUUSD-LSTM, MIT; broker time = NY+7h) + 2026 data. New
+  `ea/research/` (honest-fill engine + studies, README with the table). Data file gitignored.
+- Opening-range breakouts: all 54 lose. Trend on 1h: lose. Daily Donchian trend: all 18 versions
+  win in both halves (classic trend edge). But today's daily stop is ~$190 per 1OZ contract (47% of
+  $400). Unlevered (fund shares): ~6%/yr, 20% worst drop. RSI2 dip-buy: negligible.
+- Conclusion for the user: no safe edge at $400 on short timeframes; the real edge needs ~$2-4k on
+  1OZ, or runs unlevered at single-digit %/yr. Asked which way to go.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
