@@ -22,22 +22,43 @@ per round trip, 1-tick ($0.25) spread, risk ladder on, flat before CME's daily b
 the fairer number to compare with. Six months of one market is not proof: past results don't promise
 future ones, and a 45-48% drawdown means $400 can fall to ~$210 on the way.
 
-## Install (Windows)
+## Install (Windows only - NinjaTrader Desktop doesn't run on Mac)
 
-1. Install NinjaTrader 8 (free) and log in. Sim101 is the built-in simulated account.
-2. Copy `SmallAccountProNT.cs` to `Documents\NinjaTrader 8\bin\Custom\Strategies\`.
-3. In NinjaTrader: **New > NinjaScript Editor**, open the file, press **F5**. The bottom panel must show
-   no errors. (This file couldn't be compiled where it was written; send any error lines back to fix.)
+1. **Make a free account**: https://account.ninjatrader.com/register - enter your email, click the link
+   it sends you, pick a username and password. Then click **"Not ready for live trading? Try risk-free
+   simulated trading."** and finish the form. No card needed. This starts a 2-week trial with live CME
+   data; after that the data is 10 minutes delayed until you fund an account.
+   (NinjaTrader's own steps: https://support.ninjatrader.com/s/article/How-Can-I-Get-a-Free-Trial-of-NinjaTrader)
+2. **Download NinjaTrader Desktop**: log in at https://account.ninjatrader.com/ and click
+   **Download Desktop Platform** (https://support.ninjatrader.com/s/article/NinjaTrader-Desktop-Installation-Guide).
+   Run the installer, open NinjaTrader and log in with the same username and password. The **Sim101**
+   account (practice money) is created for you.
+3. **Add the strategy**: copy `SmallAccountProNT.cs` to
+   `Documents\NinjaTrader 8\bin\Custom\Strategies\`. In NinjaTrader's Control Center:
+   **New > NinjaScript Editor**, open Strategies > SmallAccountProNT, press **F5**. The bottom of the
+   editor must show no errors (a sound plays when it compiles). It couldn't be compiled where it was
+   written, so send any error lines back to fix.
+   If Windows keeps Documents in OneDrive and NinjaTrader says "Access to the path is denied", see
+   https://support.ninjatrader.com/s/article/Unhandled-exception-Access-to-the-path-is-denied-OneDrive-Error
 
 ## Test it in this order
 
-1. **Strategy Analyzer** (New > Strategy Analyzer): Strategy `SmallAccountProNT`, instrument `1OZ` (front
-   month), type Minute, value **30**, as much history as you have. Set **Commission** to your broker's
-   (about $1 per side) and **Slippage** 1. Check: trades, win rate near 60-70%, net profit, max drawdown.
-2. **Chart on Sim101**: open a 1OZ 30-minute chart, Strategies > add SmallAccountProNT, account
-   **Sim101**, Starting balance **400**, enable. The top-left panel shows balance, risk, today's result and
-   the last thing it did. Run it 2-4 weeks (50+ trades is better).
-3. **Live**, only if the Sim101 results are close to the backtest: fund $400 and switch the account.
+1. **Commission**: Control Center > **Accounts** tab, right-click **Backtest** > Edit account, set the
+   Commission template to your NinjaTrader plan (about $1 per side for 1OZ). Do the same for **Sim101**.
+2. **Backtest - Strategy Analyzer** (New > Strategy Analyzer). Left panel:
+   - Strategy **SmallAccountProNT**; Instrument **1OZ** (front month; type `1OZ` in the box). Don't use
+     MGC instead - Micro Gold is 10x bigger per contract.
+   - Type **Minute**, Value **30**; dates: the last 6-12 months.
+   - **Include commission: True**, Slippage **1**, Starting balance **400**. Click **Run**.
+   - Check the Summary tab: trades, % profitable (tested ~68%), net profit, max drawdown, and the
+     Trades tab for anything odd. Send a screenshot back to compare with the replay.
+3. **Practice live - Sim101**: New > Chart, instrument 1OZ, 30 Minute. Right-click the chart >
+   **Strategies** > add SmallAccountProNT, Account **Sim101**, Starting balance **400**, tick **Enabled**,
+   OK. The top-left panel shows balance, risk per trade, today's result and the last thing it did. Leave
+   the PC and NinjaTrader on during market hours (Sun 6pm - Fri 5pm New York, break 5-6pm daily). Run it
+   2-4 weeks (50+ trades is better) and compare with the backtest.
+4. **Live**, only if Sim101 is close to the backtest: from the dashboard click **Start Application**,
+   fund $400, then pick the live account instead of Sim101 in step 3.
 
 ## Settings that matter
 

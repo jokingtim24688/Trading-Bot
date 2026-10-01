@@ -1314,6 +1314,11 @@ Each chat writes only in its own section below, and adds new entries just above 
   $400 -> $2,346 (+486%, DD 45%) instead of +535% - still holds. NinjaTrader checks that candle.
 - Not compiled here (no NinjaTrader/C# compiler in the container): the user's F5 is the first compile.
 
+### 2026-10-01: NinjaTrader install/test instructions with links
+- `ninjatrader/README.md`: sign-up (free 2-week live-data trial, Sim101), Desktop download, OneDrive
+  path fix, commission templates, Strategy Analyzer settings (1OZ, 30 min, commission, slippage 1,
+  $400), Sim101 run, going live. Links checked against NinjaTrader's support pages (Aug 2026).
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
