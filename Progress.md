@@ -1186,6 +1186,27 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Fixed my own simulation before trusting it: the first version compounded with no lot cap and
   produced $1e19 balances. Added a broker-style MAXLOT and a one-month horizon.
 
+### 2026-10-01: replayed CandleSenseStart on 6 months of real gold; v1.11 (no warm-up, skip oversize)
+- User asked me to act as the EA on gold data, and that it start trading as soon as it's launched.
+- Data: `data/XAUUSD_M1_history.parquet` turned out to be the sandbox's synthetic set (it "falls"
+  from $2,637 to $1,245 over 2021-24), and huggingface.co is blocked here. GitHub is reachable, so
+  cloned getdata-finance/xauusd-15m-ohlcv-metals-historical-data (MIT): 11,989 real M15 candles,
+  2026-03-26 to 2026-09-25. Saved as `ea/XAUUSD_15m.csv`.
+- `ea/start_replay.py` mirrors the EA rule for rule (H1 EMA50/200 from closed hours, M15 EMA20
+  pullback, ATR14 stop min 250pts, 1:3.5, BE + ATR trail at 1R, sessions, daily/streak/floor
+  limits, 45pt spread). Stop assumed before target when a candle touches both.
+- **Found a real bug**: 2026 gold's M15 ATR makes the stop 1,100-2,100 points, so 0.01 lots risks
+  $11-21 (11-21% of $100). v1.10 only warned and traded anyway: $100 -> $43 in 3 weeks, halted at
+  the $50 floor. v1.11 skips any trade the minimum lot cannot size to within 1.5x of RiskPercent:
+  on $100 it took 34 of 424 setups, $100 -> $99.11 (-1%), 41% max drawdown.
+- **Honest strategy result**: at $1,000 / 2% (no min-lot distortion) the rules made +11% in
+  Mar-Jun and -21% in Jun-Sep. Break-even/trailing were not the cause (all exit variants similar).
+  No dependable edge on this data; did not tune further on the same 6 months (would overfit).
+- **No warm-up**: MT5 loads history at attach, so indicators are ready immediately. TryEnter now
+  returns false only while indicator data is still loading, and OnTick retries on every tick
+  until it can evaluate - previously a not-ready first tick burned the whole M15 bar. The first
+  tick after launch checks for a setup. Status line now shows the real $ risked.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

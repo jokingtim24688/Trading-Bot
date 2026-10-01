@@ -37,7 +37,7 @@
 //| Run it on DEMO first. Nothing here guarantees profit.             |
 //+------------------------------------------------------------------+
 #property copyright "Trading Bot"
-#property version   "1.10"
+#property version   "1.11"
 #property description "Gold EA for small accounts: trend pullback, wide targets, auto-GMT sessions, hard loss protection."
 #property strict
 
@@ -223,54 +223,62 @@ double Lots(double entry, double stop, bool isBuy)
    lots = MathFloor(lots/step)*step;
    lots = MathMax(minLot, MathMin(maxLot, lots));
 
-   // Warn when the account is too small to respect RiskPercent at the minimum lot.
+   // Skip, don't just warn, when even the minimum lot would risk far more than RiskPercent.
+   // Replaying v1.10 on real 2026 gold: M15 ATR stops ran 1,100-2,100 points, so 0.01 lots
+   // risked $11-21 (11-21% of $100) instead of 5%, and the account fell to $43 in 3 weeks.
    double realRisk = MathAbs(pnl)/testLot*lots;
    if(lots <= minLot && realRisk > risk*1.5)
-      g_status = StringFormat("min lot risks $%.2f (%.1f%%) - more than you set", realRisk,
-                              100*realRisk/AccountInfoDouble(ACCOUNT_BALANCE));
+     {
+      g_status = StringFormat("skipped: smallest lot would risk $%.2f (%.0f%%), you set %.0f%%",
+                              realRisk, 100*realRisk/AccountInfoDouble(ACCOUNT_BALANCE), RiskPercent);
+      return 0;
+     }
    return NormalizeDouble(lots, 2);
   }
 
 //================================== Entry ====================================
-void TryEnter()
+// Returns false only when indicator data isn't loaded yet, so OnTick retries on the very next
+// tick instead of waiting for the next M15 bar. Any other outcome (trade, skip, no setup)
+// returns true and the bar counts as checked.
+bool TryEnter()
   {
-   if(g_halted) return;
+   if(g_halted) return true;
    double bal = AccountInfoDouble(ACCOUNT_BALANCE);
 
    if(bal < StopIfBalanceBelow)
      { g_halted = true; g_status = StringFormat("STOPPED: balance under $%.0f", StopIfBalanceBelow);
-       Print("CSStart: ", g_status); return; }
-   if(CountOpen() >= MaxOpenTrades) { g_status = "in a trade, managing it"; return; }
+       Print("CSStart: ", g_status); return true; }
+   if(CountOpen() >= MaxOpenTrades) { g_status = "in a trade, managing it"; return true; }
    if(g_dayStartBalance > 0 && (g_dayStartBalance - bal) >= g_dayStartBalance*MaxDailyLossPct/100.0)
-     { g_status = StringFormat("done for today: hit the %.0f%% daily loss limit", MaxDailyLossPct); return; }
+     { g_status = StringFormat("done for today: hit the %.0f%% daily loss limit", MaxDailyLossPct); return true; }
    if(g_lossStreak >= PauseAfterLosses)
-     { g_status = StringFormat("paused: %d losses in a row, back tomorrow", g_lossStreak); return; }
-   if(!InSession()) { g_status = "outside London/NY hours - waiting"; return; }
+     { g_status = StringFormat("paused: %d losses in a row, back tomorrow", g_lossStreak); return true; }
+   if(!InSession()) { g_status = "outside London/NY hours - waiting"; return true; }
 
    double point = Pt();
    double atr = Buf(g_hATR);
-   if(atr <= 0) { g_status = "waiting for indicator data"; return; }
+   if(atr <= 0) { g_status = "waiting for indicator data"; return false; }
 
    double stopDist = MathMax(atr*ATR_SL_Mult, MinStopPoints*point);
    double spread = (SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID));
    if(spread > stopDist*MaxSpreadVsStop)
-     { g_status = StringFormat("spread %.0f pts too wide vs %.0f pt stop", spread/point, stopDist/point); return; }
+     { g_status = StringFormat("spread %.0f pts too wide vs %.0f pt stop", spread/point, stopDist/point); return true; }
 
    double fast = Buf(g_hEMAfast), slow = Buf(g_hEMAslow);
-   if(fast == 0 || slow == 0) { g_status = "waiting for trend data"; return; }
+   if(fast == 0 || slow == 0) { g_status = "waiting for trend data"; return false; }
    int bias = fast > slow ? 1 : -1;
 
    // Pullback: the previous bar dipped to/through the M15 EMA20 and this one closed back with the trend.
    double ema = Buf(g_hPull, 1), emaPrev = Buf(g_hPull, 2);
    double c1 = iClose(_Symbol, EntryTF, 1), c2 = iClose(_Symbol, EntryTF, 2);
    double l1 = iLow(_Symbol, EntryTF, 1),  h1 = iHigh(_Symbol, EntryTF, 1);
-   if(ema == 0) { g_status = "waiting for pullback data"; return; }
+   if(ema == 0) { g_status = "waiting for pullback data"; return false; }
 
    bool setup = false;
    if(bias == 1  && l1 <= ema && c1 > ema && c2 <= emaPrev) setup = true;
    if(bias == -1 && h1 >= ema && c1 < ema && c2 >= emaPrev) setup = true;
    if(!setup)
-     { g_status = StringFormat("%s trend - waiting for a pullback", bias==1?"up":"down"); return; }
+     { g_status = StringFormat("%s trend - waiting for a pullback", bias==1?"up":"down"); return true; }
 
    bool isBuy = (bias == 1);
    double entry = isBuy ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
@@ -278,14 +286,15 @@ void TryEnter()
    double tp = isBuy ? entry + stopDist*RewardRatio : entry - stopDist*RewardRatio;
 
    double stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL)*point;
-   if(stopDist < stopsLevel) { g_status = "broker's minimum stop is wider than ours"; return; }
+   if(stopDist < stopsLevel) { g_status = "broker's minimum stop is wider than ours"; return true; }
 
    double lots = Lots(entry, sl, isBuy);
+   if(lots <= 0) return true;                      // too big for this account - skipped
    double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
    double marginNeeded = 0;
    if(OrderCalcMargin(isBuy?ORDER_TYPE_BUY:ORDER_TYPE_SELL, _Symbol, lots, entry, marginNeeded)
       && marginNeeded > freeMargin)
-     { g_status = StringFormat("not enough margin ($%.2f needed, $%.2f free)", marginNeeded, freeMargin); return; }
+     { g_status = StringFormat("not enough margin ($%.2f needed, $%.2f free)", marginNeeded, freeMargin); return true; }
 
    trade.SetExpertMagicNumber(MagicNumber);
    bool ok = isBuy ? trade.Buy(lots, _Symbol, entry, sl, tp, "CS-Start")
@@ -293,7 +302,9 @@ void TryEnter()
    if(ok)
      {
       g_tradesToday++;
-      g_status = StringFormat("opened %s %.2f lots, risking $%.2f", isBuy?"BUY":"SELL", lots, bal*RiskPercent/100);
+      double pnl = 0;
+      OrderCalcProfit(isBuy?ORDER_TYPE_BUY:ORDER_TYPE_SELL, _Symbol, lots, entry, sl, pnl);
+      g_status = StringFormat("opened %s %.2f lots, risking $%.2f", isBuy?"BUY":"SELL", lots, MathAbs(pnl));
       PrintFormat("CSStart: %s %.2f lots @ %.2f  sl %.2f (%.0f pts)  tp %.2f (%.0f pts)",
                   isBuy?"BUY":"SELL", lots, entry, sl, stopDist/point, tp, stopDist*RewardRatio/point);
      }
@@ -302,6 +313,7 @@ void TryEnter()
       g_status = StringFormat("order refused: %d %s", trade.ResultRetcode(), trade.ResultRetcodeDescription());
       Print("CSStart: ", g_status);
      }
+   return true;
   }
 
 //============================== Manage trades =================================
@@ -394,9 +406,12 @@ void OnTick()
    CheckNewDay();
    Manage();
 
+   // No warm-up: MT5 loads the chart history when the EA is attached, so every indicator is
+   // ready at once. The first tick after launch checks for a setup immediately, and if the
+   // terminal is still loading history it retries on each tick rather than waiting a bar.
    static datetime lastBar = 0;
    datetime cur = iTime(_Symbol, EntryTF, 0);
-   if(cur != lastBar) { lastBar = cur; TryEnter(); }
+   if(cur != lastBar && TryEnter()) lastBar = cur;
    HUD_Update();
   }
 //+------------------------------------------------------------------+

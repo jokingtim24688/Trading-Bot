@@ -139,6 +139,13 @@ the spread is a fixed toll - you pay the same 45 points to chase 875 as to chase
 (`ea/betsize_study.py`). Measure the win rate over 50 demo trades, then raise it. Expect ~60%
 drawdowns once you do.
 
+**Replayed on real gold** (`ea/start_replay.py`, 6 months of 2026 M15 data in `ea/XAUUSD_15m.csv`,
+MIT, from getdata-finance): gold now moves ~$12 per 15 minutes, so the ATR stop is 1,100-2,100
+points and even 0.01 lots risks $11-21 - far over 5% of $100. v1.10 took those trades anyway and
+fell to $43 in 3 weeks. v1.11 skips them: on $100 it took 34 of 424 setups and finished at $99
+(-1%, 41% drawdown). On $1,000 at 2% the same rules made +11% in Mar-Jun and -21% in Jun-Sep -
+no dependable edge on this data. It starts checking for a setup on the first tick after launch.
+
 **Honest expectations**: 0.2%/day is good-bot territory. On $100 that is 20 cents a day, about
 $155 after a year of compounding. The percentage is what the bot controls; the dollars are set by
 the balance. Run it on DEMO until you have 50+ trades and the Net line is positive.
