@@ -1034,6 +1034,23 @@ Each chat writes only in its own section below, and adds new entries just above 
   system with a sub-30% break-even but worth warning the user about before they watch it live.
 - The real win rate is unknown until the demo run - that is the number the whole thing turns on.
 
+### 2026-10-01: researched what actually works (ea/WHAT_ACTUALLY_WORKS.md)
+- User asked how people make so much with their own bots and to find known-good ones.
+- Findings: ~1% of day traders are consistently profitable, ~90% lose money in year one,
+  and algo strategies that do work average **15-25% a year** - not a day. Documented real
+  examples: 9.5%/yr at 23% max DD; 11.5% compounded across 742 trades.
+- The Myfxbook accounts showing +9,000% are overwhelmingly grid/martingale: no stop loss,
+  hidden floating drawdown, lots growing after losses, killed by trend persistence and the
+  margin call rather than by the reversal. Same shape as our own 600/20 test (94.8% win rate,
+  still loses money) - we measured the pattern before finding it documented.
+- What separates professionals is validation, not strategy: walk-forward optimisation, decay
+  analysis (out-of-sample vs in-sample metrics), Monte Carlo trade reshuffling, placebo tests.
+  Recorded the confidence ladder: backtest 20%, out-of-sample 40%, walk-forward 60%, forward
+  test 80%, demo 90%.
+- Noted that CandleSenseML's trainer already implements the professional methodology
+  (chronological splits, unseen-month hold-out, costs in the labels, PF/trade-count gates),
+  and its modest PF 1.15-1.17 is the believable shape of a real edge.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
