@@ -73,29 +73,24 @@ place a live test trade. Two ways to verify it yourself:
 
 Run it on demo first, same as every EA in this repo.
 
-## CandleSenseSwing.mq5
+## CandleSenseSwing.mq5 (v2)
 
-A much simpler style, built from your own description: "where the chart is going", very low
-take profits, stacking lots of trades at once (up to 60) instead of waiting for one high-quality
-setup.
+Trades **every swing of the chart, both ways** - no confidence filter. v1 waited for an EMA to
+slope the same way for 3 bars and sat out most swings; v2 reads the chart's own swing highs and
+lows on `EntryTF` (default M1):
 
-**How it decides direction**: an EMA (`TrendEMA`, default 50) on `EntryTF` (default M5) - if it
-has sloped upward for `TrendConfirmBars` bars in a row, it's an uptrend (and vice versa). No
-FVG/order block/killzone logic at all - that's the whole point of this one being simpler.
+- last confirmed swing was a **low** -> the chart is swinging up -> it **buys**;
+- last confirmed swing was a **high** -> swinging down -> it **sells**.
 
-**How it trades**: every time the trend direction holds and price has moved at least
-`MinStackPoints` since the last entry in that direction, it opens another market order with a
-**fixed** stop (`SL_Points`, default 150) and target (`TP_Points`, default 200) - not ATR-based.
-It keeps doing this until `MaxOpenTrades` (default 60) are open at once.
+A swing high/low is a bar that beats `SwingStrength` (default 2) bars on each side. There is
+always a current swing, so it always has a direction. The first trade of each new swing goes in
+at once; further trades stack every `MinStackPoints` (default 60) the price travels with it, up to
+`MaxOpenTrades` (60). Every trade has the fixed `SL_Points` 150 / `TP_Points` 200.
 
-**Why it isn't simply "60x normal risk"**: with 60 trades open, if the market reversed hard and
-every single one hit its stop at the same time, a flat per-trade risk % would mean 60x your
-normal per-trade loss. Instead, `MaxTotalRiskPct` (default 8%) caps what **all** open trades
-losing together would cost, and splits that budget across `MaxOpenTrades`, so the worst case is
-capped no matter how many trades have stacked. Raise `MaxTotalRiskPct` carefully - at 150/200
-points SL/TP on gold, spread and commission eat into every single one of those trades, so a high
-trade count also means higher total costs, not just higher total risk.
+Sizing: `MaxTotalRiskPct` (8%) caps what all open trades would lose together if every stop hit at
+once, split across `MaxOpenTrades`.
 
-**This is a high-turnover style.** Demo-test it for a while and watch the HUD's Earned vs Lost
-line before even considering it live - fixed-point SL/TP with no setup filter will take a lot of
-small losses to catch the trend moves that pay for them.
+HUD: current swing (UP/DOWN and from which price), trades, win rate (with the 43% break-even for
+150/200), open trades, earned, lost, subtotal.
+
+More swings = more trades = more spread paid. Demo-test it and watch the win rate line.

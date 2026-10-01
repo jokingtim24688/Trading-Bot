@@ -913,6 +913,16 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Settings: `RiskPercent` (default 0.25%), `RewardRisk` (default 2.0), adjust per strategy.
 - Tested: backtests on XAUUSD H1 (before v1.50) showed +23.7% gain with 989 trades, now with correct sizing.
 
+### 2026-10-01: CandleSenseSwing v2 - trades every swing, both ways
+- The user's v1 run showed 12 trades, -149.60, and they asked for it to trade all swings, not only
+  the ones the 3-bar EMA slope "confirmed". v2 drops the EMA entirely and reads swing highs/lows
+  on M1 (a bar beating `SwingStrength`=2 bars each side): latest swing low -> buy, latest swing
+  high -> sell. Always has a direction; first trade of each new swing fires at once, then stacks
+  every 60 points with the swing, up to 60 open. Same 150/200 SL/TP and total-risk-capped sizing.
+- HUD gets a Swing line (UP/DOWN from price) and a Win rate line (with the 43% break-even for
+  150/200); box grown to fit. Failed orders now print their retcode.
+- Not compiled or tested here (no MT5 in the cloud session).
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
