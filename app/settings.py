@@ -78,6 +78,13 @@ DEFAULTS = {
     # Quiz: which school the Quiz tab trains ("stocks" = MT5 setups, "trenching" = Solana meme coins, "combined")
     "quiz_mode": "trenching",
     "quiz_min_creators": 2,                # question creators kept running while the app is open (per school)
+    # Trenching data growth (sol/trench.py): keeps pulling real PumpSwap/new-pool candles while the app is open,
+    # and retrains the crew by itself once enough new real data has come in, so improvement is visible without
+    # pressing Train every time.
+    "trench_download_min": 20,             # minutes between background downloads (the first one runs at once)
+    "trench_download_pools": 40,           # fresh pools looked at per download round (was a fixed 24, one-shot)
+    "trench_auto_retrain": True,
+    "trench_auto_retrain_gap": 400,        # new real labelled moments since the last training before it retrains
     # Solana trenching bot (sol/): paper by default; live needs SOL_PRIVATE_KEY in .env and a typed LIVE
     "sol_trade_size_sol": 0.1,
     "sol_max_open": 3,

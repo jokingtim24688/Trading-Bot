@@ -114,4 +114,12 @@ Each chat adds lines only to its own list, just above its marker line.
   top of the README. See [mac.md](mac.md).
 - 2026-09-30: secrets stay in the backend: `settings.SECRETS` + `settings.public()`; `/api/status` and
   `/api/settings` return `__saved__` for the X key, and sending it back doesn't overwrite the real one.
+- 2026-10-01: app-wide simplicity pass: the rail folds Ranks/Review/Train/Quiz/Keys/Sounds behind one "More"
+  toggle (collapsed by default); the Solana control bar drops to 3 always-visible controls (the data/train buttons
+  moved into a "Data & training" disclosure, now that both happen automatically); the tweet radar's per-agent beat
+  cards collapse behind a summary. See app.md "Simplicity pass".
+- 2026-10-01: the trenchers get continuous, wider real data (`sol/trench.py download()` reads four pool lists on a
+  recurring timer, not one list once) and training now retrains itself as real data grows, logged to a new
+  `training_log` table with a real "AUC over time" chart + plain-English improvement sentence in the Quiz tab. See
+  sol.md "Trenching data & training that actually shows improvement". 85 tests passing.
 <!-- Chat B: add new lines above this marker -->

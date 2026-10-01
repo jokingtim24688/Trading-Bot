@@ -18,7 +18,7 @@ noticed. Most launches die within hours, snipers and insiders get the cheapest c
 | `sol/agents.py` | **main agents + subagents**: every coin / MT5 symbol has a main agent; before a trade its subagents check one thing each and can veto (Solana: Risk, Rug check, Price drift, Momentum, Skeptic; MT5: Confidence, Reward/risk, Momentum, Quiz agent (advisory)). One veto = no trade. Latest reviews in `data/agents.json`, `GET /api/agents` |
 | `sol/engine.py` | scanner thread (new pools every `sol_scan_s`), `evaluate()` = rug gate -> models -> debate -> main agent review -> paper/live trade; monitor thread every 5 s: TP (+30 % or the compromise), trailing stop (-10 % from peak), hard stop (-15 %), 20-min timeout. On close each model scores `+pnl%` if its final stance was BUY, `-pnl%` if PASS |
 | `sol/wallet.py` | live only: key from `.env`, balances over `SOL_RPC_URL` (e.g. Helius) or public RPC, Jupiter quote + swap (lite-api first, then quote-api v6), signed locally with `solders` |
-| `sol/trench.py` | trenching data + quiz: **starter set** (6,000 moments, flagged synthetic) preloaded on first start so the quiz trains at once; **downloader** (`download()`) labels every 3rd minute of real PumpSwap/new-pool candles; **question creators** (at least `quiz_min_creators` = 2, restarted by a watchdog) write `data/quiz_bank/trenching/questions.jsonl`, each with its own file position (`creator_k.pos`), nothing held in RAM; `train_quiz()` = split, learn, grade on unseen questions (quiz points = (AUC - 0.5) x 200), merge |
+| `sol/trench.py` | trenching data + quiz: **starter set** (6,000 moments, flagged synthetic) preloaded on first start so the quiz trains at once; **downloader** (`download()`, 2026-10-01: four pool lists, not one, see below) labels every 3rd minute of real PumpSwap/new-pool candles, **on a recurring timer**, not just once at boot; **question creators** (at least `quiz_min_creators` = 2, restarted by a watchdog) write `data/quiz_bank/trenching/questions.jsonl`, each with its own file position (`creator_k.pos`), nothing held in RAM; `train_quiz()` = split, learn, grade on unseen questions (quiz points = (AUC - 0.5) x 200), merge, **log to `training_log`**, and (2026-10-01) **retrain itself** once enough new real data has come in |
 | `sol/api.py` | routes, included by `app/server.py`; `startup()` loads the merged bot, starts the monitor and the trenching boot (starter set, creators, background download) |
 
 ## Routes
@@ -26,8 +26,10 @@ noticed. Most launches die within hours, snipers and insiders get the cheapest c
 config, `bots[]`, `crew{merged,training}`, `debate{max_rounds,last_ms}`), `GET /api/sol/feed`, `GET /api/sol/debate/{mint}`
 (rounds, consensus, compromise, `review` = main agent + subagents, `probs`, `ms`), `GET /api/sol/positions`,
 `GET /api/sol/trades`, `GET /api/sol/pnl`, `POST /api/sol/scanner {run}`, `/autotrade {on}`, `/mode {mode, confirm:"LIVE"}`,
-`/train`, `/dataset`, `/positions/{id}/close`. Trenching quiz: `GET /api/trench/state`, `GET /api/trench/question`,
-`POST /api/trench/train`, `POST /api/trench/download`, `POST /api/quiz/mode {stocks|trenching|combined}`. `GET /api/agents`.
+`/train`, `/dataset` (now reads `trench_download_pools` when no `pools` is given, instead of a hardcoded 24),
+`/positions/{id}/close`. Trenching quiz: `GET /api/trench/state` (now also carries `history`: `store.training_log`,
+oldest first, each row's AUC/members/weights/real_samples/auto), `GET /api/trench/question`, `POST /api/trench/train`,
+`POST /api/trench/download`, `POST /api/quiz/mode {stocks|trenching|combined}`. `GET /api/agents`.
 Agent profile: `GET /api/sol/agent/{model}` (score split, rank, `stats` from the votes table, `confidence{last, need,
 floor, series}`, `activity[]` with open/closed/passed status, points and P/L, `chart{symbol, candles, markers,
 position}` for the coin it's on (candles from GeckoTerminal, cached 30 s), `model_info{auc, weight}`).
@@ -38,6 +40,9 @@ opens, `settle_votes` on close = the points each model gets).
 `quiz_mode` (default trenching), `quiz_min_creators` (2), `telegram_commands` (True), `sol_trade_size_sol` 0.1,
 `sol_max_open` 3, `sol_tp_pct` 30, `sol_trail_pct` 10, `sol_timeout_min` 20, `sol_buy_threshold` 0.78,
 `sol_model_floor` 0.65, `sol_min_liq_usd` 5000, `sol_scan_s` 10, `sol_paper_start` 10.
+Trenching data growth (2026-10-01): `trench_download_min` 20 (minutes between background downloads; the first run
+is at once), `trench_download_pools` 40 (was a fixed, one-shot 24), `trench_auto_retrain` True, `trench_auto_retrain_gap`
+400 (new real labelled moments since the last training before it trains again by itself).
 
 ## Elsewhere
 - `agent/run.py`: before every MT5 entry the symbol's main agent runs its subagents (`sol.agents.mt5_subagents`); a veto
@@ -104,3 +109,41 @@ Two animations only. **Typing** runs the whole time an agent is doing anything �
 holding a trade. **Profit** is the only thing that changes it: green fur, arms in the air waving, $ raining and
 locking on the eyes for 2 s, then back to typing. Nothing else touches the cat's pose (a promotion pulses a ring
 round the frame, not the cat).
+
+## Trenching data & training that actually shows improvement (2026-10-01, Chat B)
+The user's ask: "give the trenchers more data and improve the training too see real data/improvement."
+
+**More data, continuously, not a one-shot 24 pools:**
+- `download()` now reads **four** pool lists instead of two, so one quiet source doesn't starve a round:
+  `feeds.new_pools(3)` (brand-new, network-wide — the core trenching source), `feeds.trending_pools(2, "pumpswap")`,
+  `feeds.trending_pools(2, "raydium")` (migrated runners), `feeds.trending_pools(1)` (network-wide trending, a
+  catch-all). Deduped by pool address, filtered by liquidity, capped at `trench_download_pools` (40, up from a
+  hardcoded 24) — all pre-existing behaviour, just over four lists.
+- `keep_alive()`'s boot loop used to call `download()` exactly once and then only kept the question creators alive.
+  It now re-downloads every `trench_download_min` minutes (first run still at once) for as long as the app is open,
+  so the real-sample count keeps climbing in the background instead of topping out after the first pull.
+
+**Training that retrains itself, and a history you can watch:**
+- `store.training_log` (new table): one row per completed `train_quiz()` — `t`, `n_samples`, `real_samples`,
+  `synthetic_share`, `auc`, `precision_at_buy`, `n_test`, `members` (per-model AUC), `weights` (the judge's trust in
+  each), `seconds`, `auto` (whether it ran by itself). `store.add_training(meta, real_samples, auto)` /
+  `store.training_log(limit)` (oldest first, so a chart reads left to right).
+- `trench._maybe_retrain(gap)`: after a download, if `trench_auto_retrain` is on and real samples have grown by at
+  least `trench_auto_retrain_gap` (400) since the last training (`trench.state["train"]["last_real_at_train"]`,
+  updated on every `train_quiz()`), it calls `train_quiz(auto=True)` itself. Below 60 real rows or already
+  training, it does nothing (same floor `model.train()` already enforces).
+- UI: the Quiz tab's Trenching school gets a new section, **"Real improvement over time"** (`#qt-hist-sec`,
+  `renderTrenchHistory()`), a `solChart` line per crew member plus a thicker gold "Merged bot" line, AUC on the
+  y-axis with a "0.5 guessing" reference line, hover tooltip (date + every model's AUC at that training). Below it,
+  a plain sentence: `Merged bot: AUC 0.600 -> 0.718 (+0.118) across 5 trainings, 3,340 more real moments than the
+  first one - last one ran by itself as new data came in.` One training logged shows a "train again to add a
+  point" note instead of a one-point chart.
+- The manual "Build dataset" / "Train Parallel Ensemble" buttons moved into a `<details class="sol-adv">` ("Data &
+  training") in the Solana tab, since both now happen by themselves; see app.md's Simplicity pass. Their copy was
+  also wrong before this (talked about "checking wallets against the four skill rules" and "0 of N wallets
+  skilled" — leftover text from a different, never-shipped design): `trench.download()` has only ever pulled
+  GeckoTerminal pool candles. Fixed at the API too (`dataset.wallets_checked`/`wallets_skilled` -> `pools_checked`/
+  `new_samples`).
+- Tests (`tests/test_sol.py`, 6 new): the four-list download with dedup, the configurable pool cap (route and
+  function both), `training_log` round-tripping across two trainings, `_maybe_retrain`'s gap gate, the
+  `/api/sol/dataset` route no longer hardcoding 24, and `history` riding in `/api/trench/state`. 85 passed.

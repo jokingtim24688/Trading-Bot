@@ -38,6 +38,10 @@ def conn():
     CREATE INDEX IF NOT EXISTS ix_tweets_t ON tweets(t);
     CREATE INDEX IF NOT EXISTS ix_tweets_model ON tweets(model, t);
     CREATE INDEX IF NOT EXISTS ix_tweets_mint ON tweets(mint, t);
+    CREATE TABLE IF NOT EXISTS training_log (id INTEGER PRIMARY KEY, t REAL, n_samples INTEGER, real_samples INTEGER,
+        synthetic_share REAL, auc REAL, precision_at_buy REAL, n_test INTEGER, members TEXT, weights TEXT,
+        seconds REAL, auto INTEGER);
+    CREATE INDEX IF NOT EXISTS ix_training_t ON training_log(t);
     """)
     have = {r[1] for r in c.execute("PRAGMA table_info(bots)")}
     for col, typ in (("rank", "INTEGER DEFAULT 0"), ("rank_t", "REAL DEFAULT 0")):
@@ -309,3 +313,26 @@ def tweet_stats(model=None) -> dict:
                       f"MAX(t) last FROM tweets{where}", args).fetchone()
     return {"found": int(r["n"] or 0), "bought": int(r["bought"] or 0), "blocked": int(r["blocked"] or 0),
             "last": r["last"]}
+
+
+# ---------- training history (sol/trench.py train_quiz -> model.train) ----------
+def add_training(meta: dict, real_samples: int, auto: bool = False) -> int:
+    """One row per completed training, so the app can show the AUC actually moving as real data grows."""
+    met = meta.get("metrics") or {}
+    with conn() as c:
+        cur = c.execute("""INSERT INTO training_log (t, n_samples, real_samples, synthetic_share, auc,
+            precision_at_buy, n_test, members, weights, seconds, auto) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (meta.get("trained_at") or now(), meta.get("n_samples"), real_samples, meta.get("synthetic"),
+             met.get("auc"), met.get("precision_at_buy"), met.get("n_test"), jdump(met.get("members") or {}),
+             jdump(met.get("weights") or {}), meta.get("seconds"), int(bool(auto))))
+        return cur.lastrowid
+
+
+def training_log(limit=40) -> list[dict]:
+    with conn() as c:
+        rows = [dict(r) for r in c.execute("SELECT * FROM training_log ORDER BY t DESC LIMIT ?", (limit,))]
+    for r in rows:
+        r["members"] = jload(r["members"], {})
+        r["weights"] = jload(r["weights"], {})
+        r["auto"] = bool(r["auto"])
+    return list(reversed(rows))                          # oldest first: a chart reads left-to-right

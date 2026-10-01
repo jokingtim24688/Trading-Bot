@@ -56,7 +56,7 @@ def questions_path():
 
 
 state = {"download": {"running": False, "progress": 0.0, "stage": "", "pools": 0, "samples": 0, "error": ""},
-         "train": {"running": False, "progress": 0.0, "stage": "", "error": "", "last": None},
+         "train": {"running": False, "progress": 0.0, "stage": "", "error": "", "last": None, "last_real_at_train": 0},
          "creators": {"running": 0, "wanted": 2, "made": 0}}
 _file_lock = threading.Lock()
 
@@ -158,14 +158,19 @@ def _windows(snap: dict, cs: list[list[float]], step=3) -> list[dict]:
     return rows
 
 
-def download(pools=24) -> dict:
-    """Real trenching data: fresh PumpSwap + new Solana pools, 1-minute candles, labelled windows."""
+def download(pools=None) -> dict:
+    """Real trenching data: fresh PumpSwap + new Solana pools, 1-minute candles, labelled windows. Looks at four
+    lists so one quiet source (e.g. PumpSwap having a slow hour) doesn't starve the download: brand-new pools
+    across the whole network, PumpSwap and Raydium trending (where migrated runners live), and the network's
+    overall trending list as a catch-all."""
+    pools = int(pools or settings.load().get("trench_download_pools", 40))
     d = state["download"]
     if d["running"]:
         raise RuntimeError("The trenching download is already running.")
     d.update(running=True, progress=0.0, stage="finding fresh pools", pools=0, samples=0, error="")
     try:
-        found = feeds.trending_pools(2, dex="pumpswap") + feeds.new_pools(2)
+        found = (feeds.new_pools(3) + feeds.trending_pools(2, dex="pumpswap") + feeds.trending_pools(2, dex="raydium")
+                 + feeds.trending_pools(1))
         seen, todo = set(), []
         for s in found:
             if s["pool"] and s["pool"] not in seen and s["liq_usd"] > 1000:
@@ -311,21 +316,44 @@ class Creators:
 creators = Creators()
 
 
+def _maybe_retrain(auto_gap: int):
+    """Called after a download: if enough new real data has come in since the last training, train again by
+    itself - so the crew's grades actually move while the app sits open, not just when you press the button."""
+    tr = state["train"]
+    if tr["running"] or model.state["training"]:
+        return
+    real = dataset_info()["real"]
+    if real < 60 or real - tr.get("last_real_at_train", 0) < max(50, auto_gap):
+        return
+    try:
+        train_quiz(auto=True)
+    except Exception:                                   # noqa: BLE001 - the next download tries again later
+        pass
+
+
 def keep_alive():
-    """App start: starter set, two creators, a background download; a watchdog restarts creators if one stops."""
+    """App start: starter set, two creators, a background download; from then on a loop every 30 s that keeps the
+    creators alive, re-downloads real data every `trench_download_min` minutes (first run at once) and, when
+    `trench_auto_retrain` is on, retrains by itself once `trench_auto_retrain_gap` new real moments have come in."""
     def boot():
         try:
             starter_set()
         except OSError:
             pass
         creators.ensure()
-        try:
-            download()
-        except Exception:                               # noqa: BLE001 - offline: the starter set trains meanwhile
-            pass
+        next_dl = 0.0
         while True:
-            time.sleep(30)
             creators.ensure()
+            s = settings.load()
+            if time.time() >= next_dl:
+                try:
+                    download(s.get("trench_download_pools", 40))
+                except Exception:                        # noqa: BLE001 - offline: the starter set trains meanwhile
+                    pass
+                if s.get("trench_auto_retrain", True):
+                    _maybe_retrain(int(s.get("trench_auto_retrain_gap", 400)))
+                next_dl = time.time() + max(5.0, float(s.get("trench_download_min", 20))) * 60
+            time.sleep(30)
     threading.Thread(target=boot, name="trench-boot", daemon=True).start()
 
 
@@ -341,9 +369,10 @@ def load_questions(limit=MAX_QUESTIONS, real_only=False):
     return np.array(X, dtype=np.float32), np.array(y, dtype=int), src
 
 
-def train_quiz() -> dict:
+def train_quiz(auto: bool = False) -> dict:
     """The crew takes the quiz: split into models, each learns from every question, they're graded on questions
-    they never saw (points per right answer), then merged back into one bot."""
+    they never saw (points per right answer), then merged back into one bot. Every run is logged (training_log)
+    so the Quiz tab can chart the grade actually moving as more real data comes in."""
     tr = state["train"]
     if tr["running"]:
         raise RuntimeError("Quiz training is already running.")
@@ -353,6 +382,7 @@ def train_quiz() -> dict:
         real = sum(1 for s in src if s != "starter")
         if real >= 2000:                                # enough real data: leave the starter set out
             X, y, src = load_questions(real_only=True)
+            real = sum(1 for s in src if s != "starter")
         tr["stage"] = f"{len(y)} questions: splitting the bot and training each model"
         meta = model.train(X, y, synthetic_share=1 - real / max(1, len(src)))
         for m, auc in (meta["metrics"].get("members") or {}).items():
@@ -360,7 +390,8 @@ def train_quiz() -> dict:
                 store.add_score(m, round((auc - 0.5) * 200, 1), quiz=True)
         from . import engine, ranks                     # the quiz grade can promote an intern
         ranks.update(list((meta["metrics"].get("members") or {})), say=engine.announce_rank)
-        tr.update(progress=1.0, stage="merged into one bot", last=meta)
+        store.add_training(meta, real, auto=auto)
+        tr.update(progress=1.0, stage="merged into one bot", last=meta, last_real_at_train=dataset_info()["real"])
         return meta
     except Exception as e:
         tr.update(error=str(e), stage="failed")

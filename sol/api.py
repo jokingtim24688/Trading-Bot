@@ -46,7 +46,7 @@ def sol_state():
         "training": {"running": model.state["training"] or tr["running"], "progress": model.state["progress"],
                      "stage": model.state["stage"] or tr["stage"], "error": tr["error"] or model.state["error"]},
         "dataset": {"running": dl["running"], "progress": dl["progress"], "stage": dl["stage"],
-                    "wallets_checked": dl["pools"], "wallets_skilled": None, "samples": info["samples"],
+                    "pools_checked": dl["pools"], "new_samples": dl["samples"],
                     "real": info["real"], "starter": info["starter"], "error": dl["error"]},
         "apis": {"helius": bool(wallet._env().get("SOL_RPC_URL")), "dexscreener": feeds.status["geckoterminal"],
                  "rugcheck": feeds.status["rugcheck"], "jupiter": feeds.status["jupiter"]},
@@ -150,7 +150,7 @@ def sol_train():
 def sol_dataset(body: dict = Body(default={})):
     if trench.state["download"]["running"]:
         raise HTTPException(409, "The download is already running.")
-    _bg(trench.download, int(body.get("pools") or 24))
+    _bg(trench.download, int(body["pools"]) if body.get("pools") else None)
     return {"started": True}
 
 
@@ -312,7 +312,7 @@ def trench_state():
                       "training": model.state["training"], "progress": model.state["progress"],
                       "stage": model.state["stage"], "members": model.state["members"],
                       "metrics": model.meta().get("metrics"), "problems": model.problems()},
-            "bots": engine.bots_view()}
+            "bots": engine.bots_view(), "history": store.training_log(40)}
 
 
 @router.get("/api/trench/question")

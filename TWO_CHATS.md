@@ -38,7 +38,7 @@ Owns what the app does:
 
 ### Chat B (chat 2): UI & Polish
 
-Status: idle. Last (2026-09-30): rank system + Ranks tab (sol/ranks.py), after Mac support (b7787c0) and agent profiles.
+Status: idle. Last (2026-10-01): simplicity pass (rail "More" group, Solana control bar) + the trenchers' data/training-history work, after the tweet radar and rank system.
 
 Owns how the app looks and feels:
 - `app/static/`: `app.css`, the layout of `index.html`, and the visual and interaction code in `app.js`, for every tab
@@ -106,6 +106,14 @@ To ask the other chat for something, add a line to its list: date, what you need
 with the commit hash.
 
 ### For Chat A (from Chat B)
+- 2026-10-01, **FYI, no action needed**: the user asked to simplify the app and give the trenchers more data with
+  visible training improvement; both done in B's lane. `app/settings.py` gets four more keys (`trench_download_min`,
+  `trench_download_pools`, `trench_auto_retrain`, `trench_auto_retrain_gap`) next to the existing `x_*` ones -
+  straight appends to DEFAULTS, nothing restructured. If you touch the rail (`app/static/index.html`'s `<nav
+  class="rail">`) or `showTab()` in `app/static/app.js`: six tabs now fold behind `#rail-more-btn` (`RAIL_MORE_TABS`
+  in `app.js`), and the two `$$(".rail-btn")` queries used for tab-routing are deliberately `.rail-btn[data-tab]` -
+  don't drop that scoping, it's the fix for a real bug (see Progress.md). Map: wiki app.md "Simplicity pass", sol.md
+  "Trenching data & training that actually shows improvement".
 - 2026-09-30, **FYI, no action needed** (tweet-radar commit): the user asked for a tweet monitor per agent and an
   installer link, and Chat B built both, touching your lane. Pull before editing:
   **`app/settings.py`** — new `x_*` keys for the monitors, plus `SECRETS = ("x_api_key",)`, `KEPT = "__saved__"`

@@ -101,6 +101,21 @@ function setNum(el, v, format, { flashIt = true } = {}) {
 }
 
 /* ---------- tabs ---------- */
+/* Simplicity pass: the rail used to show 12 buttons at once. The six used every session (Bot, Manual, Solana,
+   Agent, Hermes, Settings) stay put; the other six (Ranks, Review, Train, Quiz, Keys, Sounds) fold under one
+   "More" toggle, collapsed by default. Nothing is removed or re-routed - showTab() still does the same thing for
+   all twelve - a link or shortcut into a folded tab just opens the group first so the button exists to activate. */
+const RAIL_MORE_TABS = new Set(["ranks", "review", "train", "quiz", "keys", "sounds"]);
+function railMoreOpen(open) {
+  const wrap = $("#rail-more"), btn = $("#rail-more-btn"); if (!wrap || !btn) return;
+  wrap.classList.toggle("open", open); btn.setAttribute("aria-expanded", String(open));
+  try { localStorage.setItem("railMore", open ? "1" : "0"); } catch (e) {}
+}
+(function initRailMore() {
+  let open = false; try { open = localStorage.getItem("railMore") === "1"; } catch (e) {}
+  railMoreOpen(open);
+})();
+$("#rail-more-btn")?.addEventListener("click", () => railMoreOpen(!$("#rail-more").classList.contains("open")));
 function moveRailInd() {                        // slide the highlight to the active section (transform only)
   const rail = $(".rail"), ind = $(".rail-ind"), b = $(".rail-btn.active"); if (!ind || !b) return;
   ind.style.transform = `translate(${b.offsetLeft}px, ${b.offsetTop}px)`;
@@ -115,8 +130,9 @@ function showTab(name) {
   if (name !== "bot") closeSymPop();
   if (name === "settings" && state.settings && !$("#savebar").classList.contains("is-dirty")) { fillSettings(); updateDirty(); }
   state.tab = name;
+  if (RAIL_MORE_TABS.has(name)) railMoreOpen(true);      // a jump into a folded tab opens the group first
   document.body.classList.toggle("on-bot", name === "bot"); placeNotes();
-  $$(".rail-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  $$(".rail-btn[data-tab]").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   $$(".tab").forEach(t => t.classList.toggle("active", t.id === `tab-${name}`));
   moveRailInd();
   if (name === "bot" && state.chart && state.chartAuto && !state.autoT) realignChart(true);
@@ -133,7 +149,7 @@ function showTab(name) {
   if (name === "train") pollTrainLog();
   if (name === "quiz") { loadQuiz(); loadReport(false); loadTrench(true); }
 }
-$$(".rail-btn").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+$$(".rail-btn[data-tab]").forEach(b => b.onclick = () => showTab(b.dataset.tab));   // the "More" toggle has no data-tab, so it never fires showTab()
 document.addEventListener("click", e => { const g = e.target.closest("[data-goto]"); if (g) { if (g.tagName === "A") e.preventDefault(); showTab(g.dataset.goto); } });
 
 /* ---------- status strip ---------- */
@@ -3748,17 +3764,17 @@ function renderSolCtl() {
   $$("#sol-mode .seg-opt").forEach(b => { const on = b.dataset.mode === (st.mode || "paper"); b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); });
   $("#tab-sol").classList.toggle("is-live", st.mode === "live");
   if (!sol.autoHeld || Date.now() - sol.autoHeld > 3000) $("#sol-auto").checked = !!st.auto_trade;
-  const tr = st.training || {}, ds = st.dataset || {}, job = tr.running ? { ...tr, what: "Training" } : ds.running ? { ...ds, what: "Building dataset" } : null;
+  const tr = st.training || {}, ds = st.dataset || {}, job = tr.running ? { ...tr, what: "Training" } : ds.running ? { ...ds, what: "Pulling fresh data" } : null;
   $("#sol-train").disabled = !!tr.running; $("#sol-dataset").disabled = !!ds.running;
-  $("#sol-train").textContent = tr.running ? "Training…" : "Train Parallel Ensemble";
+  $("#sol-train").textContent = tr.running ? "Training…" : "Train now";
   const pr = $("#sol-progress"), err = tr.error || ds.error;
   pr.hidden = !job && !err;
-  if (job) { $("#sol-prog-bar").style.width = `${Math.round((job.progress || 0) * 100)}%`; $("#sol-prog-txt").textContent = `${job.what}: ${job.stage || ""} · ${Math.round((job.progress || 0) * 100)}%${job.what === "Building dataset" && ds.wallets_checked != null ? ` · ${ds.wallets_skilled ?? 0} of ${ds.wallets_checked} wallets skilled, ${ds.samples ?? 0} trades` : ""}`; pr.classList.remove("err"); }
+  if (job) { $("#sol-prog-bar").style.width = `${Math.round((job.progress || 0) * 100)}%`; $("#sol-prog-txt").textContent = `${job.what}: ${job.stage || ""} · ${Math.round((job.progress || 0) * 100)}%${job.what === "Pulling fresh data" && ds.pools_checked != null ? ` · ${ds.pools_checked} pools checked, ${ds.new_samples ?? 0} new labelled moments` : ""}`; pr.classList.remove("err"); }
   else if (err) { $("#sol-prog-bar").style.width = "0"; $("#sol-prog-txt").textContent = err; pr.classList.add("err"); }
   const apis = st.apis || {}, dot = (k, label) => `<span class="sol-api ${apis[k] === true ? "ok" : apis[k] === false ? "bad" : ""}" title="${label}: ${apis[k] === true ? "reachable" : apis[k] === false ? "not reachable" : "not checked yet"}"><i></i>${label}</span>`;
   const met = m.metrics || {};
   const model = m.loaded ? `<span class="sol-chip${m.synthetic ? " warn" : ""}" title="${m.synthetic ? "Trained on synthetic demo data: live mode stays locked" : "The saved ensemble (models/super_ensemble.joblib)"}">Model ${m.method === "voting" ? "soft vote" : "stacked"} · ${m.n_samples?.toLocaleString() ?? "?"} trades${met.auc != null ? ` · AUC ${(+met.auc).toFixed(2)}` : ""}${m.device ? ` · ${m.device === "cuda" ? "GPU" : "CPU"}` : ""}${m.trained_at ? ` · ${String(m.trained_at).slice(0, 16).replace("T", " ")}` : ""}${m.synthetic ? " · demo data" : ""}</span>`
-    : `<span class="sol-chip warn">No model yet: Build dataset, then Train</span>`;
+    : `<span class="sol-chip warn">No model yet: data and training happen by themselves, or open Data &amp; training below</span>`;
   const w = st.wallet || {}, money = st.mode === "live" ? (w.key_loaded ? `<span class="sol-chip" title="${esc(w.pubkey || "")}">Wallet ${solShort(w.pubkey)} · ${w.sol_balance != null ? (+w.sol_balance).toFixed(3) + " SOL" : "balance —"}</span>` : `<span class="sol-chip warn">No wallet key in .env</span>`)
     : `<span class="sol-chip">Paper balance ${st.paper?.balance_sol != null ? (+st.paper.balance_sol).toFixed(3) : "—"} SOL</span>`;
   const c = st.config || {};
@@ -3788,11 +3804,11 @@ $("#sol-auto").onchange = async e => {
   try { await api("/api/sol/autotrade", { method: "POST", body: { on } }); toast(on ? "Auto-trade on: a BUY verdict from the debate opens a trade." : "Auto-trade off: the scanner and the debate still run; nothing is bought."); } catch (err) { toast(err.message, true); e.target.checked = !on; }
 };
 $("#sol-train").onclick = async () => {
-  try { await api("/api/sol/train", { method: "POST", body: {} }); toast("Training XGBoost, LightGBM and RandomForest in parallel, then the stacker."); } catch (e) { toast(e.message, true); }
+  try { await api("/api/sol/train", { method: "POST", body: {} }); toast("Training: the crew splits into its models, then merges back into one bot. Normally this now happens by itself as real data comes in."); } catch (e) { toast(e.message, true); }
   loadSol();
 };
 $("#sol-dataset").onclick = async () => {
-  try { await api("/api/sol/dataset", { method: "POST", body: {} }); toast("Building the dataset: checking wallets against the four skill rules."); } catch (e) { toast(e.message, true); }
+  try { await api("/api/sol/dataset", { method: "POST", body: {} }); toast("Pulling fresh Solana pool data from GeckoTerminal and labelling new moments. This also happens by itself in the background."); } catch (e) { toast(e.message, true); }
   loadSol();
 };
 
@@ -4160,6 +4176,31 @@ function renderTrench() {
       training && m.members?.[k]?.stage !== "done" ? (m.members?.[k]?.stage || "") : "")).join("")
     + (met.auc != null && !training ? bar("Merged bot", "var(--gold)", met.auc, null) + `<p class="muted small qt-foot">Graded on ${(met.n_test ?? 0).toLocaleString()} questions none of them saw while learning.</p>` : "")
     : `<p class="muted small">Not trained yet. Press <b>Train the crew now</b>: it takes about a minute on the starter set.</p>`);
+  renderTrenchHistory(st);
+}
+function renderTrenchHistory(st) {
+  const sec = $("#qt-hist-sec"), hist = st.history || [];
+  sec.hidden = hist.length < 1;
+  if (!hist.length) return;
+  const members = [...new Set(hist.flatMap(h => Object.keys(h.members || {})))];
+  const series = members.map(m => ({ key: m, name: SOL_MODEL[m]?.name || m, col: SOL_MODEL[m]?.col || "var(--muted)",
+      dash: !!SOL_MODEL[m]?.dash, pts: hist.map(h => ({ x: h.t, y: h.members?.[m] ?? null })) }))
+    .concat([{ key: "bot", name: "Merged bot", col: "var(--gold)", pts: hist.map(h => ({ x: h.t, y: h.auc })) }]);
+  if (hist.length > 1) {
+    solChart($("#qt-hist-chart"), series, { time: true, yMin: 0.45, yMax: 1, yFmt: v => v.toFixed(2),
+      refs: [{ y: 0.5, label: "0.5 guessing" }], xLabel: t => new Date(t * 1000).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
+      height: 170, unit: "", endLabels: true });
+  } else {
+    setHTML($("#qt-hist-chart"), `<p class="muted small">One training so far. Train again as more real data comes in - each run adds a point here.</p>`);
+  }
+  $("#qt-hist-meta").textContent = `${hist.length} training${hist.length === 1 ? "" : "s"} kept`;
+  const first = hist[0], last = hist[hist.length - 1], moreReal = (last.real_samples ?? 0) - (first.real_samples ?? 0);
+  const aucDelta = last.auc != null && first.auc != null ? last.auc - first.auc : null;
+  $("#qt-hist-note").textContent = hist.length < 2 ? ""
+    : `Merged bot: AUC ${first.auc?.toFixed(3) ?? "–"} → ${last.auc?.toFixed(3) ?? "–"}` +
+      (aucDelta != null ? ` (${aucDelta >= 0 ? "+" : ""}${aucDelta.toFixed(3)})` : "") +
+      ` across ${hist.length} trainings` + (moreReal > 0 ? `, ${moreReal.toLocaleString()} more real moments than the first one` : "") +
+      (last.auto ? " · last one ran by itself as new data came in" : "") + ".";
 }
 function renderTrenchQ() {
   const q = trench.q, box = $("#qt-q");

@@ -275,3 +275,31 @@
 - Profile: rank chip in the header, `#cp-career` (next rank, % and one bar per requirement, last changes).
   Debate transcript shows each model's vote weight (`.sol-w`). The animation board has a row with every rank's outfit.
 
+
+## Simplicity pass (2026-10-01, Chat B)
+- **Rail**: 12 tabs crowded the sidebar, so it's now two groups. Always visible: Bot, Manual, Solana, Agent, Hermes,
+  Settings. Folded under one `#rail-more-btn` toggle (chevron, closed by default, state in `localStorage.railMore`):
+  Ranks, Review, Train, Quiz, Keys, Sounds, in a `<details>`-like `#rail-more` wrapper (plain div + max-height
+  transition, not a real `<details>`, so it can be opened from JS). Nothing moved tabs or changed `showTab()`'s
+  behavior; a `data-goto` link into a folded tab (Keys, Sounds) or a direct `showTab()` call opens the group first
+  (`RAIL_MORE_TABS` in `showTab()`), so the button exists to receive `.active` before `moveRailInd()` measures it.
+  **Gotcha found and fixed**: the toggle button shares the `.rail-btn` class for visual consistency, which meant it
+  was also caught by the generic `$$(".rail-btn")` tab-click wiring and the `showTab()` active-class loop — clicking
+  it called `showTab(undefined)`, which matched *every* button lacking `data-tab` (`undefined === undefined`) and
+  hid whatever tab was open. Both of those queries are now scoped to `.rail-btn[data-tab]`, a screenshot test
+  confirmed a non-default tab survives opening/closing the group. For automated screenshots: a `.rail-btn[data-tab=X]`
+  selector still has to call `showTab('X')` or click `#rail-more-btn` first for a folded `X`.
+- **Solana tab control bar**: was 5 always-visible controls (scanner, mode, auto-trade, Build dataset, Train). Since
+  `sol/trench.py` now re-downloads and retrains by itself (see sol.md "Trenching data & training"), the data/train
+  buttons moved into a `<details class="sol-adv">` disclosure ("Data & training") next to the three everyday
+  controls, relabelled "Pull fresh data now" / "Train now" with accurate tooltips and toasts (they used to say
+  "Build dataset: checking wallets against the four skill rules" and show "0 of N wallets skilled" while running —
+  leftover copy from an earlier, different design; `trench.download()` has never worked that way. Fixed at the
+  source too: `/api/sol/state`'s `dataset` object now returns `pools_checked`/`new_samples` instead of the always-
+  `None` `wallets_skilled`).
+- **Tweet radar**: the four per-agent beat cards (`#solx-beats`) now sit inside `<details id="solx-beats-wrap">`,
+  closed by default behind a one-line summary; the finds table (the actual output) stays visible above the fold.
+  `setHTML` still only touches the inner `#solx-beats` div, so the open/closed state survives every 2 s poll.
+- Screenshots: `tweet-radar.png`/`profile-monitor.png` style verification repeated for `rail-collapsed.png`,
+  `rail-expanded.png` (and the bug-fixed re-shoot), `sol-ctl-simple.png`/`sol-ctl-advanced.png`, `solx-collapsed.png`/
+  `solx-expanded.png`, `qt-history-chart.png`/`qt-history-tooltip.png`.

@@ -1272,4 +1272,38 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Tests: 79 passed (6 new, including one that proves a coin everyone is tweeting about is still thrown out by the
   rug filter and nothing is bought).
 
+### 2026-10-01 — Simpler app overall; the trenchers get more data and training that shows it (Chat B)
+User asked for two things at once: "make the app simple overall" and "give the trenchers more data and improve the
+training too see real data/improvement."
+
+**Simpler:**
+- The rail had grown to 12 tabs. Now six stay always visible (Bot, Manual, Solana, Agent, Hermes, Settings) and six
+  fold behind one "More" toggle (Ranks, Review, Train, Quiz, Keys, Sounds), collapsed by default, remembered in
+  localStorage. A link into a folded tab (the Keys/Sounds "change" links) opens the group first.
+- **Found and fixed a real bug while building this**: the toggle button shared the `.rail-btn` class for a matching
+  look, which meant the app's existing generic rail-click wiring also caught it and called `showTab(undefined)` —
+  which then matched *every* button lacking `data-tab` (`undefined === undefined`) and hid whatever tab was open.
+  A screenshot caught it (the gold highlight jumped onto "More" and the open tab vanished) before it shipped; fixed
+  by scoping those two queries to `.rail-btn[data-tab]`.
+- Solana tab: the control bar drops from 5 buttons to 3 (scanner, mode, auto-trade). "Build dataset" and "Train
+  Parallel Ensemble" move into a "Data & training" disclosure, since both now run by themselves (see below) — along
+  the way, fixed their copy, which had never matched what the buttons actually do ("checking wallets against the
+  four skill rules", "0 of N wallets skilled" while running: leftover text from an earlier design; the real
+  `trench.download()` has only ever pulled GeckoTerminal pool candles). The tweet radar's four per-agent beat cards
+  now collapse behind one summary line by default; the finds table stays visible.
+
+**More data, and training that shows it:**
+- `sol/trench.py download()` now reads four pool lists (new pools, PumpSwap trending, Raydium trending, overall
+  trending) instead of two, on a recurring timer (`trench_download_min`, default 20 min) instead of once at boot,
+  and looks at more pools per round (40, was a fixed 24).
+- Training now retrains itself: once real data has grown by `trench_auto_retrain_gap` (400) since the last
+  training, `train_quiz()` runs on its own. Every training (manual or automatic) is logged to a new
+  `training_log` table (AUC, per-model AUC, real-sample count, whether it was automatic).
+- New in the Quiz tab's Trenching school: a **"Real improvement over time"** chart — every crew member's AUC across
+  its trainings, plus the merged bot, with a hover tooltip and a plain sentence ("Merged bot: AUC 0.600 -> 0.718
+  (+0.118) across 5 trainings, 3,340 more real moments than the first one"). This is the direct answer to "see real
+  data/improvement": pressing Train repeatedly as data grows now visibly moves a real number, not a snapshot.
+- Verified with seeded training_log rows in the sandbox (never committed; `data/` is gitignored) and screenshots of
+  both the collapsed/expanded states and the chart with its tooltip. Tests: 85 passed (6 new).
+
 <!-- Chat B: add new entries above this line -->

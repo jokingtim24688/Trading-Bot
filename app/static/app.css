@@ -1480,17 +1480,17 @@ body.on-bot .notes { top: var(--notes-top, 170px); }
 .sol-bar-total .sol-track { height: 14px; } .sol-bar-total .sol-track b { border-radius: 7px; }
 .sol-verdict-row { display: flex; align-items: center; gap: 12px; margin: 12px 0 2px; }
 .sol-debate-head { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
-.sol-conv, .sol-pnl { position: relative; }
-.sol-conv svg, .sol-pnl svg, .cp-conf-chart svg { display: block; }
-.sol-conv .g, .sol-pnl .g, .cp-conf-chart .g { stroke: rgba(255,255,255,.05); }
-.sol-conv text, .sol-pnl text, .cp-conf-chart text { font: 10px var(--mono); fill: var(--muted); }
-.sol-conv .yl, .sol-pnl .yl, .cp-conf-chart .yl { text-anchor: end; } .sol-conv .xl, .sol-pnl .xl, .cp-conf-chart .xl { text-anchor: middle; }
-.sol-conv .ref, .cp-conf-chart .ref { stroke: rgba(230,227,218,.32); stroke-dasharray: 3 4; }
-.sol-conv .rl, .cp-conf-chart .rl { font-family: var(--sans); }
+.sol-conv, .sol-pnl, #qt-hist-chart { position: relative; }
+.sol-conv svg, .sol-pnl svg, .cp-conf-chart svg, #qt-hist-chart svg { display: block; }
+.sol-conv .g, .sol-pnl .g, .cp-conf-chart .g, #qt-hist-chart .g { stroke: rgba(255,255,255,.05); }
+.sol-conv text, .sol-pnl text, .cp-conf-chart text, #qt-hist-chart text { font: 10px var(--mono); fill: var(--muted); }
+.sol-conv .yl, .sol-pnl .yl, .cp-conf-chart .yl, #qt-hist-chart .yl { text-anchor: end; } .sol-conv .xl, .sol-pnl .xl, .cp-conf-chart .xl, #qt-hist-chart .xl { text-anchor: middle; }
+.sol-conv .ref, .cp-conf-chart .ref, #qt-hist-chart .ref { stroke: rgba(230,227,218,.32); stroke-dasharray: 3 4; }
+.sol-conv .rl, .cp-conf-chart .rl, #qt-hist-chart .rl { font-family: var(--sans); }
 .sol-pnl .z { stroke: rgba(230,227,218,.3); }
-.sol-conv .el { font: 600 11px var(--sans); fill: var(--text); }
-.sol-conv .xh, .sol-pnl .xh, .cp-conf-chart .xh { stroke: rgba(230,227,218,.3); }
-.sol-conv .hit, .sol-pnl .hit, .cp-conf-chart .hit { fill: transparent; }
+.sol-conv .el, #qt-hist-chart .el { font: 600 11px var(--sans); fill: var(--text); }
+.sol-conv .xh, .sol-pnl .xh, .cp-conf-chart .xh, #qt-hist-chart .xh { stroke: rgba(230,227,218,.3); }
+.sol-conv .hit, .sol-pnl .hit, .cp-conf-chart .hit, #qt-hist-chart .hit { fill: transparent; }
 .sol-tip { position: absolute; top: 2px; z-index: 5; pointer-events: none; display: grid; gap: 2px; min-width: 150px; padding: 7px 10px; border-radius: var(--r-sm); background: #1b1f25; border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.45); font-size: 11.5px; }
 .sol-tip[hidden] { display: none; }
 .sol-tip span { display: flex; align-items: center; gap: 6px; } .sol-tip i { width: 8px; height: 8px; border-radius: 50%; }
@@ -1758,3 +1758,33 @@ body.on-bot .notes { top: var(--notes-top, 170px); }
 .cp-x-find a { color: var(--muted); text-decoration: none; margin-left: auto; }
 .cp-x-find a:hover { color: var(--gold); }
 @media (max-width: 1100px) { .solx-key input { width: 150px; } }
+
+/* ---------- rail: the "More" group (simplicity pass, 2026-10-01) ---------- */
+.rail-more { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; overflow: hidden; max-height: 0; opacity: 0; transition: max-height .3s var(--ease-out), opacity .2s ease; }
+.rail-more.open { max-height: 400px; opacity: 1; }
+.rail-more-btn svg.chev { transition: transform .25s var(--ease-spring); }
+.rail-more-btn[aria-expanded="true"] svg.chev { transform: rotate(180deg); }
+.rail-more-btn[aria-expanded="true"] { color: var(--text); }
+
+/* ---------- training history chart (Quiz tab, trenching school) ---------- */
+.qt-hist { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.qt-hist[hidden] { display: none; }
+#qt-hist-chart { min-height: 40px; }
+#qt-hist-note { margin-top: 6px; }
+
+/* ---------- simplicity pass: the tweet-radar beat cards collapse by default (2026-10-01) ---------- */
+.solx-beats-wrap { margin: 2px 0 14px; }
+.solx-beats-wrap summary { cursor: pointer; padding: 7px 2px; font: 600 12.5px var(--sans); color: var(--text); list-style: revert; }
+.solx-beats-wrap summary span { font-weight: 400; color: var(--muted); }
+.solx-beats-wrap summary:hover { color: var(--gold); }
+.solx-beats-wrap[open] summary { margin-bottom: 4px; }
+.solx-beats-wrap .solx-beats { margin-top: 4px; }
+
+/* ---------- simplicity pass: dataset/train become an "advanced" disclosure (2026-10-01) ---------- */
+/* Now that downloads and retraining happen by themselves (sol/trench.py keep_alive), the manual buttons move out
+   of the always-visible control row and into this small disclosure - still one click away, not gone. */
+.sol-adv summary { list-style: none; display: inline-flex; }
+.sol-adv summary::-webkit-details-marker { display: none; }
+.sol-adv[open] summary { margin-bottom: 8px; }
+.sol-adv-pop { max-width: 56ch; }
+.sol-adv-pop p { margin: 0 0 8px; }
