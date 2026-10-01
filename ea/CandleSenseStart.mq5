@@ -24,6 +24,11 @@
 //| 5. SURVIVAL FIRST. From $100 you cannot recover from ruin, so     |
 //|    there is a daily loss limit, a pause after consecutive losses, |
 //|    and a hard floor that stops the EA entirely.                   |
+//| 6. SIZED FOR $5 A TRADE (v1.10). 5% risk is roughly half-Kelly IF |
+//|    the strategy wins ~35%; at 30% it is 2.5x over-betting and      |
+//|    turns a $117 year into a $75 one (ea/betsize_study.py). Run it  |
+//|    at RiskPercent 1-2 until 50 demo trades have shown the real     |
+//|    win rate, THEN raise it to 5. Expect ~60% drawdowns at 5%.      |
 //|                                                                    |
 //| Strategy: trend-aligned pullback. The H1 EMA50/200 sets the       |
 //| direction; it then waits for price to pull back to the M15 EMA20  |
@@ -32,7 +37,7 @@
 //| Run it on DEMO first. Nothing here guarantees profit.             |
 //+------------------------------------------------------------------+
 #property copyright "Trading Bot"
-#property version   "1.00"
+#property version   "1.10"
 #property description "Gold EA for small accounts: trend pullback, wide targets, auto-GMT sessions, hard loss protection."
 #property strict
 
@@ -41,15 +46,15 @@ CTrade trade;
 
 //================================= Inputs ==================================
 input group "=== Risk (the important part) ==="
-input double RiskPercent        = 2.0;    // % of balance risked per trade (2% suits ~$100)
-input double MaxDailyLossPct    = 6.0;    // Stop trading for the day after losing this %
+input double RiskPercent        = 5.0;    // % of balance risked per trade ($5 on $100; see ea/betsize_study.py)
+input double MaxDailyLossPct    = 15.0;   // Stop trading for the day after losing this % (3 losses at 5%)
 input int    PauseAfterLosses   = 3;      // Pause for the day after this many losses in a row
 input double StopIfBalanceBelow = 50.0;   // Hard floor: stop the EA entirely under this balance
 
 input group "=== Stop & target ==="
 input double ATR_SL_Mult        = 1.5;    // Stop = ATR x this
-input double MinStopPoints      = 200;    // ...but never tighter than this (spread protection)
-input double RewardRatio        = 2.5;    // Target = stop x this (2.5 needs only ~5% edge)
+input double MinStopPoints      = 250;    // ...never tighter (spread is then 18% of the stop, not 30%)
+input double RewardRatio        = 3.5;    // Target = stop x this (wider beats the fixed spread toll)
 input double MaxSpreadVsStop    = 0.25;   // Skip if spread is more than this share of the stop
 
 input group "=== Setup ==="

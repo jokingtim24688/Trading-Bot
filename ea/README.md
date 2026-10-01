@@ -130,6 +130,15 @@ account grows into bigger positions by itself. No setting to change as it grows.
 2% you set, and the EA warns you at start-up. $100 is the workable floor on gold - see
 `small_account_study.py` for why $25 is not.
 
+**v1.10 is tuned for $5 trades on $100** (`ea/optimize_config.py`): 5% risk, 250pt minimum stop
+(so the 45pt spread is 18% of it rather than 30%), and a 1:3.5 target. Wider targets win because
+the spread is a fixed toll - you pay the same 45 points to chase 875 as to chase 250.
+
+**Run it at RiskPercent 1-2 first.** 5% is roughly half-Kelly *if* the strategy wins ~35%; at a
+30% win rate it is 2.5x over-betting and turns a profitable year into a losing one
+(`ea/betsize_study.py`). Measure the win rate over 50 demo trades, then raise it. Expect ~60%
+drawdowns once you do.
+
 **Honest expectations**: 0.2%/day is good-bot territory. On $100 that is 20 cents a day, about
 $155 after a year of compounding. The percentage is what the bot controls; the dollars are set by
 the balance. Run it on DEMO until you have 50+ trades and the Net line is positive.

@@ -1149,6 +1149,22 @@ Each chat writes only in its own section below, and adds new entries just above 
   then size to half-Kelly. Bet size is a function of an edge that has not been measured yet -
   CandleSenseStart has no live trades.
 
+### 2026-10-01: optimised the config for $5/trade on $100 (ea/optimize_config.py, EA v1.10)
+- User: "find the best way - $5 per trade, $100 start, most profit per week." Treated it as an
+  optimisation over reward ratio and trade frequency, since with a fixed $5 risk
+  profit/week = trades x $5 x expectancy.
+- **Wider targets win**: the 45pt spread is a fixed toll, so you pay the same to chase 875 points
+  as 250. Expectancy per trade at 8% skill: -$0.10 at 1:1, +$0.50 at 1:2.5, +$1.10 at 1:4.
+  Noted the model's limitation - it adds skill as a flat probability bonus at any R:R, which
+  flatters very wide targets, so 1:3 to 1:4 is the trustworthy end.
+- **Frequency multiplies whatever the expectancy is**, in both directions. At 40 trades/week:
+  +$60/week at 8% skill, -$36/week at 0%. Identical configuration; only the edge differs.
+- Applied to `CandleSenseStart.mq5` v1.10: RiskPercent 5, MinStopPoints 250, RewardRatio 3.5,
+  daily loss limit raised to 15% (3 losses at 5% each). Header and README now carry the warning
+  to run at 1-2% until 50 demo trades establish the win rate, and that 5% brings ~60% drawdowns.
+- Fixed stale numbers in my own script's closing text ($640/-$240) that contradicted its computed
+  output ($60/-$36) before committing.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
