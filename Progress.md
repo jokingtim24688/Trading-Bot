@@ -1337,6 +1337,14 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Conclusion for the user: no safe edge at $400 on short timeframes; the real edge needs ~$2-4k on
   1OZ, or runs unlevered at single-digit %/yr. Asked which way to go.
 
+### 2026-10-01: research - automated ways toward $100/week (Solana trenching, Kalshi, prop firms)
+- `ea/research/money_paths.md`: the app already has the Solana trenching bot + tweet radar (`sol/`, Chat B,
+  paper by default). CoinGecko/Dune: most Pump.fun wallets lost monthly until late 2025; Apr 2026 73%
+  profitable but 65% made only $1-500/month, 5.4% > $1k. Kalshi: CFTC-regulated, API bots allowed.
+  Topstep: bots allowed, 16.8% of Combines pass, 33% of funded get paid. Safe yields ~4-6%/yr.
+- Told the user $100/week from $400 isn't available safely; offered: measure the Solana bot honestly in
+  paper, prototype a Kalshi bot in paper, or the gold trend bot once the account is ~$2-4k.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
