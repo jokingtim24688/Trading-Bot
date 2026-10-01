@@ -8,7 +8,7 @@
 //| Test in the Strategy Tester and on a DEMO account first.         |
 //+------------------------------------------------------------------+
 #property copyright "Trading Bot"
-#property version   "1.00"
+#property version   "1.01"
 #property description "EMA 21/50/200 trend pullback with RSI and Bollinger confirmation, $5 minimum risk, dollar break-even and trailing, daily loss breaker, weekly goal HUD."
 
 #include <Trade\Trade.mqh>
@@ -407,7 +407,7 @@ void UpdateHUD()
       "Next trade size: %s\n"
       "Today: %+.2f   (daily loss limit -%.2f)\n"
       "Rolling 7 days: %+.2f  /  weekly goal %.2f  (%.0f%%)\n"
-      "Spread: %d pts (max %d)\n"
+      "Spread: %d pts (max %d)%s\n"
       "Last: %s",
       status,
       g_acc.Balance(), g_acc.Equity(), g_acc.FreeMargin(),
@@ -415,6 +415,7 @@ void UpdateHUD()
       today, InpMaxDailyLossUSD,
       week, InpWeeklyProfitTarget, InpWeeklyProfitTarget > 0 ? 100.0 * week / InpWeeklyProfitTarget : 0.0,
       (int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD), InpMaxSpreadPoints,
+      _Period == PERIOD_M15 ? "" : "   !! tested on M15 only - this chart is " + EnumToString(_Period),
       g_lastAction));
   }
 
@@ -454,6 +455,10 @@ int OnInit()
    ArraySetAsSeries(g_atr,     true);
    ArraySetAsSeries(g_rates,   true);
 
+   if(_Period != PERIOD_M15)
+      PrintFormat("SmallAccountPro WARNING: tested on M15 only. On real 2026 gold the same rules lost "
+                  "95%% of $1,000 on M1 and 12%% on M5 (ea/sap_replay.py). This chart is %s.",
+                  EnumToString(_Period));
    g_startTime        = TimeCurrent();
    g_initialTradeDone = !InpTradeImmediatelyAfterDelay;
    if(!EventSetTimer(1))

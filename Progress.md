@@ -1228,6 +1228,16 @@ Each chat writes only in its own section below, and adds new entries just above 
 - First strategy today with a consistent result on both halves of real data. Caveats: M15 not
   M1/M5, intrabar management approximated, no live/demo trades yet.
 
+### 2026-10-01: SmallAccountPro on M1 / M5 - tested, M15 only (v1.01)
+- User asked if it could run on M1. It already reads the chart's timeframe, so the question was
+  whether it still works there. Cloned the same publisher's real 1m (179,663 rows) and 5m data for
+  the same six months and reran `ea/sap_replay.py`:
+  - M1, $1,000/1:100: 55% win rate yet -95% in 12 weeks. M5: -12%. M15: +82%.
+  - Cause: M1 ATR is tiny, so the stop sits at the 100-point floor and the 45-point spread is ~45%
+    of it; the $2.50 break-even and $1.50 trail close winners for cents while losses are a full $5.
+  - Raising the M1 minimum stop to 250 or 400 points still lost in both halves. Not M1-viable.
+- v1.01 prints a warning at start-up and shows one on the HUD when attached below M15.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
