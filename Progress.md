@@ -989,6 +989,20 @@ Each chat writes only in its own section below, and adds new entries just above 
   an achievable target. The same $10,000/day from $100 is a 10,000% daily return, which no
   strategy produces. The goal is reachable; the $100 starting point is what makes it impossible.
 
+### 2026-10-01: what a small account can actually earn (ea/small_account_study.py)
+- User asked what $25 then $100 at 1:100 leverage could make per day, compounding day and night.
+- Key distinction established: leverage sets MARGIN (0.01 lots of gold = $4,170 notional, $41.70
+  margin at 1:100), not RISK (a 150pt stop on 0.01 lots loses $1.50 whatever the leverage).
+  Raising leverage buys position count, not profit.
+- $25 fails structurally: the minimum 0.01 lot risks $1.50 = 6% of the account, 24x the 0.25%
+  CandleSenseML was backtested at; its 6.5% drawdown becomes 156%. 22% of simulated years busted.
+- $100 at 1:100 works: $1.50 is 1.5% risk, 2 concurrent positions, 0% busted across 500 runs at
+  every horizon out to 3 years. Median: $104 after a month, $155 after a year, $369 after 3 years
+  at a good 0.2%/day.
+- The honest headline for the user: 0.2%/day on $100 is $0.20/day. The bot controls the
+  percentage; the balance controls the dollars. $10,000/day at 0.2% needs $5M - which their demo
+  already has.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
