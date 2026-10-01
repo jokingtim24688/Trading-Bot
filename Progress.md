@@ -931,6 +931,20 @@ Each chat writes only in its own section below, and adds new entries just above 
   (screenshots). Raised to 120. The HUD now shows a "Last:" line with the last trade or skip
   reason; skips print only when the reason changes.
 
+### 2026-10-01: simulated trading-every-second before building it (ea/frequency_study.py)
+- User asked for a bot that trades "almost every second" in bunches on their $5M demo. Simulated
+  it first on the repo's real XAUUSD M1 data (349 candles replayed as per-second ticks) with the
+  demo's own 45-point gold spread and the EA's current 8%/60-trade sizing.
+- Result: loss scales linearly with frequency. Every 300 s: -$280k. Every 5 s: -$16.1M. Every
+  1 s: -$62.7M in 5.8 hours on a $5M account - it blows up 12x over. At the minimum 0.01 lot it
+  still loses $14,115 in the same window, so sizing is not the fix.
+- Cause: SL 150 / TP 200 needs a 42.9% win rate; a 45-point spread drags a coin-flip bot to 30%.
+  The strategy must supply that 12.9-point gap every trade, and frequency cannot create it -
+  it only pays the spread more times ($7.2M/hour in spread alone at 1 trade/second).
+- Did not build the every-second version. Told the user the honest result and the alternative
+  (fewer, higher-quality trades - i.e. fixing CandleSenseICT's killzone GMT offset so the
+  selective EA actually runs).
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
