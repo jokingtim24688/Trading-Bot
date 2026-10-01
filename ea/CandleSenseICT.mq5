@@ -32,7 +32,7 @@
 //| Nothing here guarantees profit.                                   |
 //+------------------------------------------------------------------+
 #property copyright "Trading Bot"
-#property version   "1.01"
+#property version   "1.02"
 #property description "ICT-style FVG + Order Block + liquidity sweep EA for gold, with killzone/trend filters, correct risk-based sizing and self-learning setup weights."
 #property strict
 
@@ -465,19 +465,27 @@ double LotsForRisk(double riskMoney, double entry, double stop, bool isBuy)
 //================================== Entries ===================================
 void TryEnter()
   {
-   if(CountMyOpenTrades() >= MaxOpenTrades) return;
-   if(g_tradesToday >= MaxTradesPerDay) return;
-   if(DailyLimitHit()) return;
-   if(UseKillzones && !IsKillzoneActive()) return;
+   if(CountMyOpenTrades() >= MaxOpenTrades) { PrintFormat("CSICT skip: max open trades (%d)", MaxOpenTrades); return; }
+   if(g_tradesToday >= MaxTradesPerDay) { PrintFormat("CSICT skip: max trades today (%d)", MaxTradesPerDay); return; }
+   if(DailyLimitHit()) { Print("CSICT skip: daily loss limit hit"); return; }
+   if(UseKillzones && !IsKillzoneActive())
+     {
+      datetime gmt = TimeCurrent() - GMT_Offset_Hours * 3600;
+      MqlDateTime dt; TimeToStruct(gmt, dt);
+      PrintFormat("CSICT skip: outside killzone (server %s, GMT_Offset_Hours=%d -> GMT hour %d; windows %d-%d & %d-%d)",
+                  TimeToString(TimeCurrent(), TIME_MINUTES), GMT_Offset_Hours, dt.hour,
+                  KZ_LondonStart, KZ_LondonEnd, KZ_OverlapStart, KZ_NYEnd);
+      return;
+     }
 
    double spread = (SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID)) / Pt();
-   if(spread > MaxSpreadPoints) return;
+   if(spread > MaxSpreadPoints) { PrintFormat("CSICT skip: spread %.1f > max %.1f", spread, MaxSpreadPoints); return; }
 
    int bias = HTFBias();
    FVGZone zone; double score; SetupKind kind;
-   if(!FindBestFVG(zone, score, kind, bias)) return;
-   if(score < MinScore) return;
-   if(zone.barIndex == g_lastTradedBar) return; // don't re-fire on the same just-formed gap bar
+   if(!FindBestFVG(zone, score, kind, bias)) { Print("CSICT skip: no qualifying FVG found this bar"); return; }
+   if(score < MinScore) { PrintFormat("CSICT skip: best FVG score %.1f < MinScore %.1f (setup %s)", score, MinScore, g_setupName[kind]); return; }
+   if(zone.barIndex == g_lastTradedBar) { Print("CSICT skip: already traded this gap bar"); return; } // don't re-fire on the same just-formed gap bar
 
    double point = Pt();
    double atrSetup = ATR(ATR_Period, 1);
