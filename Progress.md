@@ -1282,6 +1282,26 @@ Each chat writes only in its own section below, and adds new entries just above 
   the EA would need porting to a futures platform. Offshore 1:500 not recommended (no CFTC/NFA
   protection).
 
+### 2026-10-01: finding a CFTC/NFA-regulated US route for SmallAccountPro ($400, demo first)
+- User is in the US, wants CFTC/NFA regulation, any instrument, up to $400.
+- `ea/sap_replay.py` generalised to any symbol (contract maths for USD-quoted, USD-based and cross
+  pairs, typical US spreads, optional `ladder` arg). Gold result unchanged ($1,816.42) after the
+  rewrite. Tested all 8 majors/crosses available at US MT5 brokers (FOREX.com, Trading.com), $400,
+  1:50, ladder: **every pair lost** (EURUSD -1%, others -82% to -96%; most lost in both halves).
+  The edge is gold-specific.
+- US gold = CME 1-Ounce Gold futures (1OZ, $1 per $1 move = 0.01 lots). First futures test lost:
+  at the EA's 100-500pt stops the edge is ~$0.60/trade and costs must stay under ~$0.75 round
+  trip; NinjaTrader all-in is ~$0.80-1.06 per side and the tick sets a 25pt minimum spread.
+  Closing before CME's daily break did not hurt (+86% vs +82% with no costs).
+- Commission is per contract, so wider stops dilute it. `ea/futures_replay.py` (new): 1OZ with
+  $2.00 round trip, 25pt spread, $60 day margin, flat by 20:45 UTC, ladder. **M30, 500-2500pt
+  stops: $400 -> $2,541 (+535%), 48% max DD, +253% / +297% by half**; 800-3000 and 1200-4000 also
+  positive in both halves. M15 mixed. Saved `ea/XAUUSD_30m.csv` (MIT, getdata-finance).
+  Caveat: 8 variants searched on the same 6 months; M30 consistent across all wide ranges.
+- Broker: NinjaTrader (free platform with sim + NinjaScript automation; Clearing LLC is a
+  CFTC-registered FCM, NFA ID 0309379) - but its NFA record shows "Pending Withdrawal", so the user
+  was told to check NFA BASIC before funding. Futures need a NinjaScript port of the strategy.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

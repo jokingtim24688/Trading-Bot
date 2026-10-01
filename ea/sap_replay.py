@@ -7,7 +7,11 @@ up to risk >= $5 then shrunk to fit 80% of free margin (1:100), break-even at +$
 locking +$0.50, $1.50 trail from +$4.00, -$15 daily breaker, 45-point spread. When a
 candle touches both stop and target the stop is assumed first.
 
-    python ea/sap_replay.py [csv] [start_balance] [leverage]
+    python ea/sap_replay.py [csv] [start_balance] [leverage] [symbol] [ladder]
+
+symbol picks the contract maths and a typical US-broker spread (XAUUSD default; EURUSD,
+GBPUSD, AUDUSD, USDJPY, USDCAD, USDCHF, EURJPY, EURGBP). ladder = 1 uses the EA's v1.04 risk
+ladder ($5 per $100 of balance, $50 from $600, +$50 per $1,000 past $1,500) instead of fixed $5.
 """
 import csv
 import math
@@ -19,8 +23,45 @@ from pathlib import Path
 PATH = sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).with_name("XAUUSD_15m.csv"))
 START = float(sys.argv[2]) if len(sys.argv) > 2 else 100.0
 LEV = float(sys.argv[3]) if len(sys.argv) > 3 else 100.0
+SYMBOL = (sys.argv[4] if len(sys.argv) > 4 else "XAUUSD").upper()
+LADDER = len(sys.argv) > 5 and sys.argv[5] == "1"
 
-SPREAD, PT, OZ = 0.45, 0.01, 100           # $ spread, $ per point, oz per lot ($100 per $1 move per lot)
+# point size, contract size, typical spread in points, how $ value and margin are worked out.
+# "q"  = quote currency is USD (P/L in USD directly), "b" = base is USD (P/L in quote, / price),
+# "x"  = cross: P/L converted with an approximate USD rate, margin from an approximate base rate.
+EURUSD_APPROX, GBPUSD_APPROX = 1.15, 1.34
+PROFILES = {
+    "XAUUSD": (0.01,    100,    45, "q"),
+    "EURUSD": (0.00001, 100000, 13, "q"),
+    "GBPUSD": (0.00001, 100000, 18, "q"),
+    "AUDUSD": (0.00001, 100000, 16, "q"),
+    "USDJPY": (0.001,   100000, 15, "b"),
+    "USDCAD": (0.00001, 100000, 20, "b"),
+    "USDCHF": (0.00001, 100000, 20, "b"),
+    "EURJPY": (0.001,   100000, 22, "xjpy"),
+    "EURGBP": (0.00001, 100000, 18, "xgbp"),
+}
+PT, CONTRACT, SPREAD_PTS, KIND = PROFILES[SYMBOL]
+SPREAD = SPREAD_PTS * PT
+
+
+def usd_per_price(price):
+    """USD made per 1.0 move in price, per 1 lot."""
+    if KIND == "q":
+        return CONTRACT
+    if KIND == "b":
+        return CONTRACT / price
+    if KIND == "xjpy":
+        return CONTRACT / (price / EURUSD_APPROX)       # USDJPY ~ EURJPY / EURUSD
+    return CONTRACT * GBPUSD_APPROX                     # EURGBP: P/L in GBP
+
+
+def margin(price, lots):
+    if KIND == "q":
+        return price * CONTRACT * lots / LEV
+    if KIND == "b":
+        return CONTRACT * lots / LEV
+    return EURUSD_APPROX * CONTRACT * lots / LEV         # EUR-based crosses
 MIN_RISK, RR = 5.0, 1.8
 MIN_SL, MAX_SL, ATR_MULT = 100 * PT, 500 * PT, 1.5
 MARGIN_SHARE, MINLOT, STEP = 0.80, 0.01, 0.01
@@ -77,12 +118,12 @@ for i in range(202, n):
         hit_tp = hi_x >= pos["tp"] if b == 1 else lo_x <= pos["tp"]
         if hit_sl or hit_tp:
             px = pos["sl"] if hit_sl else pos["tp"]
-            pnl = (px - pos["entry"]) * b * OZ * pos["lots"]
+            pnl = (px - pos["entry"]) * b * usd_per_price(pos["entry"]) * pos["lots"]
             bal += pnl; day_pnl += pnl; weekly[T[i].strftime("%G-W%V")] += pnl
             wins += pnl > 0; losses += pnl <= 0
             pos = None
         else:
-            per = OZ * pos["lots"]                         # $ per $1 move
+            per = usd_per_price(pos["entry"]) * pos["lots"]  # $ per 1.0 price move
             best = (H[i] - pos["entry"]) if b == 1 else (pos["entry"] - (L[i] + SPREAD))
             fav = H[i] if b == 1 else L[i] + SPREAD
             if best * per >= BE_TRIG:
@@ -109,18 +150,25 @@ for i in range(202, n):
     side = 1 if bull else -1
     entry = O[i] + (SPREAD if side == 1 else 0.0)
     sl_d = min(max(a * ATR_MULT, MIN_SL), MAX_SL)
-    lots = max(MINLOT, math.ceil(MIN_RISK / (sl_d * OZ) / STEP - 1e-9) * STEP)
-    while lots > MINLOT + 1e-9 and entry * OZ * lots / LEV > bal * MARGIN_SHARE:
+    if LADDER:
+        lvl = int(bal // 100)
+        risk_now = (50.0 + 50.0 * int((bal - 1500) // 1000)) if bal >= 1500 else (50.0 if lvl >= 6 else 5.0 * max(1, lvl))
+    else:
+        risk_now = MIN_RISK
+    upp = usd_per_price(entry)
+    lots = max(MINLOT, math.ceil(risk_now / (sl_d * upp) / STEP - 1e-9) * STEP)
+    while lots > MINLOT + 1e-9 and margin(entry, lots) > bal * MARGIN_SHARE:
         lots = round(lots - STEP, 2)
-    if entry * OZ * lots / LEV > bal * MARGIN_SHARE:
+    if margin(entry, lots) > bal * MARGIN_SHARE:
         continue                                           # can't afford even the minimum lot
-    risks.append(sl_d * OZ * lots)
+    risks.append(sl_d * upp * lots)
     pos = {"side": side, "entry": entry, "lots": lots,
            "sl": entry - sl_d * side, "tp": entry + sl_d * RR * side}
 
 trades = wins + losses
-print(f"Real gold M15 {T[0]:%Y-%m-%d} to {T[-1]:%Y-%m-%d}  (EA targets M1/M5 - this is an approximation)")
-print(f"Start ${START:,.2f}, 1:{LEV:.0f} leverage, 45-point spread")
+print(f"Real price data, {(T[1] - T[0]).seconds // 60}-minute candles, {T[0]:%Y-%m-%d} to {T[-1]:%Y-%m-%d}")
+print(f"{SYMBOL}  start ${START:,.2f}, 1:{LEV:.0f} leverage, {SPREAD_PTS}-point spread, "
+      f"{'risk ladder' if LADDER else 'fixed $5 risk'}")
 print(f"Trades {trades}   wins {wins}   losses {losses}   win rate {100 * wins / trades if trades else 0:.0f}%")
 if risks:
     print(f"Actual $ at risk per trade: min ${min(risks):.2f}  median ${sorted(risks)[len(risks) // 2]:.2f}  max ${max(risks):.2f}")
