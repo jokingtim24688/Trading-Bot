@@ -1165,6 +1165,27 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Fixed stale numbers in my own script's closing text ($640/-$240) that contradicted its computed
   output ($60/-$36) before committing.
 
+### 2026-10-01: would launching multiple EAs on one account make more, or lose it all?
+- User asked exactly that, noting the EAs would not be collaborating. Simulated it
+  (`ea/multi_ea_risk_study.py`), 4,000 runs per cell, one month, with a GOOD strategy
+  (30% wins at 1:3.5 = +0.35R/trade) so any failure is from stacking, not from a bad edge.
+- **Uncoordinated copies on the same symbol are strictly worse**, in both directions at once:
+  | EAs | risk/round | median end | wiped out |
+  | 1 | 5% | $712 | 0.4% |
+  | 3 | 15% | $711 | 10.3% |
+  | 5 | 25% | $424 | **23.7%** |
+  | 10 | 50% | $150 | **41.6%** |
+  Lower median AND far higher ruin. Five "safe" 5% bets are one 25% bet.
+- Four compounding reasons recorded: each EA reads the same balance and takes its own 5%
+  unaware of the others; copies on one symbol agree by construction (one position at 5x size,
+  not five positions); per-EA daily loss limits do not compose (5 EAs at 15% each permits a 75%
+  fall); and at $100 margin runs out first anyway (0.02 lots of gold needs ~$83 at 1:100).
+- **A shared risk budget fixes the ruin column**: the same 5 EAs sharing one 5% cap drop from
+  23.7% to 16% wiped out, and 5 uncorrelated EAs sharing a budget give the smoothest ride of
+  all - 16% drawdown vs 53% for a single EA.
+- Fixed my own simulation before trusting it: the first version compounded with no lot cap and
+  produced $1e19 balances. Added a broker-style MAXLOT and a one-month horizon.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
