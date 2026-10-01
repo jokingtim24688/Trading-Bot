@@ -32,7 +32,7 @@
 //| Nothing here guarantees profit.                                   |
 //+------------------------------------------------------------------+
 #property copyright "Trading Bot"
-#property version   "1.02"
+#property version   "1.03"
 #property description "ICT-style FVG + Order Block + liquidity sweep EA for gold, with killzone/trend filters, correct risk-based sizing and self-learning setup weights."
 #property strict
 
@@ -208,7 +208,7 @@ void HUD_Create()
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_XDISTANCE, 8);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_YDISTANCE, 18);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_XSIZE, 150);
-   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_YSIZE, 78);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_YSIZE, 112);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_BGCOLOR, clrBlack);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_BORDER_TYPE, BORDER_FLAT);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_COLOR, clrDimGray);

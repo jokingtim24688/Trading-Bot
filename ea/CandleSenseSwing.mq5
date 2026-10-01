@@ -25,7 +25,7 @@
 //| style; it will rack up spread and commission costs fast.          |
 //+------------------------------------------------------------------+
 #property copyright "Trading Bot"
-#property version   "1.00"
+#property version   "1.01"
 #property description "Trend-direction stacking EA: fixed SL/TP in points, up to N concurrent trades, risk-capped sizing."
 #property strict
 
@@ -95,7 +95,7 @@ void HUD_Create()
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_XDISTANCE, 8);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_YDISTANCE, 18);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_XSIZE, 170);
-   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_YSIZE, 94);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_YSIZE, 132);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_BGCOLOR, clrBlack);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_BORDER_TYPE, BORDER_FLAT);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_COLOR, clrDimGray);
@@ -215,7 +215,20 @@ void TryEnter()
    if(spread > MaxSpreadPoints) { PrintFormat("CSSwing skip: spread %.1f > max %.1f", spread, MaxSpreadPoints); return; }
 
    int dir = TrendDirection();
-   if(dir == 0) { return; } // no clear trend this bar - stay out, no log spam
+   if(dir == 0)
+     {
+      double buf[];
+      string emaStr = "n/a";
+      if(g_hEMA != INVALID_HANDLE && CopyBuffer(g_hEMA, 0, 1, TrendConfirmBars + 1, buf) > 0)
+        {
+         ArraySetAsSeries(buf, true);
+         emaStr = "";
+         for(int i = 0; i <= TrendConfirmBars; i++) emaStr += DoubleToString(buf[i], _Digits) + (i < TrendConfirmBars ? "," : "");
+        }
+      PrintFormat("CSSwing skip: no clear %d-bar trend on %s EMA%d (newest-to-oldest: %s)",
+                  TrendConfirmBars, EnumToString(EntryTF), TrendEMA, emaStr);
+      return;
+     }
 
    bool isBuy = (dir == 1);
    double point = Pt();
@@ -226,7 +239,12 @@ void TryEnter()
    if(g_lastEntryDir == dir && g_lastEntryPrice > 0)
      {
       double moved = isBuy ? (entry - g_lastEntryPrice) / point : (g_lastEntryPrice - entry) / point;
-      if(moved < MinStackPoints) return;
+      if(moved < MinStackPoints)
+        {
+         PrintFormat("CSSwing skip: trend is %s but only moved %.1f pts since last entry (need %.1f)",
+                     isBuy?"up":"down", moved, MinStackPoints);
+         return;
+        }
      }
 
    double sl = isBuy ? entry - SL_Points*point : entry + SL_Points*point;
