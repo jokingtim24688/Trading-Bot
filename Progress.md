@@ -1259,6 +1259,11 @@ Each chat writes only in its own section below, and adds new entries just above 
   by week 11; from week 12 it sits at the $50 cap and grows linearly (~$4,000 over 15 weeks), with
   7 losing weeks out of 26.
 
+- v1.04: user extended the ladder - from $1,500, +$50 risk per $1,000 gained ($2,500 -> $100,
+  $3,500 -> $150 ...; settings InpLadderBigFrom/Step/Add). Replay M15, $100/1:500: $24,031 vs
+  $6,013, same 59% worst drawdown, but losing weeks become large in dollars (weeks 20-22: -$6,900;
+  weeks 25-26: -$15,228, $39,259 peak to $24,031). Risk follows the balance down as well as up.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

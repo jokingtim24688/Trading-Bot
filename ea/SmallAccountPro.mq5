@@ -8,7 +8,7 @@
 //| Test in the Strategy Tester and on a DEMO account first.         |
 //+------------------------------------------------------------------+
 #property copyright "Trading Bot"
-#property version   "1.03"
+#property version   "1.04"
 #property description "EMA 21/50/200 trend pullback with RSI and Bollinger confirmation, $5 minimum risk, dollar break-even and trailing, daily loss breaker, weekly goal HUD."
 
 #include <Trade\Trade.mqh>
@@ -29,6 +29,9 @@ input double InpLadderStepBalance     = 100.0;   // Ladder: each step of this mu
 input double InpLadderRiskPerStep     = 5.0;     // ...adds this much risk ($100 -> $5, $200 -> $10, ...)
 input int    InpLadderSteps           = 5;       // Steps before the top ($500-$599 -> $25)
 input double InpLadderTopRisk         = 50.0;    // Risk once the balance is past the last step ($600+)
+input double InpLadderBigFrom         = 1500.0;  // From this balance, step up by thousands...
+input double InpLadderBigStep         = 1000.0;  // ...every this much balance gained past it...
+input double InpLadderBigAdd          = 50.0;    // ...adds this much risk ($2,500 -> $100, $3,500 -> $150, ...)
 input double InpRiskRewardRatio       = 1.8;     // Take profit = stop distance x this
 input double InpWeeklyProfitTarget    = 100.0;   // Weekly profit goal in account currency
 input bool   InpPauseAtWeeklyTarget   = false;   // Stop opening trades once the rolling 7-day goal is met
@@ -173,9 +176,14 @@ double RiskDollars()
    double bal = AccountInfoDouble(ACCOUNT_BALANCE);
    if(InpUseRiskLadder && InpLadderStepBalance > 0.0)
      {
+      if(InpLadderBigStep > 0.0 && bal >= InpLadderBigFrom)
+        {
+         double extra = MathFloor((bal - InpLadderBigFrom) / InpLadderBigStep);
+         return InpLadderTopRisk + extra * InpLadderBigAdd;         // $1,500+: +$50 per $1,000
+        }
       int level = (int)MathFloor(bal / InpLadderStepBalance);
       if(level > InpLadderSteps)
-         return InpLadderTopRisk;                                   // past the last step
+         return InpLadderTopRisk;                                   // $600 to $1,499
       return MathMax(InpMinDollarRiskPerTrade, MathMax(1, level) * InpLadderRiskPerStep);
      }
    double pct = bal * InpRiskPercentOfBalance / 100.0;
