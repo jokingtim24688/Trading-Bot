@@ -959,6 +959,24 @@ Each chat writes only in its own section below, and adds new entries just above 
   mostly noise. The repo already has the right version of this idea done properly -
   CandleSenseML (XGBoost on 3.3 years, PF 1.15-1.17 on unseen months, ~300 trades/year).
 
+### 2026-10-01: tested "highest win rate" and "pick the best performer daily"
+- User wants the highest win rate possible and a daily pick of the best-performing strategy.
+  Tested both on the real gold data before building either.
+- **Win rate is the wrong target** (`ea/winrate_vs_money.py`): same bot, same data, only the
+  stop/target changed. A 600pt stop with a 20pt target wins **94.8%** of trades and still loses
+  1,420 points, because one loss erases 30 wins. Every SL/TP pair tested lost money, with win
+  rates from 8.7% to 94.8% - win rate and profit are close to unrelated. What decides it is
+  expectancy = (win rate x avg win) - (loss rate x avg loss). The HUD's Subtotal is the honest
+  line; the win-rate line can be gamed to look perfect.
+- **Daily "best performer" selection is noise at that sample size** (`ea/daily_selector_test.py`):
+  ranked 10 strategy configs across 6 periods. The winner of each period ranked on average
+  **6.0 of 10** in the next period - chance is 5.5. 4 of 5 picks fell off immediately. Strategy
+  performance mean-reverts; selecting on one day picks the strategy whose conditions just ended.
+- The statistically sound version of the user's idea already exists in this repo: the
+  CandleSenseMulti trainer selects per symbol on a long validation window with real gates
+  (>=30 trades, PF >= 1.15, >= 0.05R per trade). That is "pick the best performer" with enough
+  data behind it to mean something.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
