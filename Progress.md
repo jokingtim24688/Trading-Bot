@@ -1098,6 +1098,23 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Caught two bugs in my own patch before committing: an invented function name
   (`symbolless_name`) and a comment displaced onto the wrong line.
 
+### 2026-10-01: does running more bots make more? (ea/multibot_study.py)
+- User asked whether several small-compounding bots would earn more than one. Simulated 2,000
+  years per scenario across bot counts and correlations.
+- Splitting the same money between bots does NOT raise the return. 3 identical bots return
+  $157 vs $156 for one - they see the same candles and take the same trade, minus the extra
+  spread each pays. What falls is the swing: at correlation 0, 10 bots cut the spread of
+  outcomes from $53 to $17.
+- That steadiness is the actual prize, because it can be spent: running the same total risk
+  across uncorrelated bots lets each take a bigger position for the same wobble. Risk-scaled
+  medians after a year: 1 bot $156, 3 uncorrelated $230, 10 uncorrelated $461 - roughly the
+  sqrt(n) law. At correlation 1.0 scaling up gains nothing ($158), it just multiplies risk.
+- Practical read for this repo: 3 agents on gold with the same model and different thresholds
+  are highly correlated, so the gain is small. Real multiplication needs different *markets*,
+  which is an argument for training more symbols rather than stacking agents on XAUUSD.
+- Caveats recorded: this assumes each bot actually has an edge (multiplying no-edge bots
+  multiplies losses), and correlations tend toward 1 in a crisis.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
