@@ -883,6 +883,30 @@ Each chat writes only in its own section below, and adds new entries just above 
   user's PC via the `mt5-m1-trader` subagent) and no MetaEditor, so it could not be compiled or
   backtested from this session. `ea/README.md` says how to do both on the user's PC.
 
+### 2026-10-01: CandleSenseICT HUD + diagnostics, and CandleSenseSwing (a simpler stacking EA)
+- **CandleSenseICT.mq5 v1.01**: added back the on-chart Trades/Earned/Lost/Subtotal panel (same
+  minimal style as CandleSense.mq5 v1.40), wired to real closed-deal profit via
+  `OnTradeTransaction`.
+- **v1.02**: user reported it running (HUD showing, Trades: 0) but never placing a trade.
+  `TryEnter()` was silent on every skip reason, so added a `Print()` at each early-return (max
+  open, max/day, daily loss limit, killzone with the computed GMT hour, spread, no qualifying
+  FVG, score below threshold, already-traded bar) so the Experts/Journal log shows exactly which
+  gate is blocking it. Prime suspect flagged to the user: `GMT_Offset_Hours` defaults to 0
+  (assumes broker server time = GMT), but the user's chart time (06:05) vs their own clock
+  (11:05 PM) suggests their broker isn't actually on GMT, which would silently misalign the
+  killzone window and block every entry.
+- **`ea/CandleSenseSwing.mq5`** (new): the user described a different style they'd seen - "just
+  go with where the chart's going", very low take profits, up to 60 trades stacked at once with
+  a -150 point SL / +200 point TP. Built as a separate, much simpler EA rather than folding it
+  into CandleSenseICT: EMA-slope trend direction (no FVG/OB/killzone logic), fixed-point SL/TP,
+  stacks another trade once price has moved `MinStackPoints` further in the trend's direction.
+  Sizing: `MaxTotalRiskPct` caps what ALL open trades losing together would cost and splits that
+  budget across `MaxOpenTrades`, instead of a flat risk % per trade (which would let worst-case
+  loss scale unbounded with trade count). Same HUD style, plus an "Open now: N / max" line.
+  Caught and fixed a forward-declaration issue (HUD_Update called CountMyOpenTrades before its
+  definition) before shipping. `ea/README.md` updated with both EAs' sections.
+- Not tested live here either (no MT5 access from this cloud session, as before).
+
 ### 2026-09-30: CandleSense.mq5 v1.50 installation guide
 - **CandleSense v1.50 in /scratchpad/CandleSense/CandleSense.mq5**: rule-based EA with corrected position sizing via `OrderCalcProfit()`. Replaces v1.40 which underestimated risk (tick value vs broker-specific per-lot cost). 
 - Installation: copy to `%APPDATA%\MetaQuotes\Terminal\<TerminalID>\MQL5\Experts\`, compile with MetaEditor F7, attach to chart.

@@ -1,3 +1,11 @@
+# EAs in this folder
+
+- **`CandleSenseICT.mq5`** - the advanced, setup-quality-scored EA (FVG + Order Block + killzones).
+  Few trades, high selectivity. See its own section below.
+- **`CandleSenseSwing.mq5`** - a simple trend-direction "stacker": no FVG/OB scoring, just trades
+  with the chart's current EMA-slope direction repeatedly, up to many concurrent trades, each with
+  a fixed SL/TP in points. See "CandleSenseSwing.mq5" below.
+
 # CandleSenseICT.mq5
 
 One advanced, single-file EA for gold (XAUUSD) on MT5, instead of the multi-file ML pipeline
@@ -64,3 +72,30 @@ place a live test trade. Two ways to verify it yourself:
 | `UseLearning` | on | Turn off to keep all 4 setup types trading at equal weight |
 
 Run it on demo first, same as every EA in this repo.
+
+## CandleSenseSwing.mq5
+
+A much simpler style, built from your own description: "where the chart is going", very low
+take profits, stacking lots of trades at once (up to 60) instead of waiting for one high-quality
+setup.
+
+**How it decides direction**: an EMA (`TrendEMA`, default 50) on `EntryTF` (default M5) - if it
+has sloped upward for `TrendConfirmBars` bars in a row, it's an uptrend (and vice versa). No
+FVG/order block/killzone logic at all - that's the whole point of this one being simpler.
+
+**How it trades**: every time the trend direction holds and price has moved at least
+`MinStackPoints` since the last entry in that direction, it opens another market order with a
+**fixed** stop (`SL_Points`, default 150) and target (`TP_Points`, default 200) - not ATR-based.
+It keeps doing this until `MaxOpenTrades` (default 60) are open at once.
+
+**Why it isn't simply "60x normal risk"**: with 60 trades open, if the market reversed hard and
+every single one hit its stop at the same time, a flat per-trade risk % would mean 60x your
+normal per-trade loss. Instead, `MaxTotalRiskPct` (default 8%) caps what **all** open trades
+losing together would cost, and splits that budget across `MaxOpenTrades`, so the worst case is
+capped no matter how many trades have stacked. Raise `MaxTotalRiskPct` carefully - at 150/200
+points SL/TP on gold, spread and commission eat into every single one of those trades, so a high
+trade count also means higher total costs, not just higher total risk.
+
+**This is a high-turnover style.** Demo-test it for a while and watch the HUD's Earned vs Lost
+line before even considering it live - fixed-point SL/TP with no setup filter will take a lot of
+small losses to catch the trend moves that pay for them.
