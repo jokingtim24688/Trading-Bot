@@ -171,10 +171,36 @@ def money_summary() -> dict:
     return out
 
 
+_extra: dict[str, tuple[str, object]] = {}          # cmd -> (description, handler)
+
+
+def register_command(cmd: str, description: str, handler):
+    """Let another module answer a Telegram command. `handler(args: str) -> str`.
+
+    Used by agent/fleet.py for /stop, /pause and friends, so this module never has to
+    import the launcher. Registered commands override the built-ins of the same name.
+    """
+    _extra[cmd.lower()] = (description, handler)
+
+
+def unregister_command(cmd: str):
+    _extra.pop(cmd.lower(), None)
+
+
 def command_reply(text: str) -> str | None:
-    cmd = (text or "").strip().split()[0].split("@")[0].lower() if (text or "").strip() else ""
+    raw = (text or "").strip()
+    cmd = raw.split()[0].split("@")[0].lower() if raw else ""
+    args = raw[len(raw.split()[0]):].strip() if raw else ""
+
+    if cmd in _extra:                                   # a module took this one over
+        try:
+            return _extra[cmd][1](args)
+        except Exception as e:                          # noqa: BLE001 - never kill the poll loop
+            return f"⚠ {cmd} failed: {type(e).__name__}: {e}"
+
     if cmd in ("/help", "/start"):
-        return "Commands:\n" + "\n".join(f"{c} — {d}" for c, d in COMMANDS.items())
+        allcmds = {**COMMANDS, **{c: d for c, (d, _) in _extra.items()}}
+        return "Commands:\n" + "\n".join(f"{c} — {d}" for c, d in allcmds.items())
     if cmd not in ("/prof", "/loss", "/total"):
         return None
     key = cmd[1:]

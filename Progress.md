@@ -1051,6 +1051,29 @@ Each chat writes only in its own section below, and adds new entries just above 
   (chronological splits, unseen-month hold-out, costs in the labels, PF/trade-count gates),
   and its modest PF 1.15-1.17 is the believable shape of a real edge.
 
+### 2026-10-01: fleet launcher (agent/fleet.py, agent/FLEET.md)
+- User asked for a small terminal app that connects to MT5, launches multiple ML bots across
+  symbols, and starts them all up - then for the controls to live in Telegram rather than the
+  terminal (/stop /start /pause /total /prof /loss).
+- `agent/fleet.py`: one `agent.run` subprocess per symbol (isolation - one crash can't take the
+  others down, dead bots auto-restart), a read-only terminal dashboard fed by the ledger, and
+  `--scan` which checks each symbol's spread against its typical M1 range, refusing anything over
+  25% (the cost study is why). Only symbols with a trained model in `models/` are eligible, so the
+  fleet can't trade something `agent.train` never validated.
+- Telegram: added `register_command()` / `unregister_command()` to `app/telegram.py` so other
+  modules can answer commands without it importing them. The fleet registers /stop /start /pause
+  /status /bots; /total /prof /loss were already handled there from the ledger. The existing
+  chat-ID restriction means only the owner can stop the bots.
+- **Stopping is a drain, per the user's correction**: /stop ends the bot processes at once (so no
+  new trade can open) but never force-closes open trades - they keep their broker-side SL/TP and
+  are left to finish. The fleet holds in `draining`, syncing the ledger so results are still
+  recorded with no bot running, then flips to `stopped` and messages the user. /start cancels a
+  drain in progress.
+- Tested the state machine with fake processes and a fake ledger: start -> stop(2 open) ->
+  draining -> stays draining while open -> stopped + notification when the last closes; /start
+  cancels a drain; /stop with nothing open stops immediately.
+- Caught before committing: an f-string with nested same-quotes (invalid on Python 3.11).
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

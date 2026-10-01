@@ -86,6 +86,7 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-10-01: `ea/CandleSenseSwing.mq5` - a simpler trend-direction stacking EA (EMA slope, fixed SL/TP in points, up to 60 concurrent trades, total-risk-capped sizing split across all open trades), alongside CandleSenseICT for a different style; both have the Trades/Earned/Lost/Subtotal HUD.
 - 2026-10-01: `ea/CandleSenseSwing.mq5` v2: trades every swing both ways (M1 swing highs/lows instead of the EMA-slope filter), HUD shows swing + win rate.
 - 2026-10-01: `ea/CandleSenseStart.mq5` - small-account ($100) gold EA: trend pullback, 1:2.5 targets, auto-GMT sessions, compounding lots, hard loss protection. Parameters derived from the studies in `ea/*.py`.
+- 2026-10-01: fleet launcher `agent/fleet.py` (+ `agent/FLEET.md`): one bot process per symbol, spread/model scan, ledger-fed terminal dashboard, Telegram control (/stop /start /pause /status /bots) via a new `register_command()` hook in `app/telegram.py`. /stop drains - no new trades, open ones run to SL/TP.
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)
