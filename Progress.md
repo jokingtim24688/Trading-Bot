@@ -1023,6 +1023,17 @@ Each chat writes only in its own section below, and adds new entries just above 
   English status line.
 - Not compiled or backtested here (no MT5 in the cloud session). Needs demo validation.
 
+### 2026-10-01: projected CandleSenseStart on $100 / 1:100 (ea/start_projection.py)
+- Simulated the EA's real mechanics 1,000 times per scenario over a trading year: 2% risk, 1:2.5
+  targets, the 0.01-lot staircase, the daily loss limit, the 3-loss pause and the $50 floor.
+- Margin checks out: 0.01 lots needs $41.70 at 1:100, and a 200pt stop at 0.01 lots risks exactly
+  $2.00 = the 2% the EA targets on $100. The design lands right on the minimum-lot boundary.
+- Break-even is 28.6% at 1:2.5. Median balance after 1 year by true win rate:
+  25% -> $0 (92% busted) | 28.6% -> $79 | 32% -> $195 | 35% -> $404 | 40% -> $1,729 | 45% -> $8,141
+- Drawdowns are large even when winning (21-33% median at 35-40%), which is normal for a 1:2.5
+  system with a sub-30% break-even but worth warning the user about before they watch it live.
+- The real win rate is unknown until the demo run - that is the number the whole thing turns on.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
