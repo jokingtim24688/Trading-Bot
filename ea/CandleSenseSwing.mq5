@@ -22,7 +22,7 @@
 //| Nothing here guarantees profit.                                   |
 //+------------------------------------------------------------------+
 #property copyright "Trading Bot"
-#property version   "2.00"
+#property version   "2.10"
 #property description "Trades every swing both ways: fixed SL/TP in points, stacks up to N trades, risk-capped sizing."
 #property strict
 
@@ -38,12 +38,13 @@ input int    SwingLookback           = 200;         // Bars searched for the lat
 input group "=== Stacking ==="
 input double SL_Points               = 150;         // Fixed stop loss, points
 input double TP_Points               = 200;         // Fixed take profit, points
-input double MinStackPoints          = 60;          // Price must move this far with the swing before stacking another trade
+input int    EntryEverySeconds       = 5;           // Open a new trade with the swing this often (0 = only on new bars)
+input double MinStackPoints          = 0;           // Optional: price must also move this far since the last trade (0 = off)
 input int    MaxOpenTrades           = 60;          // Max concurrent trades (this EA's own magic number only)
 
 input group "=== Sizing & risk ==="
 input double MaxTotalRiskPct         = 8.0;         // Worst case: if ALL open trades hit SL together, cap the loss at this % of balance
-input double MaxSpreadPoints         = 40;          // Refuse entries when spread exceeds this
+input double MaxSpreadPoints         = 120;         // Refuse entries when spread exceeds this
 input double DailyLossLimitPct       = 10.0;        // Stop trading for the day after this % balance loss
 input int    MagicNumber             = 260931;      // Order magic number
 
@@ -59,6 +60,8 @@ int      g_lastEntryDir    = 0;   // 1 buy, -1 sell, 0 none yet
 int      g_legDir          = 0;   // 1 swinging up, -1 swinging down
 double   g_legPivot        = 0;   // price of the swing low/high the current leg started from
 datetime g_legPivotTime    = 0;   // bar time of that swing point (changes = a new swing)
+
+string g_lastReason = "starting";
 
 int    g_hudTrades = 0, g_hudWins = 0;
 double g_hudEarned = 0, g_hudLost = 0;
@@ -92,8 +95,8 @@ void HUD_Create()
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_XDISTANCE, 8);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_YDISTANCE, 18);
-   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_XSIZE, 210);
-   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_YSIZE, 164);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_XSIZE, 330);
+   ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_YSIZE, 180);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_BGCOLOR, clrBlack);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_BORDER_TYPE, BORDER_FLAT);
    ObjectSetInteger(0, HUD_PREFIX+"bg", OBJPROP_COLOR, clrDimGray);
@@ -116,6 +119,7 @@ void HUD_Update()
    HUD_Label("open",     16, 90,  StringFormat("Open now: %d / %d", CountMyOpenTrades(), MaxOpenTrades), clrSilver);
    HUD_Label("earned",   16, 106, StringFormat("Earned: %.2f", g_hudEarned), clrLimeGreen);
    HUD_Label("lost",     16, 122, StringFormat("Lost: %.2f", g_hudLost), clrTomato);
+   HUD_Label("reason",   16, 154, "Last: " + g_lastReason, clrKhaki);
    HUD_Label("subtotal", 16, 138, StringFormat("Subtotal: %.2f", subtotal), subtotal >= 0 ? clrLimeGreen : clrTomato);
   }
 
@@ -211,6 +215,13 @@ double LotsPerStackedTrade(double entry, double stop, bool isBuy)
   }
 
 //================================== Entries ===================================
+// Shows the reason on the HUD; prints it only when it changes, so the 5 s checks don't flood the log.
+void Skip(string why)
+  {
+   if(why != g_lastReason) Print("CSSwing skip: ", why);
+   g_lastReason = why;
+  }
+
 void TryEnter()
   {
    bool newSwing = UpdateLeg();
@@ -219,23 +230,28 @@ void TryEnter()
       PrintFormat("CSSwing: new swing %s from %.2f", g_legDir == 1 ? "UP" : "DOWN", g_legPivot);
       g_lastEntryPrice = 0;   // first trade of a new swing goes in at once
      }
-   if(g_legDir == 0) { Print("CSSwing skip: no swing found yet (not enough bars)"); return; }
-
-   if(CountMyOpenTrades() >= MaxOpenTrades) return;
-   if(DailyLimitHit()) { Print("CSSwing skip: daily loss limit hit"); return; }
+   if(g_legDir == 0) { Skip("no swing found yet (not enough bars)"); return; }
 
    double point = Pt();
-   double spread = (SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID)) / point;
-   if(spread > MaxSpreadPoints) { PrintFormat("CSSwing skip: spread %.1f > max %.1f", spread, MaxSpreadPoints); return; }
-
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   // Price already broke past the swing point the leg started from: the swing has turned.
    int dir = g_legDir;
-   bool isBuy = (dir == 1);
-   double entry = isBuy ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(dir == 1 && bid < g_legPivot)  dir = -1;
+   if(dir == -1 && bid > g_legPivot) dir = 1;
 
-   if(g_lastEntryDir == dir && g_lastEntryPrice > 0)
+   if(CountMyOpenTrades() >= MaxOpenTrades) { Skip(StringFormat("max %d trades open", MaxOpenTrades)); return; }
+   if(DailyLimitHit()) { Skip("daily loss limit hit"); return; }
+
+   double spread = (SymbolInfoDouble(_Symbol, SYMBOL_ASK) - bid) / point;
+   if(spread > MaxSpreadPoints) { Skip(StringFormat("spread %.0f > max %.0f pts", spread, MaxSpreadPoints)); return; }
+
+   bool isBuy = (dir == 1);
+   double entry = isBuy ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : bid;
+
+   if(MinStackPoints > 0 && g_lastEntryDir == dir && g_lastEntryPrice > 0)
      {
       double moved = isBuy ? (entry - g_lastEntryPrice) / point : (g_lastEntryPrice - entry) / point;
-      if(moved < MinStackPoints) return;
+      if(moved < MinStackPoints) { Skip(StringFormat("waiting for %.0f more pts", MinStackPoints - moved)); return; }
      }
 
    double sl = isBuy ? entry - SL_Points*point : entry + SL_Points*point;
@@ -243,7 +259,7 @@ void TryEnter()
 
    double stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * point;
    if(MathAbs(entry - sl) < stopsLevel || MathAbs(entry - tp) < stopsLevel)
-     { PrintFormat("CSSwing skip: SL/TP closer than the broker's stop level (%.0f pts)", stopsLevel/point); return; }
+     { Skip(StringFormat("SL/TP inside broker stop level (%.0f pts)", stopsLevel/point)); return; }
 
    double lots = LotsPerStackedTrade(entry, sl, isBuy);
    if(lots <= 0) return;
@@ -255,11 +271,12 @@ void TryEnter()
      {
       g_lastEntryPrice = entry;
       g_lastEntryDir = dir;
+      g_lastReason = StringFormat("%s %.2f lots @ %.2f", isBuy?"BUY":"SELL", lots, entry);
       PrintFormat("CandleSenseSwing: %s %.2f lots @ %.2f sl %.2f tp %.2f (open %d/%d)",
                   isBuy?"BUY":"SELL", lots, entry, sl, tp, CountMyOpenTrades(), MaxOpenTrades);
      }
    else
-      PrintFormat("CSSwing: order failed, retcode %d (%s)", trade.ResultRetcode(), trade.ResultRetcodeDescription());
+      Skip(StringFormat("order failed: %d %s", trade.ResultRetcode(), trade.ResultRetcodeDescription()));
   }
 
 //=========================== Track closed deals ============================
@@ -284,12 +301,20 @@ int OnInit()
    CheckNewDay();
    UpdateLeg();
    HUD_Create();
-   PrintFormat("CandleSenseSwing v2.00 loaded on %s %s. Trades every swing, SL %.0f / TP %.0f points, max %d open.",
+   if(EntryEverySeconds > 0) EventSetTimer(EntryEverySeconds);
+   PrintFormat("CandleSenseSwing v2.10 loaded on %s %s. Trades every swing, SL %.0f / TP %.0f points, max %d open.",
                _Symbol, EnumToString(EntryTF), SL_Points, TP_Points, MaxOpenTrades);
    return INIT_SUCCEEDED;
   }
 
-void OnDeinit(const int reason) { HUD_Remove(); }
+void OnDeinit(const int reason) { EventKillTimer(); HUD_Remove(); }
+
+void OnTimer()
+  {
+   CheckNewDay();
+   TryEnter();
+   HUD_Update();
+  }
 
 void OnTick()
   {

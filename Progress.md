@@ -923,6 +923,14 @@ Each chat writes only in its own section below, and adds new entries just above 
   150/200); box grown to fit. Failed orders now print their retcode.
 - Not compiled or tested here (no MT5 in the cloud session).
 
+### 2026-10-01: CandleSenseSwing v2.10 - a new trade every 5 seconds
+- User: "not trading again, make it create a new trade point every 5 seconds". Added a 5 s timer
+  (`EntryEverySeconds`) that opens a trade with the current swing each time until 60 are open;
+  `MinStackPoints` default 0. Direction flips at once when price breaks past the swing point.
+- Likely cause of "not trading": `MaxSpreadPoints` 40 vs the demo's gold spread of 38-70 points
+  (screenshots). Raised to 120. The HUD now shows a "Last:" line with the last trade or skip
+  reason; skips print only when the reason changes.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

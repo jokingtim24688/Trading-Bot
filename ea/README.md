@@ -93,4 +93,10 @@ once, split across `MaxOpenTrades`.
 HUD: current swing (UP/DOWN and from which price), trades, win rate (with the 43% break-even for
 150/200), open trades, earned, lost, subtotal.
 
+**v2.10**: every `EntryEverySeconds` (5) it opens another trade with the current swing (a timer,
+not just new bars), until 60 are open. If price breaks back past the swing point, the direction
+flips at once. `MinStackPoints` is now 0 (off) by default. `MaxSpreadPoints` raised 40 -> 120
+(the demo's gold spread was 38-70 points, so 40 blocked most entries). The HUD's "Last:" line
+shows the last trade or the reason it skipped.
+
 More swings = more trades = more spread paid. Demo-test it and watch the win rate line.
