@@ -8,7 +8,7 @@
 //| Test in the Strategy Tester and on a DEMO account first.         |
 //+------------------------------------------------------------------+
 #property copyright "Trading Bot"
-#property version   "1.01"
+#property version   "1.02"
 #property description "EMA 21/50/200 trend pullback with RSI and Bollinger confirmation, $5 minimum risk, dollar break-even and trailing, daily loss breaker, weekly goal HUD."
 
 #include <Trade\Trade.mqh>
@@ -23,6 +23,7 @@ input bool   InpTradeImmediatelyAfterDelay = true;   // Open one trade on the cu
 
 input group "=== Risk & targets ==="
 input double InpMinDollarRiskPerTrade = 5.0;     // Minimum $ lost if the stop is hit
+input double InpRiskPercentOfBalance  = 0.0;     // 0 = fixed $ risk; e.g. 0.5 = risk 0.5% of balance (compounds, never below the minimum)
 input double InpRiskRewardRatio       = 1.8;     // Take profit = stop distance x this
 input double InpWeeklyProfitTarget    = 100.0;   // Weekly profit goal in account currency
 input bool   InpPauseAtWeeklyTarget   = false;   // Stop opening trades once the rolling 7-day goal is met
@@ -160,12 +161,20 @@ double StopDistance()
    return dist;
   }
 
-// Lots so that hitting the stop loses AT LEAST the minimum dollar risk (rounded up).
+// $ to risk on the next trade: the fixed minimum, or a % of the balance if that is larger,
+// so profits grow the trade size (compounding) when InpRiskPercentOfBalance > 0.
+double RiskDollars()
+  {
+   double pct = AccountInfoDouble(ACCOUNT_BALANCE) * InpRiskPercentOfBalance / 100.0;
+   return MathMax(InpMinDollarRiskPerTrade, pct);
+  }
+
+// Lots so that hitting the stop loses AT LEAST RiskDollars() (rounded up).
 double LotsForRisk(ENUM_ORDER_TYPE type, double price, double slDist)
   {
    double perLot = MoneyPerPricePerLot(type, price) * slDist;
    if(perLot <= 0.0) return 0.0;
-   return NormalizeLots(InpMinDollarRiskPerTrade / perLot, true);
+   return NormalizeLots(RiskDollars() / perLot, true);
   }
 
 // Shrinks the lot until the margin fits inside the allowed share of free margin.
@@ -404,7 +413,7 @@ void UpdateHUD()
    Comment(StringFormat(
       "SmallAccountPro  |  %s\n"
       "Balance: $%.2f   Equity: $%.2f   Free margin: $%.2f\n"
-      "Next trade size: %s\n"
+      "Next trade size: %s   [%s]\n"
       "Today: %+.2f   (daily loss limit -%.2f)\n"
       "Rolling 7 days: %+.2f  /  weekly goal %.2f  (%.0f%%)\n"
       "Spread: %d pts (max %d)%s\n"
@@ -412,6 +421,9 @@ void UpdateHUD()
       status,
       g_acc.Balance(), g_acc.Equity(), g_acc.FreeMargin(),
       nextLots,
+      InpRiskPercentOfBalance > 0.0 ? StringFormat("compounding: %.2f%% of balance, min $%.2f",
+                                                   InpRiskPercentOfBalance, InpMinDollarRiskPerTrade)
+                                    : StringFormat("fixed $%.2f risk", InpMinDollarRiskPerTrade),
       today, InpMaxDailyLossUSD,
       week, InpWeeklyProfitTarget, InpWeeklyProfitTarget > 0 ? 100.0 * week / InpWeeklyProfitTarget : 0.0,
       (int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD), InpMaxSpreadPoints,

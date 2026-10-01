@@ -1243,6 +1243,13 @@ Each chat writes only in its own section below, and adds new entries just above 
   M30 +30% (+11% / +19%, 12% DD) | H1 +7% (-2% / +8%). M15 is best and the most consistent;
   M30 is the only other timeframe positive in both halves.
 
+- Compounding (user asked whether +$31/week grows with the balance - it doesn't; the EA risks a
+  fixed $5). Replay on M15, $1,000/1:100: fixed $5 +82% (7% DD) | 0.5% of balance +163% (9% DD) |
+  1% of balance +407% (16% DD). $100/1:500 at 5% of balance reached $77k but with a 76% drawdown
+  and no allowance for slippage at size - treated as an upper bound, not a forecast.
+  v1.02 adds `InpRiskPercentOfBalance` (default 0 = fixed $5, the tested behaviour); when > 0 the
+  risk is the larger of the $ minimum and that % of balance. HUD shows which mode is on.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
