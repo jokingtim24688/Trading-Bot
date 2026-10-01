@@ -83,18 +83,46 @@ def scan(symbols: list[str] | None = None) -> list[dict]:
     return out
 
 
-def launch(sym: str, args) -> subprocess.Popen:
+BASE_MAGIC = 261000        # instance N on a symbol gets BASE_MAGIC + slot
+
+
+def plan_agents(symbols: list[str], per_symbol: int, base_threshold: float) -> list[dict]:
+    """Work out the agent instances to run.
+
+    Several agents on ONE symbol only make sense if they differ - identical agents read the
+    same candles with the same model and take the same trade, which is just one agent at N
+    times the size (and N times the spread). So each extra instance gets a different entry
+    threshold: a lower one trades more often on weaker signals, a higher one waits for
+    stronger ones. They then disagree, which is the whole point of running more than one.
+    """
+    out, slot = [], 0
+    for sym in symbols:
+        for i in range(per_symbol):
+            # spread thresholds around the base, e.g. 0.50 / 0.55 / 0.60 for three
+            thr = round(base_threshold + (i - (per_symbol - 1) / 2) * 0.05, 3)
+            thr = min(0.95, max(0.05, thr))
+            name = sym if per_symbol == 1 else f"{sym}-{i+1}"
+            out.append({"symbol": sym, "name": name, "magic": BASE_MAGIC + slot, "threshold": thr})
+            slot += 1
+    return out
+
+
+def launch(spec: dict, args) -> subprocess.Popen:
+    """Start one agent instance. `spec` comes from plan_agents()."""
+    sym = spec["symbol"]
     LOGS.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-m", "agent.run", "--symbol", sym,
-           "--threshold", str(args.threshold), "--max-open", str(args.max_open)]
+           "--agent", spec["name"], "--magic", str(spec["magic"]),
+           "--threshold", str(spec["threshold"]), "--max-open", str(args.max_open)]
     if args.live:
         cmd.append("--live")
     if args.allow_real:
         cmd.append("--allow-real")
     if args.hours:
         cmd += ["--hours", args.hours]
-    log = open(LOGS / f"{sym}.log", "a", encoding="utf-8", buffering=1)
-    log.write(f"\n=== fleet start {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+    log = open(LOGS / f"{spec['name']}.log", "a", encoding="utf-8", buffering=1)
+    log.write(f"\n=== fleet start {time.strftime('%Y-%m-%d %H:%M:%S')} "
+              f"magic {spec['magic']} threshold {spec['threshold']} ===\n")
     return subprocess.Popen(cmd, cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT,
                             env={**os.environ, "PYTHONUNBUFFERED": "1"})
 
@@ -119,37 +147,36 @@ def dashboard(fleet):
     print(f"  FLEET  |  {state}  |  up {up//3600:02d}:{up%3600//60:02d}:{up%60:02d}"
           f"  |  balance ${bal:,.2f}  equity ${eq:,.2f}")
     print("  " + "-" * 94)
-    print(f"  {'symbol':<10} {'bot':<9} {'open':>5} {'trades':>7} {'wins':>6} "
-          f"{'win%':>6} {'realised P/L':>14} {'last trade':>18}")
+    print(f"  {'agent':<12} {'state':<9} {'thr':>5} {'open':>5} {'trades':>7} {'wins':>6} "
+          f"{'win%':>6} {'realised P/L':>14}")
     print("  " + "-" * 94)
 
     tot_pnl = tot_n = 0
-    for sym, p in sorted(procs.items()):
+    for name, p in sorted(procs.items()):
+        sp = fleet.specs.get(name, {})
         alive = p.poll() is None
         state = "\033[92mrunning\033[0m" if alive else f"\033[91mdied({p.returncode})\033[0m"
         try:
-            st = ledger.stats(symbol=sym) or {}
-            rows = ledger.recent(1, symbol=sym) or []
-            n = st.get("trades", 0) or 0
-            wins = st.get("wins", 0) or 0
+            st = ledger.stats(agent=name) or {}
+            n = st.get("closed", 0) or 0
             pnl = st.get("net", 0.0) or 0.0
-            opn = len(ledger.open_trades(symbol=sym) or [])
-            last = (rows[0].get("close_utc") or rows[0].get("open_utc") or "")[:16] if rows else "-"
+            wp = st.get("win_pct")
+            wins = round((wp or 0) * n / 100)
+            opn = len(ledger.open_trades(agent=name) or [])
         except Exception:  # noqa: BLE001
             n = wins = opn = 0
             pnl = 0.0
-            last = "-"
+            wp = None
         tot_pnl += pnl
         tot_n += n
-        wr = f"{100*wins/n:.0f}%" if n else "-"
         col = "\033[92m" if pnl > 0 else "\033[91m" if pnl < 0 else ""
         end = "\033[0m" if col else ""
-        print(f"  {sym:<10} {state:<18} {opn:>5} {n:>7} {wins:>6} {wr:>6} "
-              f"{col}{pnl:>13,.2f}{end} {last:>18}")
+        print(f"  {name:<12} {state:<18} {sp.get('threshold','-'):>5} {opn:>5} {n:>7} {wins:>6} "
+              f"{(f'{wp:.0f}%' if wp is not None else '-'):>6} {col}{pnl:>13,.2f}{end}")
 
     print("  " + "-" * 94)
     col = "\033[92m" if tot_pnl > 0 else "\033[91m" if tot_pnl < 0 else ""
-    print(f"  {'TOTAL':<10} {len(procs)} bots{'':<9} {'':>5} {tot_n:>7} {'':>6} {'':>6} "
+    print(f"  {'TOTAL':<12} {len(procs)} agents{'':<6} {'':>5} {'':>5} {tot_n:>7} {'':>6} {'':>6} "
           f"{col}{tot_pnl:>13,.2f}\033[0m")
     print(f"\n  logs: logs/fleet/<symbol>.log      Ctrl+C stops every bot")
     print(f"  Telegram:  /stop  /start  /pause  /status  /bots  /total  /prof  /loss")
@@ -166,10 +193,11 @@ class Fleet:
     it drains.
     """
 
-    def __init__(self, args, symbols, mode):
+    def __init__(self, args, specs, mode):
         self.args, self.mode = args, mode
+        self.specs = {sp["name"]: sp for sp in specs}      # agent name -> spec
         self.procs: dict[str, subprocess.Popen] = {}
-        self.symbols = list(symbols)
+        self.symbols = sorted({sp["symbol"] for sp in specs})
         self.started = time.time()
         self.state = "stopped"          # running | draining | paused | stopped
         self.drain_goal = None          # "stopped" or "paused" once the drain finishes
@@ -190,7 +218,7 @@ class Fleet:
         try:
             from agent import ledger
             return [t for t in (ledger.open_trades() or [])
-                    if t.get("symbol") in self.symbols]
+                    if t.get("agent") in self.specs or t.get("symbol") in self.symbols]
         except Exception:               # noqa: BLE001
             return []
 
@@ -209,9 +237,9 @@ class Fleet:
     def start_all(self) -> int:
         with self._lock:
             self.drain_goal = None
-            for sym in self.symbols:
-                if sym not in self.procs or self.procs[sym].poll() is not None:
-                    self.procs[sym] = launch(sym, self.args)
+            for name, sp in self.specs.items():
+                if name not in self.procs or self.procs[name].poll() is not None:
+                    self.procs[name] = launch(sp, self.args)
             self.state = "running"
             return len(self.procs)
 
@@ -259,8 +287,8 @@ class Fleet:
         up = int(time.time() - self.started)
         icon = {"running": "🟢", "draining": "🟡", "paused": "⏸", "stopped": "🔴"}[self.state]
         lines = [f"{icon} Fleet {self.state.upper()} ({self.mode})",
-                 f"{self.alive()}/{len(self.symbols)} bots up, {up//3600}h {up%3600//60}m",
-                 f"symbols: {', '.join(self.symbols)}", "", self._open_lines()]
+                 f"{self.alive()}/{len(self.specs)} agents up, {up//3600}h {up%3600//60}m",
+                 f"on {', '.join(self.symbols)}", "", self._open_lines()]
         if self.state == "draining":
             lines.append(f"\nwaiting for these to close, then -> {self.drain_goal}")
         return "\n".join(lines)
@@ -288,13 +316,16 @@ class Fleet:
         was = self.state
         n = self.start_all()
         extra = " (cancelled the drain)" if was == "draining" else ""
-        return f"▶️ Started {n} bot(s) in {self.mode} mode{extra}:\n" + ", ".join(self.symbols)
+        return (f"▶️ Started {n} agent(s) in {self.mode} mode{extra}:\n"
+                + "\n".join(f"{sp['name']} (magic {sp['magic']}, threshold {sp['threshold']})"
+                             for sp in self.specs.values()))
 
     def cmd_bots(self, _args: str = "") -> str:
-        lines = [f"📋 Bots ({self.state})"]
-        for sym in self.symbols:
-            p = self.procs.get(sym)
-            lines.append(f"{sym}: {'running' if p and p.poll() is None else 'not running'}")
+        lines = [f"📋 Agents ({self.state})"]
+        for name, sp in sorted(self.specs.items()):
+            p = self.procs.get(name)
+            lines.append(f"{name}: {'running' if p and p.poll() is None else 'not running'}"
+                         f"  (magic {sp['magic']}, thr {sp['threshold']})")
         return "\n".join(lines)
 
 
@@ -328,7 +359,11 @@ def main():
     ap.add_argument("--live", action="store_true", help="send real orders (demo unless --allow-real)")
     ap.add_argument("--allow-real", action="store_true", help="permit a real-money account")
     ap.add_argument("--threshold", type=float, default=0.55)
-    ap.add_argument("--max-open", type=int, default=3, help="max open trades per bot")
+    ap.add_argument("--max-open", type=int, default=3, help="max open trades per agent")
+    ap.add_argument("--agents", type=int, default=1,
+                    help="agents per symbol (default 1). Each gets its OWN magic number so MT5 "
+                         "keeps their trades apart, and its own entry threshold so they actually "
+                         "disagree. HEDGING account only - see agent/FLEET.md.")
     ap.add_argument("--hours", default=None, help="server-time hours for entries, e.g. 7-20")
     ap.add_argument("--refresh", type=float, default=5.0, help="dashboard refresh, seconds")
     ap.add_argument("--force", action="store_true", help="start symbols that failed the scan too")
@@ -364,7 +399,13 @@ def main():
               "unless you also pass --allow-real.")
     print(f"\n  Starting {len(go)} bot(s) in {mode} mode: {', '.join(go)}")
 
-    fleet = Fleet(args, go, mode)
+    specs = plan_agents(go, max(1, args.agents), args.threshold)
+    if args.agents > 1:
+        print(f"  {args.agents} agents per symbol, each with its own magic number and threshold:")
+        for sp in specs:
+            print(f"    {sp['name']:<12} magic {sp['magic']}  threshold {sp['threshold']}")
+        print("  (needs a HEDGING account - on netting they would net into one position)")
+    fleet = Fleet(args, specs, mode)
     fleet.start_all()
     tg = register_telegram(fleet)
     print(f"  {tg}")
@@ -393,7 +434,7 @@ def main():
                 if p.poll() is not None:
                     print(f"  \033[91m{sym} stopped - restarting\033[0m "
                           f"(see logs/fleet/{sym}.log)")
-                    fleet.procs[sym] = launch(sym, args)
+                    fleet.procs[sym] = launch(fleet.specs[sym], args)
         time.sleep(args.refresh)
 
 

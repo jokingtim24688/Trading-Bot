@@ -21,6 +21,44 @@ is why that limit exists.
 Each bot is its own `agent.run` process, so one crashing or stalling can't take the
 others with it. A bot that dies while the fleet is running is restarted automatically.
 
+## Several agents on one symbol
+
+```
+python -m agent.fleet --symbols XAUUSD --agents 3
+```
+
+Three agents trade gold side by side. Each gets:
+
+- **its own magic number** (261000, 261001, ...) - MT5 keeps their positions separate, and each
+  agent only ever sees and manages its own. One can be long while another is short.
+- **its own entry threshold** (0.50 / 0.55 / 0.60 for three) - this is the point. Identical
+  agents read the same candles with the same model and take the same trade, which is just one
+  agent at 3x size paying 3x the spread. Different thresholds make them disagree: the low one
+  trades more often on weaker signals, the high one waits.
+- **its own ledger rows** (`agent` and `magic` columns), so win rate and P/L are tracked per
+  agent and you can see which threshold actually earns its keep.
+
+### This needs a HEDGING account
+
+Yours is one ("Demo Account - **Hedge**" in the MT5 title bar). On a **netting** account MT5
+merges everything on a symbol into a single net position, so a second agent's sell would close
+the first agent's buy - they would silently cancel each other out. `agent.run` prints a warning
+if it detects netting with a custom magic, and the fleet says so when starting more than one.
+
+### What still is shared, honestly
+
+Separate positions do not mean separate risk. These agents are not independent traders:
+
+| Shared | Why it matters |
+|---|---|
+| **Margin** | All agents draw on the same free margin. Enough of them open at once and the next order is refused - or worse, a margin call closes positions you did not choose. |
+| **Account equity** | A drawdown is a drawdown. Per-agent limits do not add up to an account-level limit. |
+| **The market** | Agents on the same symbol with similar models tend to agree. When they do, you are not diversified - you have one position at 3x size, with 3x the spread paid to get it. |
+
+So more agents on one symbol **concentrates** risk unless they genuinely disagree, which is why
+the thresholds are spread apart. Real diversification comes from different *symbols*, not more
+copies on the same one. Start with `--agents 1` on several symbols before stacking agents on gold.
+
 ## Telegram commands
 
 Link it once in the app (Settings > Phone alerts: BotFather token, then "Find my chat"),

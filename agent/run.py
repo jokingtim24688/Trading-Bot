@@ -33,6 +33,13 @@ from . import livecard, news  # noqa: E402
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", default="XAUUSD")
+    ap.add_argument("--magic", type=int, default=None,
+                    help="MT5 magic number for this instance. Several agents can trade the same "
+                         "symbol side by side as long as each has its OWN magic - MT5 then keeps "
+                         "their positions separate and each only manages its own. Needs a HEDGING "
+                         "account; on a netting account they would net into one position.")
+    ap.add_argument("--agent", default=None,
+                    help="name for this instance in the ledger, e.g. gold-fast (default: symbol)")
     ap.add_argument("--threshold", type=float, default=0.55)
     ap.add_argument("--stake-pct", type=float, default=None, help="margin per trade, %% of balance (default 0.1)")
     ap.add_argument("--sl-pct", type=float, default=None, help="stop when this %% of the stake is lost (default 25)")
@@ -76,7 +83,18 @@ def main():
     if args.live and not data.is_demo() and not args.allow_real:
         raise SystemExit("Account is REAL. Refusing to trade without --allow-real.")
     mode = ("demo" if data.is_demo() else "real") if args.live else "paper"
-    broker = LiveBroker(data, cfg.risk.magic, mode) if args.live else PaperBroker(args.paper_equity, spec, cfg.symbol, data.tick)
+    magic = args.magic if args.magic is not None else cfg.risk.magic
+    agent_name = args.agent or cfg.symbol
+    broker = (LiveBroker(data, magic, mode, agent=agent_name) if args.live
+              else PaperBroker(args.paper_equity, spec, cfg.symbol, data.tick, agent=agent_name))
+
+    # Several agents can share a symbol only on a HEDGING account, where each position stands
+    # alone. On a netting account MT5 merges them into one net position per symbol, so the
+    # agents would silently close each other's trades.
+    if args.live and args.magic is not None and getattr(broker, "netting", False):
+        print(f"[{agent_name}] WARNING: this is a NETTING account. Running more than one agent on "
+              f"{cfg.symbol} will make them net into a single position and cancel each other out. "
+              f"Use one agent per symbol here, or a hedging account.")
     model = SignalModel.load(cfg.model_dir, cfg.symbol, cfg.hardware)
     if args.hours:
         h0, h1 = (int(x) for x in args.hours.split("-"))
@@ -92,7 +110,8 @@ def main():
     rule = model.meta.get("exit_rule") or {}
     if not rule.get("margin_rate"):
         print("WARNING: this model was trained with ATR exits, not the stake rules. Retrain on the Train tab.")
-    print(f"tracking bot trades with magic {cfg.risk.magic} in data/trades.db; your own trades are left alone")
+    print(f"[{agent_name}] tracking its trades with magic {magic} in data/trades.db; "
+          f"other agents' and your own trades are left alone")
     if getattr(broker, "netting", False):
         print("NETTING account: positions on one symbol merge, so the bot won't trade while you hold this symbol.")
 

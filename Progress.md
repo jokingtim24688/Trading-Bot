@@ -1074,6 +1074,30 @@ Each chat writes only in its own section below, and adds new entries just above 
   cancels a drain; /stop with nothing open stops immediately.
 - Caught before committing: an f-string with nested same-quotes (invalid on Python 3.11).
 
+### 2026-10-01: multiple agents per symbol, trading independently
+- User asked whether several agents could trade gold at once without interfering. Yes, on a
+  hedging account (theirs is "Demo Account - Hedge"), and most of the mechanism already existed:
+  `LiveBroker` filters positions by magic number, so each instance only sees its own.
+- What was missing, now added:
+  - `agent/ledger.py`: `agent` and `magic` columns (auto-migrating, same pattern as the earlier
+    additions) and `agent=` filters on `open_trades`, `recent` and `stats`, so each instance's
+    win rate and P/L are tracked separately.
+  - `agent/run.py`: `--magic` and `--agent`, plus a warning when a custom magic is used on a
+    NETTING account - there MT5 nets positions per symbol, so agents would silently close each
+    other's trades.
+  - `agent/broker.py`: both brokers carry an agent name onto every ledger write.
+  - `agent/fleet.py`: `--agents N` with `plan_agents()` giving each instance its own magic AND a
+    different entry threshold (0.50/0.55/0.60 for three). Identical agents would take identical
+    trades - one agent at 3x size paying 3x spread - so they are deliberately spread apart.
+    Dashboard and /bots now show per-agent rows.
+- Tested with fakes: 3 agents on gold, one long and one short simultaneously, fully separate
+  ledger stats; /status, /bots and the /stop drain all correct per agent.
+- Documented the honest limits in FLEET.md: margin, account equity and market exposure are still
+  SHARED. Agents on one symbol with similar models agree, which concentrates risk rather than
+  diversifying it - real diversification comes from different symbols.
+- Caught two bugs in my own patch before committing: an invented function name
+  (`symbolless_name`) and a comment displaced onto the wrong line.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

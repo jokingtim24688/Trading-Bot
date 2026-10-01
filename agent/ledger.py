@@ -27,7 +27,8 @@ def _conn():
         exit REAL, exit_reason TEXT, pnl REAL, r_multiple REAL, close_utc TEXT, close_bar INTEGER, updated REAL)""")
     c.execute("CREATE INDEX IF NOT EXISTS ix_trades_mode_status ON trades(mode, status)")
     have = {r[1] for r in c.execute("PRAGMA table_info(trades)")}
-    for col, typ in (("stake", "REAL"), ("score", "REAL"), ("close_hint", "TEXT"), ("setup", "TEXT"), ("quiz", "TEXT")):
+    for col, typ in (("stake", "REAL"), ("score", "REAL"), ("close_hint", "TEXT"), ("setup", "TEXT"), ("quiz", "TEXT"),
+                     ("agent", "TEXT"), ("magic", "INTEGER")):
         if col not in have:                         # upgrade ledgers created before scoring existed
             c.execute(f"ALTER TABLE trades ADD COLUMN {col} {typ}")
     return c
@@ -38,13 +39,19 @@ def _now() -> str:
 
 
 def open_trade(mode, symbol, side, lots, entry, sl, tp, prob=None, risk_money=None, ticket=None, open_bar=None,
-               stake=None, open_utc=None, setup=None, quiz=None) -> int:
-    """quiz: what the quiz agent said at entry (buy / sell / wait), to measure whether its second opinion helps."""
+               stake=None, open_utc=None, setup=None, quiz=None, agent=None, magic=None) -> int:
+    """quiz: what the quiz agent said at entry (buy / sell / wait), to measure whether its second opinion helps.
+
+    agent/magic: which instance opened this, when several run on the same symbol. Each instance
+    uses its own magic number, so MT5 keeps their positions separate (hedging accounts only) and
+    each one only ever manages its own.
+    """
     with _conn() as c:
         cur = c.execute("""INSERT INTO trades (mode, symbol, side, lots, entry, sl, sl0, tp, prob, risk_money, ticket, status,
-                           open_utc, open_bar, updated, stake, setup, quiz) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'open', ?,?,?,?,?,?)""",
+                           open_utc, open_bar, updated, stake, setup, quiz, agent, magic)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?, 'open', ?,?,?,?,?,?,?,?)""",
                         (mode, symbol, side, lots, entry, sl, sl, tp, prob, risk_money, ticket, open_utc or _now(), open_bar, time.time(),
-                         stake, setup, quiz))
+                         stake, setup, quiz, agent, magic))
         return cur.lastrowid
 
 
@@ -91,22 +98,26 @@ def update_levels(trade_id: int, sl: float | None = None, tp: float | None = Non
             c.execute("UPDATE trades SET tp=?, updated=? WHERE id=?", (tp, time.time(), trade_id))
 
 
-def open_trades(mode: str | None = None, symbol: str | None = None) -> list[dict]:
+def open_trades(mode: str | None = None, symbol: str | None = None, agent: str | None = None) -> list[dict]:
     q, args = "SELECT * FROM trades WHERE status='open'", []
     if mode:
         q += " AND mode=?"; args.append(mode)
     if symbol:
         q += " AND symbol=?"; args.append(symbol)
+    if agent:
+        q += " AND agent=?"; args.append(agent)
     with _conn() as c:
         return [dict(r) for r in c.execute(q + " ORDER BY id", args)]
 
 
-def recent(limit: int = 200, mode: str | None = None, symbol: str | None = None) -> list[dict]:
+def recent(limit: int = 200, mode: str | None = None, symbol: str | None = None, agent: str | None = None) -> list[dict]:
     q, args = "SELECT * FROM trades WHERE 1=1", []
     if mode:
         q += " AND mode=?"; args.append(mode)
     if symbol:
         q += " AND symbol=?"; args.append(symbol)
+    if agent:
+        q += " AND agent=?"; args.append(agent)
     with _conn() as c:
         return [dict(r) for r in c.execute(q + " ORDER BY id DESC LIMIT ?", (*args, limit))]
 
@@ -121,8 +132,8 @@ def realized_pnl(mode: str, since_utc: str | None = None, day: str | None = None
         return float(c.execute(q, args).fetchone()[0])
 
 
-def stats(mode: str | None = None, symbol: str | None = None) -> dict:
-    rows = [r for r in recent(100_000, mode, symbol) if r["status"] == "closed"]
+def stats(mode: str | None = None, symbol: str | None = None, agent: str | None = None) -> dict:
+    rows = [r for r in recent(100_000, mode, symbol, agent) if r["status"] == "closed"]
     today = datetime.now(timezone.utc).date().isoformat()
     wins = [r for r in rows if (r["pnl"] or 0) > 0]
     rs = [r["r_multiple"] for r in rows if r["r_multiple"] is not None]
@@ -130,7 +141,7 @@ def stats(mode: str | None = None, symbol: str | None = None) -> dict:
     gross_loss = -sum(r["pnl"] for r in rows if (r["pnl"] or 0) < 0)
     return {
         "closed": len(rows),
-        "open": len(open_trades(mode, symbol)),
+        "open": len(open_trades(mode, symbol, agent)),
         "win_pct": round(100 * len(wins) / len(rows), 1) if rows else None,
         "net_pnl": round(sum(r["pnl"] or 0 for r in rows), 2),
         "today_pnl": round(sum(r["pnl"] or 0 for r in rows if (r["close_utc"] or "").startswith(today)), 2),

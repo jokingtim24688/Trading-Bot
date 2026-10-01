@@ -81,8 +81,10 @@ class PaperBroker:
     """Simulated fills on closed M1 bars (stop wins if a bar touches both). Every trade goes to the ledger, and
     paper balance and open paper trades survive restarts because they're rebuilt from the ledger."""
 
-    def __init__(self, start_equity: float, spec: SymbolSpec, symbol: str, tick_fn, mode: str = "paper"):
-        self.mode = mode           # "paper" (live prices) or "replay" (historical candles)
+    def __init__(self, start_equity: float, spec: SymbolSpec, symbol: str, tick_fn, mode: str = "paper",
+                 agent: str | None = None):
+        self.mode = mode                       # "paper" (live prices) or "replay" (historical candles)
+        self.agent = agent or symbol
         self.start_equity = start_equity
         self.spec = spec
         self.symbol = symbol
@@ -133,7 +135,7 @@ class PaperBroker:
              quiz=None, **_):
         price = self._slip(side, price, True) if self.slippage_px else price
         tid = ledger.open_trade(self.mode, self.symbol, side, lots, price, sl, tp, prob, risk_money, None, open_bar, stake,
-                                open_utc=self._stamp(), setup=setup, quiz=quiz)
+                                open_utc=self._stamp(), setup=setup, quiz=quiz, agent=self.agent)
         self.positions = ledger.open_trades(self.mode, self.symbol)
         return True, f"paper fill #{tid}"
 
@@ -222,10 +224,11 @@ class LiveBroker:
     and Hermes' trades (another magic) are never touched or counted. `sync()` reconciles the ledger with MT5 so exits
     made by the server (SL/TP), by you in MT5, or by the kill switch are recorded with the real P/L."""
 
-    def __init__(self, data: MT5Data, magic: int, mode: str):
+    def __init__(self, data: MT5Data, magic: int, mode: str, agent: str | None = None):
         self.data = data
         self.symbol = data.symbol
         self.magic = magic
+        self.agent = agent or data.symbol
         self.mode = mode           # "demo" or "real"
         self.netting = mt5.account_info().margin_mode != mt5.ACCOUNT_MARGIN_MODE_RETAIL_HEDGING
         self.adopt_orphans()
@@ -262,7 +265,8 @@ class LiveBroker:
         for p in self._positions():
             if p.ticket not in known:
                 ledger.open_trade(self.mode, self.symbol, "buy" if p.type == mt5.POSITION_TYPE_BUY else "sell",
-                                  p.volume, p.price_open, p.sl, p.tp, ticket=p.ticket, open_bar=int(p.time))
+                                  p.volume, p.price_open, p.sl, p.tp, ticket=p.ticket, open_bar=int(p.time),
+                                  agent=self.agent, magic=self.magic)
 
     def _filling(self):
         fm = mt5.symbol_info(self.symbol).filling_mode
@@ -290,7 +294,8 @@ class LiveBroker:
             return False, f"order_send retcode {getattr(res, 'retcode', None)} {getattr(res, 'comment', mt5.last_error())}"
         # for a new market position the position ticket equals the opening order ticket
         tid = ledger.open_trade(self.mode, self.symbol, side, res.volume, res.price or price, req["sl"], req["tp"],
-                                prob, risk_money, res.order, open_bar, stake, setup=setup, quiz=quiz)
+                                prob, risk_money, res.order, open_bar, stake, setup=setup, quiz=quiz,
+                                agent=self.agent, magic=self.magic)
         return True, f"filled {res.volume} @ {res.price} (ticket {res.order}, ledger #{tid})"
 
     def on_bar(self, bar, spread_px, bar_epoch=None):
