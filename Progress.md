@@ -1345,6 +1345,13 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Told the user $100/week from $400 isn't available safely; offered: measure the Solana bot honestly in
   paper, prototype a Kalshi bot in paper, or the gold trend bot once the account is ~$2-4k.
 
+### 2026-10-01: $250 options on Solana - Axiom, spot trend rules
+- Axiom's Terms of Use ban bots/automation (third-party "Axiom bot" SDKs/sites want wallet keys).
+- Crypto data: exchange APIs are blocked by the proxy, so Binance daily klines came through Firecrawl
+  (SOL 2020-08.., BTC/ETH 2017-08.. to 2026-09-26). `ea/research/crypto/` (ctest.py + README).
+- Spot, unlevered, 0.3%/swap: SMA50 filter beat holding on SOL/BTC/ETH over the full period and cut the
+  worst drop from -96% to -70% on SOL; second halves much weaker. $250 -> ~$5/week at 100%/yr.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
