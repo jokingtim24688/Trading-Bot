@@ -1264,6 +1264,14 @@ Each chat writes only in its own section below, and adds new entries just above 
   $6,013, same 59% worst drawdown, but losing weeks become large in dollars (weeks 20-22: -$6,900;
   weeks 25-26: -$15,228, $39,259 peak to $24,031). Risk follows the balance down as well as up.
 
+- Leverage sweep for the v1.04 ladder (user asked if their account must be 1:500): at $100 the
+  EA needs 1:200 or more (1:100 locks out, 1:50/1:20 can't open 0.01 lots at the 80% margin
+  guard); 1:200 and 1:500 give identical results. From $300, 1:50 already works. Very large end
+  balances at $300-$500 starts ($86k-$306k) are flagged to the user as backtest artefacts: no
+  slippage at multi-lot size, no overnight swap, constant spread, intrabar order approximated.
+  US note given: CFTC caps retail FX at 1:50 majors and Dodd-Frank restricts leveraged OTC spot
+  gold for US residents; 1:500 is offshore-only and gives up CFTC/NFA protection.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
