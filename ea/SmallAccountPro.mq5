@@ -8,7 +8,7 @@
 //| Test in the Strategy Tester and on a DEMO account first.         |
 //+------------------------------------------------------------------+
 #property copyright "Trading Bot"
-#property version   "1.02"
+#property version   "1.03"
 #property description "EMA 21/50/200 trend pullback with RSI and Bollinger confirmation, $5 minimum risk, dollar break-even and trailing, daily loss breaker, weekly goal HUD."
 
 #include <Trade\Trade.mqh>
@@ -24,6 +24,11 @@ input bool   InpTradeImmediatelyAfterDelay = true;   // Open one trade on the cu
 input group "=== Risk & targets ==="
 input double InpMinDollarRiskPerTrade = 5.0;     // Minimum $ lost if the stop is hit
 input double InpRiskPercentOfBalance  = 0.0;     // 0 = fixed $ risk; e.g. 0.5 = risk 0.5% of balance (compounds, never below the minimum)
+input bool   InpUseRiskLadder         = true;    // Risk ladder: $5 per $100 of balance, then a flat top amount (overrides the % above)
+input double InpLadderStepBalance     = 100.0;   // Ladder: each step of this much balance...
+input double InpLadderRiskPerStep     = 5.0;     // ...adds this much risk ($100 -> $5, $200 -> $10, ...)
+input int    InpLadderSteps           = 5;       // Steps before the top ($500-$599 -> $25)
+input double InpLadderTopRisk         = 50.0;    // Risk once the balance is past the last step ($600+)
 input double InpRiskRewardRatio       = 1.8;     // Take profit = stop distance x this
 input double InpWeeklyProfitTarget    = 100.0;   // Weekly profit goal in account currency
 input bool   InpPauseAtWeeklyTarget   = false;   // Stop opening trades once the rolling 7-day goal is met
@@ -165,7 +170,15 @@ double StopDistance()
 // so profits grow the trade size (compounding) when InpRiskPercentOfBalance > 0.
 double RiskDollars()
   {
-   double pct = AccountInfoDouble(ACCOUNT_BALANCE) * InpRiskPercentOfBalance / 100.0;
+   double bal = AccountInfoDouble(ACCOUNT_BALANCE);
+   if(InpUseRiskLadder && InpLadderStepBalance > 0.0)
+     {
+      int level = (int)MathFloor(bal / InpLadderStepBalance);
+      if(level > InpLadderSteps)
+         return InpLadderTopRisk;                                   // past the last step
+      return MathMax(InpMinDollarRiskPerTrade, MathMax(1, level) * InpLadderRiskPerStep);
+     }
+   double pct = bal * InpRiskPercentOfBalance / 100.0;
    return MathMax(InpMinDollarRiskPerTrade, pct);
   }
 
@@ -421,9 +434,10 @@ void UpdateHUD()
       status,
       g_acc.Balance(), g_acc.Equity(), g_acc.FreeMargin(),
       nextLots,
-      InpRiskPercentOfBalance > 0.0 ? StringFormat("compounding: %.2f%% of balance, min $%.2f",
-                                                   InpRiskPercentOfBalance, InpMinDollarRiskPerTrade)
-                                    : StringFormat("fixed $%.2f risk", InpMinDollarRiskPerTrade),
+      InpUseRiskLadder ? StringFormat("ladder: risking $%.2f at this balance", RiskDollars())
+      : InpRiskPercentOfBalance > 0.0 ? StringFormat("compounding: %.2f%% of balance, min $%.2f",
+                                                     InpRiskPercentOfBalance, InpMinDollarRiskPerTrade)
+                                      : StringFormat("fixed $%.2f risk", InpMinDollarRiskPerTrade),
       today, InpMaxDailyLossUSD,
       week, InpWeeklyProfitTarget, InpWeeklyProfitTarget > 0 ? 100.0 * week / InpWeeklyProfitTarget : 0.0,
       (int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD), InpMaxSpreadPoints,

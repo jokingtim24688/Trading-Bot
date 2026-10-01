@@ -1250,6 +1250,15 @@ Each chat writes only in its own section below, and adds new entries just above 
   v1.02 adds `InpRiskPercentOfBalance` (default 0 = fixed $5, the tested behaviour); when > 0 the
   risk is the larger of the $ minimum and that % of balance. HUD shows which mode is on.
 
+- User's risk ladder ($5 per $100 of balance up to $25 at $500-599, then a flat $50 from $600)
+  added as v1.03 (`InpUseRiskLadder`, default on; step/amount/steps/top are inputs; overrides the %
+  setting). Replay M15, $100 start, 1:500: $6,013 (+5,913%) vs $916 with fixed $5, worst drawdown
+  59% either way; both halves positive. At 1:100 the account still locks itself out in week 2
+  (an early -50% week leaves too little margin for 0.01 lots), so the ladder needs 1:500 at $100.
+  Weekly path: weeks 1-7 at $5 risk swing between $55 and $222; the $10-$25 rungs take it to $1,088
+  by week 11; from week 12 it sits at the $50 cap and grows linearly (~$4,000 over 15 weeks), with
+  7 losing weeks out of 26.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
