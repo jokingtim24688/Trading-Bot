@@ -82,6 +82,7 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-09-24: honest backtest (`agent/backtest.py`, `/api/backtest`): unseen months, costs, own ledger, vs the Paper gate.
 - 2026-09-24: automated tests (`tests/`, 26 tests, fake MT5) + GitHub Actions CI.
 - 2026-09-24: self-update fixed (`app/update.py`, run by `Trading Bot.bat`); `/api/status` reports `version`.
+- 2026-10-01: `ea/CandleSenseICT.mq5` - one advanced single-file ICT EA for gold (FVG + Order Block scoring, killzones, liquidity sweep, `OrderCalcProfit` sizing, self-learning setup weights), replacing the multi-file ML pipeline approach; researched from real MIT-licensed gold EAs, see `ea/README.md`.
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)

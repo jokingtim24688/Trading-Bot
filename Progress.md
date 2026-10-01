@@ -860,6 +860,29 @@ Each chat writes only in its own section below, and adds new entries just above 
   - Replays are unchanged (they pass no readings).
 - Test in `tests/test_practice.py`; 49 passed.
 
+### 2026-10-01: CandleSenseICT.mq5 - one advanced EA instead of the ML pipeline
+- The user wanted one extremely advanced EA instead of the multi-file ML pipeline
+  (CandleSenseML/CandleSenseMulti), built by researching and borrowing from real gold EAs.
+  **`ea/CandleSenseICT.mq5`** (+ `ea/README.md`), researched via WebSearch/WebFetch:
+  - FVG detection with a 0-100 quality score (gap size, displacement, H1 trend align,
+    freshness, premium/discount) and Order Block confluence, adapted from the MIT-licensed
+    [foeed/FvgGold-EA](https://github.com/foeed/FvgGold-EA) (45% win rate, +48.7% 6-month
+    backtest) after fetching and reading its actual source.
+  - ICT killzones (London, NY, overlap, GMT), the standard filter in the public gold EAs found.
+  - Liquidity sweep detection kept from CandleSense.mq5, now a confluence bonus.
+  - Risk-based sizing via `OrderCalcProfit()` from the start (the fix v1.50 made after the
+    fact to its tick-value bug).
+  - Self-learning setup weights (4 combinations: FVG only / +OB / +sweep / +OB+sweep), each
+    scored from its own closed-trade history via global variables, same idea as CandleSense's
+    per-signal weights but per ICT setup type.
+  - Break-even + ATR trailing, daily loss limit, max trades/day, spread filter.
+  - Caught and fixed two bugs before shipping: functions called before their forward
+    declaration (would not compile), and ATR/EMA indicator handles being recreated every call
+    instead of once in `OnInit` (handle leak that would eventually return `INVALID_HANDLE`).
+- **Not tested here**: this cloud session has no `mcp__mt5__*` tools (those only exist on the
+  user's PC via the `mt5-m1-trader` subagent) and no MetaEditor, so it could not be compiled or
+  backtested from this session. `ea/README.md` says how to do both on the user's PC.
+
 ### 2026-09-30: CandleSense.mq5 v1.50 installation guide
 - **CandleSense v1.50 in /scratchpad/CandleSense/CandleSense.mq5**: rule-based EA with corrected position sizing via `OrderCalcProfit()`. Replaces v1.40 which underestimated risk (tick value vs broker-specific per-lot cost). 
 - Installation: copy to `%APPDATA%\MetaQuotes\Terminal\<TerminalID>\MQL5\Experts\`, compile with MetaEditor F7, attach to chart.
