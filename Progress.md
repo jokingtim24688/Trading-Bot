@@ -1302,6 +1302,18 @@ Each chat writes only in its own section below, and adds new entries just above 
   CFTC-registered FCM, NFA ID 0309379) - but its NFA record shows "Pending Withdrawal", so the user
   was told to check NFA BASIC before funding. Futures need a NinjaScript port of the strategy.
 
+### 2026-10-01: SmallAccountPro ported to NinjaTrader 8 (1OZ futures)
+- User chose NinjaTrader. New `ninjatrader/SmallAccountProNT.cs` (NinjaScript strategy) +
+  `ninjatrader/README.md` (install, Strategy Analyzer -> Sim101 -> live, settings, NFA check).
+- Same rules as `ea/futures_replay.py`: 30-min chart, EMA21/50/200 + BB(20,2) + RSI(14) pullback,
+  stop 1.5xATR clamped $5-$25, target 1.8x, ladder -> contracts (rounded up, 80% day-margin cap at
+  $60/contract), BE +$2.50 -> +$0.50, trail $1.50 from +$4, -$15 daily limit, no entries after
+  15:30 NY, flat 16:30 NY (+ exit-on-session-close 30 min early). ATR as an SMA of true range (like
+  MT5 iATR); balance = Starting balance input + strategy's closed profit (Sim101 holds $100k).
+- Found while porting: the replay never checked the entry candle's own high/low. With it checked:
+  $400 -> $2,346 (+486%, DD 45%) instead of +535% - still holds. NinjaTrader checks that candle.
+- Not compiled here (no NinjaTrader/C# compiler in the container): the user's F5 is the first compile.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
