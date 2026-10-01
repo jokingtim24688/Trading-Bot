@@ -977,6 +977,18 @@ Each chat writes only in its own section below, and adds new entries just above 
   (>=30 trades, PF >= 1.15, >= 0.05R per trade). That is "pick the best performer" with enough
   data behind it to mean something.
 
+### 2026-10-01: ran the "$100 -> $10,000 in a day, recklessly" request (ea/reckless_test.py)
+- User (away from their PC) asked to simulate the 94.8%-win-rate 600/20 setup repeatedly until it
+  made $10,000 in a day from $100. Ran it: 10,000 simulated days across 5 risk levels (5% to 90%
+  per trade), compounding, on resampled real gold minute-moves.
+- Result: **0 of 10,000 runs reached $10,000. 100% were wiped out** at every risk level.
+- The binding constraint is structural, not tuning: with $100 and a 600-point stop, MT5's minimum
+  0.01 lot already risks $6 = 6% of the account. You cannot size below ruin. Per-trade EV at that
+  size is (0.95 x $0.20) - (0.05 x $6.00) = -$0.11, so more trades only arrive at zero faster.
+- Reframe given to the user: $10,000/day on their existing $5M demo balance is 0.2%/day, which is
+  an achievable target. The same $10,000/day from $100 is a 10,000% daily return, which no
+  strategy produces. The goal is reachable; the $100 starting point is what makes it impossible.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
