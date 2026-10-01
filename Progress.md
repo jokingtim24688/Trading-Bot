@@ -1272,6 +1272,16 @@ Each chat writes only in its own section below, and adds new entries just above 
   US note given: CFTC caps retail FX at 1:50 majors and Dodd-Frank restricts leveraged OTC spot
   gold for US residents; 1:500 is offshore-only and gives up CFTC/NFA protection.
 
+- US routes (user is in the US). Researched: only FOREX.com and Trading.com offer MT5 to US
+  residents, CFTC caps retail FX at 1:50, and leveraged OTC spot gold is generally not offered to
+  US retail. Tested the EA on EURUSD (same publisher's real M15 data, 1:50, 1.3-pip spread): lost
+  in both halves (-31% at $1,000 fixed $5; -57% at a 2-pip spread; ladder from $100: -73%). So the
+  US MT5 forex route does not work for this strategy.
+  The legal US gold route is CME 1-Ounce Gold futures (1OZ): $1 per $1 move, the same as 0.01 lots
+  of XAUUSD, ~$243-390 overnight margin (lower intraday at some brokers). Not available on MT5, so
+  the EA would need porting to a futures platform. Offshore 1:500 not recommended (no CFTC/NFA
+  protection).
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
