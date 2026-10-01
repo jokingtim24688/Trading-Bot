@@ -1133,6 +1133,22 @@ Each chat writes only in its own section below, and adds new entries just above 
   settings. 5.8 hours of one day cannot establish an edge either way - months of data are needed,
   which the app's Train tab downloads.
 
+### 2026-10-01: $5 trades on $100 - the bet-sizing study (ea/betsize_study.py)
+- User asked what $5 per trade would do. That is 5% of a $100 account, so this is the Kelly
+  question. Simulated 2,000 years per cell across risk levels and true win rates.
+- The answer is genuinely "it depends", and on one specific unknown - the real win rate:
+  - at 30% wins (just over the 28.6% break-even), 5% risk returns **$75** (a LOSS) while 2%
+    returns $117. Over-betting destroys a thin edge: 2.5x Kelly here.
+  - at 35% wins, 5% risk returns **$1,871** vs $435 at 2%. Roughly half-Kelly, about right.
+  - at 40% wins, 5% risk returns **$46,482**. (Caveat: 40% at 1:2.5 is PF 1.67, exceptional.)
+- The shape worth remembering: returns rise with bet size, peak at Kelly, then FALL while
+  drawdown keeps climbing. Past the peak you take more risk for less money.
+- Drawdown cost even when it works: 5% risk at a winning 35% still has a median 62% max
+  drawdown - $100 spends part of the year looking like $38.
+- Practical answer given: start at 1-2%, measure 50+ live trades, compute the real win rate,
+  then size to half-Kelly. Bet size is a function of an edge that has not been measured yet -
+  CandleSenseStart has no live trades.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
