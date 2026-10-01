@@ -1003,6 +1003,26 @@ Each chat writes only in its own section below, and adds new entries just above 
   percentage; the balance controls the dollars. $10,000/day at 0.2% needs $5M - which their demo
   already has.
 
+### 2026-10-01: CandleSenseStart.mq5 - an EA designed for a ~$100 beginner account
+- User asked for the best EA for a beginner with a low starting balance, making the most it can.
+  Built `ea/CandleSenseStart.mq5` with every parameter chosen from the measurements made today
+  rather than by feel.
+- Swept stop/target against the real 45pt spread first: at 150/200 a strategy must beat random by
+  12.9% every trade; at 1:2.5 with a 250pt stop only 5.1%. Widening the target is the single
+  cheapest improvement available to a small account, so the EA uses ATR stops (min 200 pts) with
+  a 2.5x target.
+- Strategy: H1 EMA50/200 trend + pullback to the M15 EMA20 closing back with the trend. Selective
+  by design (the frequency study showed more trades = linearly more loss).
+- Beginner protections: daily loss limit (6%), pause after 3 consecutive losses, hard balance
+  floor that halts the EA, margin check before every order, and a start-up warning under $80 where
+  the minimum lot exceeds the chosen risk.
+- **Auto-detects the broker's GMT offset** (`TimeTradeServer()` vs `TimeGMT()`), removing the
+  class of bug that silently stopped CandleSenseICT from ever trading.
+- Lots compound from the current balance each trade. HUD shows balance, growth since start, win
+  rate against the break-even it needs, net, risk per trade, the detected GMT offset and a plain-
+  English status line.
+- Not compiled or backtested here (no MT5 in the cloud session). Needs demo validation.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

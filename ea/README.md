@@ -1,5 +1,7 @@
 # EAs in this folder
 
+**Start here if you have a small account:** `CandleSenseStart.mq5`.
+
 - **`CandleSenseICT.mq5`** - the advanced, setup-quality-scored EA (FVG + Order Block + killzones).
   Few trades, high selectivity. See its own section below.
 - **`CandleSenseSwing.mq5`** - a simple trend-direction "stacker": no FVG/OB scoring, just trades
@@ -100,3 +102,34 @@ flips at once. `MinStackPoints` is now 0 (off) by default. `MaxSpreadPoints` rai
 shows the last trade or the reason it skipped.
 
 More swings = more trades = more spread paid. Demo-test it and watch the win rate line.
+
+
+---
+
+# CandleSenseStart.mq5 - the one to use with ~$100
+
+Built for a small balance and a first EA. Every choice in it comes from a measurement in this
+folder, not from taste:
+
+| Choice | Why | Measured in |
+|---|---|---|
+| Target = 2.5x the stop | At 150/200 the strategy must beat random by 12.9% every trade; at 1:2.5 it needs ~5%. Widening the target is the cheapest edge a small account can buy. | `small_account_study.py` |
+| Waits for its setup | The same bot traded more often loses linearly more - at 1 trade/second it lost $62.7M of $5M in 5.8 h. Every trade pays the spread again. | `frequency_study.py` |
+| ~35-40% win rate by design | A 600/20 stop/target wins 94.8% and still loses money. Expectancy decides, not win rate. | `winrate_vs_money.py` |
+| Finds the GMT offset itself | A wrong offset silently blocked every trade in CandleSenseICT. Here it is not a setting you can get wrong. | the bug itself |
+| Hard loss protection | From $100 you cannot recover from ruin, so: daily loss limit, pause after 3 losses in a row, and a balance floor that stops the EA. | `reckless_test.py` |
+
+**Strategy**: H1 EMA50/200 sets the trend; it then waits for price to pull back to the M15 EMA20
+and close back in the trend's direction. ATR stop (minimum 200 points so the spread can't dominate),
+target 2.5x that, break-even and trailing once a trade is 1R ahead.
+
+**Position size compounds**: lots are worked out from the *current* balance every trade, so the
+account grows into bigger positions by itself. No setting to change as it grows.
+
+**Defaults are for ~$100.** With less than about $80 the minimum 0.01 lot risks more than the
+2% you set, and the EA warns you at start-up. $100 is the workable floor on gold - see
+`small_account_study.py` for why $25 is not.
+
+**Honest expectations**: 0.2%/day is good-bot territory. On $100 that is 20 cents a day, about
+$155 after a year of compounding. The percentage is what the bot controls; the dollars are set by
+the balance. Run it on DEMO until you have 50+ trades and the Net line is positive.

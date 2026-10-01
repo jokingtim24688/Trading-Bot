@@ -85,6 +85,7 @@ Each chat adds lines only to its own list, just above its marker line.
 - 2026-10-01: `ea/CandleSenseICT.mq5` - one advanced single-file ICT EA for gold (FVG + Order Block scoring, killzones, liquidity sweep, `OrderCalcProfit` sizing, self-learning setup weights), replacing the multi-file ML pipeline approach; researched from real MIT-licensed gold EAs, see `ea/README.md`.
 - 2026-10-01: `ea/CandleSenseSwing.mq5` - a simpler trend-direction stacking EA (EMA slope, fixed SL/TP in points, up to 60 concurrent trades, total-risk-capped sizing split across all open trades), alongside CandleSenseICT for a different style; both have the Trades/Earned/Lost/Subtotal HUD.
 - 2026-10-01: `ea/CandleSenseSwing.mq5` v2: trades every swing both ways (M1 swing highs/lows instead of the EMA-slope filter), HUD shows swing + win rate.
+- 2026-10-01: `ea/CandleSenseStart.mq5` - small-account ($100) gold EA: trend pullback, 1:2.5 targets, auto-GMT sessions, compounding lots, hard loss protection. Parameters derived from the studies in `ea/*.py`.
 <!-- Chat A: add new lines above this marker -->
 
 ### Chat B (UI & Polish)
