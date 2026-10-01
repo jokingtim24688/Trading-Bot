@@ -1238,6 +1238,11 @@ Each chat writes only in its own section below, and adds new entries just above 
   - Raising the M1 minimum stop to 250 or 400 points still lost in both halves. Not M1-viable.
 - v1.01 prints a warning at start-up and shows one on the HUD when attached below M15.
 
+- Timeframe sweep (same six months, $1,000 / 1:100, fixed $5 risk; full / 1st half / 2nd half):
+  M1 -95% (lost in both halves) | M5 -12% (+35% then -46%) | **M15 +82% (+38% / +43%, 7% DD)** |
+  M30 +30% (+11% / +19%, 12% DD) | H1 +7% (-2% / +8%). M15 is best and the most consistent;
+  M30 is the only other timeframe positive in both halves.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
