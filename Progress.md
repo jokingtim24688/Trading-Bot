@@ -945,6 +945,20 @@ Each chat writes only in its own section below, and adds new entries just above 
   (fewer, higher-quality trades - i.e. fixing CandleSenseICT's killzone GMT offset so the
   selective EA actually runs).
 
+### 2026-10-01: tested "study the chart but still trade a lot" (ea/pattern_study_test.py)
+- User's follow-up idea: have the bot learn from past chart movements but keep trading constantly.
+  Tested it properly - learned 3-candle patterns on the first 60% of the real gold data, traded
+  the unseen 40%, with the demo's 45-point spread and SL150/TP200.
+- The study does tilt the odds (after UUU price rose 63.6%, after DDD only 25.8%), but the
+  out-of-sample win rate was 33.3% over 132 trades - below the 42.9% needed. Still a loss.
+- The useful finding is the selectivity gradient: raising the confidence bar cut trades from 132
+  to 22 (6x fewer) and cut the loss from -4,400 to -500 points (9x smaller). Fewer, better trades
+  lose less - the same direction the frequency study pointed. "Study + trade constantly" doesn't
+  escape the spread; the study has to buy selectivity, not volume.
+- Caveat recorded in the script: 349 candles is 5.8 h of one day, so these specific patterns are
+  mostly noise. The repo already has the right version of this idea done properly -
+  CandleSenseML (XGBoost on 3.3 years, PF 1.15-1.17 on unseen months, ~300 trades/year).
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
