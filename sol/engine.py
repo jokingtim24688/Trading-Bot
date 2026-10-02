@@ -22,6 +22,16 @@ _stop = threading.Event()
 _mode_lock = threading.Lock()
 
 
+# Paper trades pay what a real Jupiter swap of a fresh meme coin costs: ~2 % slippage + fees on the way in and
+# again on the way out, so paper P/L isn't flattered by filling at the exact quoted price.
+PAPER_COST = 0.02
+
+
+def model_is_real() -> bool:
+    """True when the loaded bot learned only from real GeckoTerminal moments (no starter/practice rows)."""
+    return float(model.meta().get("synthetic") or 0) == 0
+
+
 def cfg() -> dict:
     s = settings.load()
     return {"trade_size_sol": float(s["sol_trade_size_sol"]), "max_open": int(s["sol_max_open"]),
@@ -52,8 +62,9 @@ def evaluate(snap: dict, c=None, trade=True) -> dict:
     snap = {**snap, **feeds.rug_facts(snap["mint"])} if "mint_authority" not in snap else snap
     gate = rug.check(snap, c["min_liq_usd"])
     out = {"mint": snap["mint"], "symbol": snap.get("symbol"), "gate": gate, "verdict": "BLOCKED"}
-    if not gate["passed"] or not model.loaded():
-        store.record_seen(snap, gate, None, "BLOCKED" if not gate["passed"] else "NO MODEL")
+    if not gate["passed"] or not model.loaded() or not model_is_real():
+        why = "BLOCKED" if not gate["passed"] else ("NO MODEL" if not model.loaded() else "WAITING FOR REAL DATA")
+        store.record_seen(snap, gate, None, why)
         return out
     t0 = time.perf_counter()
     probs = model.predict(vector(snap))
@@ -93,6 +104,8 @@ def open_trade(snap, px, size, tp, trail, timeout, d):
     tx = None
     if state["mode"] == "live":
         tx = wallet.buy(snap["mint"], size)             # raises = no position recorded
+    else:
+        px = px * (1 + PAPER_COST)                      # paper buys at the real price plus real-world swap costs
     pid = store.open_position(snap["mint"], snap.get("symbol"), state["mode"], size, px, tp, trail, timeout,
                               {"consensus": d["consensus"], "ms": d["ms"]}, tx)
     store.link_votes(snap["mint"], pid)
@@ -108,6 +121,8 @@ def close(pid: int, reason="manual", px=None) -> dict:
         raise ValueError("No open position with that id.")
     px = px or feeds.prices([p["mint"]]).get(p["mint"]) or p["last_px"]
     tx = wallet.sell_all(p["mint"]) if p["mode"] == "live" else None
+    if p["mode"] == "paper":
+        px = px * (1 - PAPER_COST)                      # and sells at the real price minus them
     done = store.close_position(pid, px, reason, tx)
     pct = done.get("pnl_pct") or 0
     settled = store.settle_votes(pid, pct)              # right to buy a winner / right to doubt a loser

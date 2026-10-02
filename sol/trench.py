@@ -358,6 +358,8 @@ def keep_alive():
 
 
 # ---------- quiz training ----------
+REAL_ONLY_FROM = 300          # real moments needed before the bot trains on real coins only (was 2000)
+
 def load_questions(limit=MAX_QUESTIONS, real_only=False):
     X, y, src = [], [], []
     for q in iter_rows(questions_path()):
@@ -380,7 +382,8 @@ def train_quiz(auto: bool = False) -> dict:
     try:
         X, y, src = load_questions()
         real = sum(1 for s in src if s != "starter")
-        if real >= 2000:                                # enough real data: leave the starter set out
+        if real >= REAL_ONLY_FROM:                      # enough real data: leave the starter set out (the engine
+                                                        # only trades with a bot that learned from real coins)
             X, y, src = load_questions(real_only=True)
             real = sum(1 for s in src if s != "starter")
         tr["stage"] = f"{len(y)} questions: splitting the bot and training each model"

@@ -40,6 +40,7 @@ def sol_state():
         "model": {"loaded": model.loaded(), "merged": model.state["merged"] and not model.state["training"],
                   "trained_at": m.get("trained_at"), "n_samples": m.get("n_samples"),
                   "synthetic": m.get("synthetic", 0) > 0.5, "synthetic_share": m.get("synthetic"),
+                  "real_only": model.loaded() and engine.model_is_real(),
                   "device": "cpu", "method": "stacking (split to train, merged into one bot)",
                   "metrics": m.get("metrics"), "members": model.state["members"], "available": model.available(),
                   "problems": model.problems()},

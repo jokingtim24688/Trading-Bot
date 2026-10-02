@@ -137,10 +137,10 @@ def test_pipeline_opens_and_closes_a_paper_trade(monkeypatch):
     out = engine.evaluate(dict(SAFE))
     assert out["verdict"] == "BUY" and out["debate"]["review"]["final"] == "BUY"
     [p] = store.positions("open")
-    assert p["mode"] == "paper" and p["entry_px"] == pytest.approx(0.00102)
+    assert p["mode"] == "paper" and p["entry_px"] == pytest.approx(0.00102 * 1.02)   # real price + swap costs
     assert store.get_debate("MINTSAFE")["consensus"]["verdict"] == "BUY"
     done = engine.close(p["id"], "tp", px=0.00102 * 1.3)
-    assert done["pnl_pct"] == pytest.approx(30.0) and done["status"] == "closed"
+    assert done["pnl_pct"] == pytest.approx((1.3 * 0.98 / 1.02 - 1) * 100) and done["status"] == "closed"
     assert all(b["score"] > 0 and b["last_win"] > 0 for b in store.bots().values())   # all said BUY: all right
     rugged = engine.evaluate({**SAFE, "mint": "RUGGED", "freeze_authority": "Dev"})
     assert rugged["verdict"] == "BLOCKED" and len(store.positions("open")) == 0
@@ -185,8 +185,9 @@ def test_agent_profile_votes_chart_and_activity(monkeypatch):
     engine.close(pos["id"], "tp", px=0.00102 * 1.3)
     done = c.get("/api/sol/agent/lgbm").json()
     a = done["activity"][0]
-    assert a["status"] == "closed" and a["pnl_pct"] == pytest.approx(30.0)
-    assert a["points"] == pytest.approx(30.0 if a["stance"] == "BUY" else -30.0)
+    net = (1.3 * 0.98 / 1.02 - 1) * 100                           # +30 % move minus paper swap costs both ways
+    assert a["status"] == "closed" and a["pnl_pct"] == pytest.approx(net)
+    assert a["points"] == pytest.approx(net if a["stance"] == "BUY" else -net, abs=0.01)   # points are rounded
     assert [m["kind"] for m in done["chart"]["markers"]] == ["buy", "sell"]
     assert done["stats"]["debates"] == 1 and done["stats"]["trades"] == 1
     assert c.get("/api/sol/agent/nobody").status_code == 404
@@ -469,3 +470,16 @@ def test_trench_state_route_carries_the_training_history():
     c = TestClient(server.app)
     d = c.get("/api/trench/state").json()
     assert d["history"] and d["history"][-1]["auc"] == store.training_log(1)[0]["auc"]
+
+
+def test_no_trades_from_a_bot_that_learned_on_practice_data(monkeypatch):
+    from sol import engine, feeds, model, store
+    monkeypatch.setattr(feeds, "prices", lambda mints: {m: 0.00102 for m in mints})
+    monkeypatch.setattr(model, "loaded", lambda: True)
+    monkeypatch.setattr(model, "meta", lambda: {"synthetic": 0.4})
+    monkeypatch.setattr(model, "predict", lambda x: {"xgb": 0.93, "lgbm": 0.9, "rf": 0.95, "bot": 0.94})
+    monkeypatch.setitem(engine.state, "auto_trade", True)
+    monkeypatch.setitem(engine.state, "mode", "paper")
+    out = engine.evaluate(dict(SAFE))
+    assert out["verdict"] == "BLOCKED" and store.positions("open") == []
+    assert store.feed()[0]["verdict"] == "WAITING FOR REAL DATA"
