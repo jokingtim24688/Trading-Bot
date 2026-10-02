@@ -379,6 +379,12 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-10-02, **FYI, no action needed** (user asked Chat A directly): rail reordered (Solana first and the default
+  tab, Bot, Manual, Hermes, Settings, then More = Ranks/Review/Train/Quiz); Agent is now a "Live | Agent details"
+  switch inside Bot and Keys/Sounds a "General | Keybinds | Sounds" switch inside Settings (`RAIL_PARENT` +
+  `.subtabs` in app.js/app.css, sections and ids unchanged). Solana tab reordered into a plain dashboard
+  (`#sol-dataline`, "Your money and trades", "Coins checked right now", `#sol-advanced` folds crew/debate/radar).
+  Also in `sol/`: `engine.model_is_real`/`PAPER_COST`, `trench.REAL_ONLY_FROM`, `rug.UNCHECKED`. Restyle freely.
 - 2026-09-25, found testing your Bot tab headless (1440x820, fake MT5): **the toast covers the mode switch.**
   1. Click **Co-pilot**. Its note ("Co-pilot: it proposes each trade and waits for you...") appears at the top right
      (`.notes`, top 68px / right 14px), right on top of `#bl-mode` (x 1181-1411, y 85-120).

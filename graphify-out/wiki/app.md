@@ -303,3 +303,10 @@
 - Screenshots: `tweet-radar.png`/`profile-monitor.png` style verification repeated for `rail-collapsed.png`,
   `rail-expanded.png` (and the bug-fixed re-shoot), `sol-ctl-simple.png`/`sol-ctl-advanced.png`, `solx-collapsed.png`/
   `solx-expanded.png`, `qt-history-chart.png`/`qt-history-tooltip.png`.
+
+
+## Rail and merged tabs (2026-10-02, Chat A on the user's request)
+- Rail order: Solana (default on open), Bot, Manual, Hermes, Settings, then More (Ranks, Review, Train, Quiz).
+- Bot tab top switch `Live | Agent details` (`.subtabs`, `data-goto="bot"|"agent"`); Settings top switch
+  `General | Keybinds | Sounds`. The `agent`, `keys`, `sounds` sections are unchanged; `RAIL_PARENT` in `showTab()`
+  lights the parent rail button and `.subtabs [data-goto]` gets `.on`. `#tab-bot.active` is now a flex column.

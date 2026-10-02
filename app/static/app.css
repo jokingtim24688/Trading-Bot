@@ -1788,3 +1788,20 @@ body.on-bot .notes { top: var(--notes-top, 170px); }
 .sol-adv[open] summary { margin-bottom: 8px; }
 .sol-adv-pop { max-width: 56ch; }
 .sol-adv-pop p { margin: 0 0 8px; }
+
+/* ---------- view switches (Chat A, 2026-10-02): Bot = Live | Agent details; Settings = General | Keybinds | Sounds ---------- */
+.subtabs { width: max-content; grid-template-columns: repeat(2, max-content); margin: 0 0 12px; }
+.subtabs-3 { grid-template-columns: repeat(3, max-content); }
+.subtabs .seg-opt { padding: 6px 16px; font-weight: 600; }
+#tab-bot.active { display: flex; flex-direction: column; }
+#tab-bot .bot-live { flex: 1 1 0; height: auto; }
+
+/* ---------- Solana dashboard (Chat A, 2026-10-02): controls, your money, coins checked; the crew/debate/radar fold away ---------- */
+.sol-dataline { margin: 6px 0 0; max-width: 78ch; color: var(--text); line-height: 1.45; }
+.sol-dataline.warn { color: var(--warn); }
+.sol-advanced > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 10px; padding: 2px 0; }
+.sol-advanced > summary::-webkit-details-marker { display: none; }
+.sol-advanced > summary::before { content: "▸"; color: var(--muted); transition: transform .2s var(--ease-out); }
+.sol-advanced[open] > summary::before { transform: rotate(90deg); }
+.sol-advanced[open] > :not(summary) { margin-top: 14px; }
+.sol-feed-wrap { max-height: 380px; }

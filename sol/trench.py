@@ -323,7 +323,13 @@ def _maybe_retrain(auto_gap: int):
     if tr["running"] or model.state["training"]:
         return
     real = dataset_info()["real"]
-    if real < 60 or real - tr.get("last_real_at_train", 0) < max(50, auto_gap):
+    # a bot that learned partly on the starter set may not trade (engine.model_is_real): retrain on real coins only
+    # as soon as there are enough of them, without waiting for the usual gap (once per real count, not every loop)
+    stale = (model.loaded() and float(model.meta().get("synthetic") or 0) > 0 and real >= REAL_ONLY_FROM
+             and tr.get("stale_retry_at") != real)
+    if stale:
+        tr["stale_retry_at"] = real
+    elif real < 60 or real - tr.get("last_real_at_train", 0) < max(50, auto_gap):
         return
     try:
         train_quiz(auto=True)

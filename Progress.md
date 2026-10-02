@@ -1352,6 +1352,21 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Spot, unlevered, 0.3%/swap: SMA50 filter beat holding on SOL/BTC/ETH over the full period and cut the
   worst drop from -96% to -70% on SOL; second halves much weaker. $250 -> ~$5/week at 100%/yr.
 
+### 2026-10-02: simpler app - Solana first, Bot+Agent and Settings+Keys+Sounds merged, real data only
+- User: Keys and Sounds into Settings, Bot and Agent combined, More below Settings, Solana at the top, a basic
+  Solana dashboard, and "make sure they are actually trading on real coin data".
+- Rail: Solana, Bot, Manual, Hermes, Settings, then More (Ranks, Review, Train, Quiz). The app opens on Solana.
+  Bot tab = "Live | Agent details" switch; Settings = "General | Keybinds | Sounds" switch (`RAIL_PARENT` in
+  app.js keeps the rail lit; the old tabs still exist, so every route/handler/data-goto keeps working).
+- Solana tab: controls + one plain sentence about the data, then "Your money and trades", then "Coins checked
+  right now (real, live from GeckoTerminal)"; crew avatars, debate and tweet radar fold into "Advanced".
+- Real data: the engine won't trade with a bot that learned partly on the synthetic starter set
+  (`engine.model_is_real()`, feed verdict "WAITING FOR REAL DATA"); training goes real-only from 300 real
+  moments (was 2000) and retrains at once when the loaded bot isn't real-only; paper trades pay 2% swap costs
+  each way (`PAPER_COST`); a coin RugCheck couldn't answer for says so instead of listing five rules.
+- Screenshot made against GeckoTerminal answers captured live (this sandbox can't reach it directly); the fake
+  MT5 has no candles, so the Bot chart is empty only here. 85 tests pass.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

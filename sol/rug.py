@@ -10,10 +10,24 @@ RULES = (
 )
 
 
+UNCHECKED = "couldn't check it: RugCheck had no answer (blocked to be safe)"
+
+
+def need_liq(snap: dict, min_liq_usd: float) -> bool:
+    return snap.get("liq_usd") is not None and snap["liq_usd"] >= min_liq_usd
+
+
 def check(snap: dict, min_liq_usd: float = 5000) -> dict:
     """snap keys used: mint_authority, freeze_authority (None/"" = revoked), lp_locked_pct, top10_pct, liq_usd,
     dev_pct. A key that is missing counts as a fail (we don't buy what we can't check)."""
     why = []
+    if not any(k in snap for k in ("mint_authority", "freeze_authority", "lp_locked_pct", "top10_pct", "dev_pct")):
+        # RugCheck gave nothing back (offline, rate-limited or the coin is seconds old): say so, instead of listing
+        # five rules as if the coin had broken them
+        why.append(UNCHECKED)
+        if not need_liq(snap, min_liq_usd):
+            why.append(RULES[4][1])
+        return {"passed": False, "why": why}
 
     def need(key):
         return key in snap and snap[key] is not None

@@ -147,3 +147,14 @@ The user's ask: "give the trenchers more data and improve the training too see r
 - Tests (`tests/test_sol.py`, 6 new): the four-list download with dedup, the configurable pool cap (route and
   function both), `training_log` round-tripping across two trainings, `_maybe_retrain`'s gap gate, the
   `/api/sol/dataset` route no longer hardcoding 24, and `history` riding in `/api/trench/state`. 85 passed.
+
+
+## Real data only (2026-10-02, Chat A)
+- `engine.model_is_real()`: the loaded bot's `meta.synthetic` is 0. `evaluate()` records "WAITING FOR REAL DATA" and
+  never trades otherwise. `/api/sol/state` -> `model.real_only`.
+- `trench.REAL_ONLY_FROM = 300`: from 300 real questions training leaves the starter set out (was 2000).
+  `_maybe_retrain` retrains at once (once per real count) when the loaded bot still has starter rows in it.
+- `engine.PAPER_COST = 0.02`: paper buys at the real price +2%, sells at -2% (slippage + fees of a real swap).
+- `rug.UNCHECKED`: when RugCheck returned nothing, the reason says so (plus "liquidity too thin" if it is).
+- UI: the Solana tab is controls + `#sol-dataline` (one sentence: real data? may the AI trade?) + "Your money and
+  trades" + "Coins checked right now"; `#sol-advanced` folds the crew, debate and tweet radar.

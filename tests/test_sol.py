@@ -18,8 +18,12 @@ def test_rug_filter_six_rules_and_fails_closed():
                      ("top10_pct", 55), ("liq_usd", 900), ("dev_pct", 12)):
         r = rug.check({**SAFE, key: bad})
         assert not r["passed"] and len(r["why"]) == 1, key
-    r = rug.check({"mint": "X", "liq_usd": 50000})              # nothing checkable: every unknown rule fails
-    assert not r["passed"] and len(r["why"]) == 5
+    r = rug.check({"mint": "X", "liq_usd": 50000})              # nothing checkable: blocked, and it says why
+    assert not r["passed"] and r["why"] == [rug.UNCHECKED]
+    r = rug.check({"mint": "X", "liq_usd": 900})
+    assert not r["passed"] and r["why"] == [rug.UNCHECKED, rug.RULES[4][1]]
+    r = rug.check({"mint": "X", "liq_usd": 50000, "mint_authority": None})   # partial data: unknown rules still fail
+    assert not r["passed"] and len(r["why"]) == 4
 
 
 def test_debate_is_bounded_and_immediate():

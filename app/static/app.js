@@ -1,6 +1,6 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const state = { settings: null, symbol: null, mode: "paper", tab: "bot", chart: null, series: null, lastBid: null, digits: 2, equityShown: false };
+const state = { settings: null, symbol: null, mode: "paper", tab: "sol", chart: null, series: null, lastBid: null, digits: 2, equityShown: false };
 
 async function api(path, opts = {}) {
   if (opts.method && opts.method !== "GET") posCache.at = 0;       // a close/order/edit: the next positions read is fresh
@@ -105,7 +105,9 @@ function setNum(el, v, format, { flashIt = true } = {}) {
    Agent, Hermes, Settings) stay put; the other six (Ranks, Review, Train, Quiz, Keys, Sounds) fold under one
    "More" toggle, collapsed by default. Nothing is removed or re-routed - showTab() still does the same thing for
    all twelve - a link or shortcut into a folded tab just opens the group first so the button exists to activate. */
-const RAIL_MORE_TABS = new Set(["ranks", "review", "train", "quiz", "keys", "sounds"]);
+const RAIL_MORE_TABS = new Set(["ranks", "review", "train", "quiz"]);
+// Views that live inside another rail button: Agent details is part of Bot, Keybinds and Sounds are part of Settings.
+const RAIL_PARENT = { agent: "bot", keys: "settings", sounds: "settings" };
 function railMoreOpen(open) {
   const wrap = $("#rail-more"), btn = $("#rail-more-btn"); if (!wrap || !btn) return;
   wrap.classList.toggle("open", open); btn.setAttribute("aria-expanded", String(open));
@@ -132,7 +134,8 @@ function showTab(name) {
   state.tab = name;
   if (RAIL_MORE_TABS.has(name)) railMoreOpen(true);      // a jump into a folded tab opens the group first
   document.body.classList.toggle("on-bot", name === "bot"); placeNotes();
-  $$(".rail-btn[data-tab]").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  $$(".rail-btn[data-tab]").forEach(b => b.classList.toggle("active", b.dataset.tab === (RAIL_PARENT[name] || name)));
+  $$(".subtabs [data-goto]").forEach(b => b.classList.toggle("on", b.dataset.goto === name));
   $$(".tab").forEach(t => t.classList.toggle("active", t.id === `tab-${name}`));
   moveRailInd();
   if (name === "bot" && state.chart && state.chartAuto && !state.autoT) realignChart(true);
@@ -3760,6 +3763,12 @@ function renderSolCtl() {
   const st = sol.state || {}, sc = st.scanner || {}, m = st.model || {};
   const ago = sc.last_scan ? Math.max(0, Math.round(Date.now() / 1000 - sc.last_scan)) : null;
   $("#sol-status").textContent = sc.error ? `Scanner stopped: ${sc.error}` : `${sc.running ? "Scanning" : "Scanner off"} · ${(sc.scanned ?? 0).toLocaleString()} checked · ${(sc.passed ?? 0).toLocaleString()} passed the rug filter · ${(sc.blocked ?? 0).toLocaleString()} blocked${ago != null ? ` · last scan ${ago < 90 ? ago + " s" : Math.round(ago / 60) + " min"} ago` : ""}`;
+  // one plain sentence: is this real data, and is the AI allowed to trade with it?
+  const realN = (st.dataset || {}).real ?? 0, dl = $("#sol-dataline");
+  const dline = !m.loaded ? [`Real coins and live prices from GeckoTerminal. The AI hasn't been trained yet: ${realN.toLocaleString()} real coin moments collected so far. It won't trade until it has learned from real coins.`, true]
+    : m.real_only ? [`Real coins and live prices from GeckoTerminal. The AI learned only from ${(m.n_samples ?? realN).toLocaleString()} real coin moments, no practice data.${st.mode === "live" ? "" : " Paper trades pay 2% swap costs in and out, like a real Jupiter swap."}`, false]
+    : [`Real coins and live prices, but the AI was trained partly on practice data, so it won't trade yet. Once it has 300 real coin moments (${realN.toLocaleString()} so far) it retrains on real coins only and starts.`, true];
+  dl.textContent = dline[0]; dl.classList.toggle("warn", dline[1]);
   const scan = $("#sol-scan"); scan.textContent = sc.running ? "Stop scanner" : "Start scanner"; scan.classList.toggle("primary", !sc.running); scan.classList.toggle("danger-outline", !!sc.running);
   $$("#sol-mode .seg-opt").forEach(b => { const on = b.dataset.mode === (st.mode || "paper"); b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); });
   $("#tab-sol").classList.toggle("is-live", st.mode === "live");
@@ -3778,7 +3787,7 @@ function renderSolCtl() {
   const w = st.wallet || {}, money = st.mode === "live" ? (w.key_loaded ? `<span class="sol-chip" title="${esc(w.pubkey || "")}">Wallet ${solShort(w.pubkey)} · ${w.sol_balance != null ? (+w.sol_balance).toFixed(3) + " SOL" : "balance —"}</span>` : `<span class="sol-chip warn">No wallet key in .env</span>`)
     : `<span class="sol-chip">Paper balance ${st.paper?.balance_sol != null ? (+st.paper.balance_sol).toFixed(3) : "—"} SOL</span>`;
   const c = st.config || {};
-  setHTML($("#sol-chips"), `${model}${money}<span class="sol-chip" title="Exits: take profit, trailing stop, timeout">TP +${c.tp_pct ?? 30}% · trail −${c.trail_pct ?? 10}% · ${c.timeout_min ?? 20} min · ${c.trade_size_sol ?? "?"} SOL a trade</span><span class="sol-apis">${dot("dexscreener", "DexScreener")}${dot("rugcheck", "RugCheck")}${dot("helius", "Helius")}${dot("jupiter", "Jupiter")}</span>`);
+  setHTML($("#sol-chips"), `${m.loaded ? model : ""}${money}<span class="sol-chip" title="Exits: take profit, trailing stop, timeout">TP +${c.tp_pct ?? 30}% · trail −${c.trail_pct ?? 10}% · ${c.timeout_min ?? 20} min · ${c.trade_size_sol ?? "?"} SOL a trade</span><span class="sol-apis">${dot("dexscreener", "DexScreener")}${dot("rugcheck", "RugCheck")}${dot("helius", "Helius")}${dot("jupiter", "Jupiter")}</span>`);
 }
 $("#sol-scan").onclick = async () => {
   const run = !sol.state?.scanner?.running;
@@ -3820,7 +3829,7 @@ function renderSolFeed() {
   setHTML(tb, rows.map(r => {
     const gate = r.status === "passed" ? `<span class="sol-gate ok">✓ Passed</span>` : r.status === "blocked" ? `<span class="sol-gate bad">✕ Blocked</span>` : `<span class="sol-gate">! Error</span>`;
     const why = r.status === "passed" ? (r.debate ? `<span class="sol-verdict ${r.debate.verdict === "BUY" ? "buy" : ""}">${r.debate.verdict === "BUY" ? "BUY" : "PASS"} after debate · ${Math.round((r.debate.consensus ?? 0) * 100)}%</span>` : r.ensemble ? `<span class="sol-verdict ${r.ensemble.signal === "BUY" ? "buy" : ""}">${r.ensemble.signal} · ${Math.round(r.ensemble.ensemble_score * 100)}%</span>` : `<span class="muted">waiting for the model</span>`)
-      : esc((r.reasons || []).join(" · ") || "—");
+      : (r.reasons || []).length ? `<span title="${esc(r.reasons.join("\n"))}">${esc(r.reasons[0])}${r.reasons.length > 1 ? ` <span class="muted">+${r.reasons.length - 1} more</span>` : ""}</span>` : "—";
     return `<tr data-mint="${esc(r.mint)}" class="${r.mint === sol.sel ? "sel" : ""}${r.status === "passed" ? " pick" : ""}"><td>${solTime(r.seen)}</td><td class="sol-tok" title="${esc(r.name || "")} ${esc(r.mint)}"><b>${esc(r.symbol || "?")}</b><span class="muted">${solShort(r.mint)}</span></td>
       <td>${solUsd(r.liquidity_usd)}</td><td>${solAge(r.age_min)}</td><td>${r.buys_5m ?? "—"}/${r.sells_5m ?? "—"}</td><td>${gate}</td><td class="sol-why">${why}</td></tr>`;
   }).join("") || `<tr><td colspan="7" class="muted sol-empty">${sol.feed.length ? "Nothing in this filter." : "Start the scanner: every new Solana coin shows up here, and only the ones that pass all six rug rules reach the models."}</td></tr>`);
@@ -3978,7 +3987,7 @@ moveRailInd(); document.fonts?.ready.then(moveRailInd);
 const seen = () => !document.hidden;
 let bgTick = 0;
 pollStatus().then(() => { pollAccount(); loadPositions(); brainStatus(); pollBot(); });
-openBot(); document.body.classList.add("on-bot"); requestAnimationFrame(placeNotes); addEventListener("resize", placeNotes);
+openBot(); showTab("sol"); requestAnimationFrame(placeNotes); addEventListener("resize", placeNotes);   // the app opens on the Solana dashboard
 setInterval(() => { bgTick++; if (seen() || bgTick % 2 === 0) pollBot(); }, 2000);            // hidden: every 4 s
 loadProgress(); setInterval(() => { if (seen() || bgTick % 6 === 0) loadProgress(); }, 5000);   // hidden: stage moves still get noticed
 setInterval(() => seen() && pollStatus(), 2000);
