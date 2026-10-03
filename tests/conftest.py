@@ -33,7 +33,8 @@ def sandbox(tmp_path, monkeypatch):
             (server, "REPLAY_CONTROL", data / "replay_control.json"), (server, "REPLAY_STATE", data / "replay_state.json"),
             (server, "BACKTEST_REPORT", data / "backtest.json"), (server, "BACKTEST_STATE", data / "backtest_state.json"),
             (server, "SIM_CONTROL", data / "sim_control.json"), (server, "SIM_STATE", data / "sim_state.json"),
-            (server, "SIM_DB", data / "sim.db")]:
+            (server, "SIM_DB", data / "sim.db"), (server, "REPLAY_DB", data / "replay.db"),
+            (server, "REPLAY_BARS", data / "replay_M1.parquet")]:
         monkeypatch.setattr(mod, name, value)
     for job in jobs.jobs.jobs.values():
         monkeypatch.setattr(job, "log_path", tmp_path / f"{job.name}.log")

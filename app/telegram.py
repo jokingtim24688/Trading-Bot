@@ -9,6 +9,7 @@ background queue, so a slow or offline connection never holds up trading. Only t
 token stays in data/settings.json.
 """
 import queue
+import re
 import threading
 import time
 
@@ -220,7 +221,8 @@ def _start():
 
 # ---------- commands: /prof /loss /total ----------
 COMMANDS = {"/prof": "all the money earned (winning trades)", "/loss": "all the money lost (losing trades)",
-            "/total": "profit and loss combined", "/help": "this list"}
+            "/total": "profit and loss combined", "/commands": "every command you have and what it does",
+            "/help": "this list"}
 _cmd = {"thread": None, "offset": 0, "answered": 0, "last": "", "error": ""}
 
 
@@ -352,6 +354,46 @@ def keyboard(s: dict | None = None) -> dict | None:
             "resize_keyboard": True, "is_persistent": True}
 
 
+def all_commands(s: dict | None = None) -> dict[str, str]:
+    """Every command the chat answers right now -> what it does: built in, added by modules, and yours. Built from
+    the saved settings each time, so a command made in Settings shows up at once."""
+    s = s if s is not None else load()
+    out = {c: d for c, d in COMMANDS.items()}
+    out.update({c: d for c, (d, _) in _extra.items()})
+    for c, v in custom_commands(s).items():
+        out[c] = v.get("about") or (ACTIONS[v["action"]][0] if v.get("action") in ACTIONS else f'replies "{v.get("reply", "")}"')
+    return out
+
+
+def commands_text() -> str:
+    s = load()
+    mine = custom_commands(s)
+    built = {c: d for c, d in all_commands(s).items() if c not in mine}
+    lines = ["📖 Your commands", "", "Built in:"] + [f"{c} — {d}" for c, d in built.items()]
+    lines += ["", "Made by you:"] + ([f"{c} — {d}" for c, d in all_commands(s).items() if c in mine] or
+                                     ["none yet (Settings > Phone alerts > Make or change a command)"])
+    kb = [b for b in (s.get("telegram_keyboard") or []) if isinstance(b, str)]
+    if kb:
+        lines += ["", "Buttons: " + "  ".join(kb)]
+    return "\n".join(lines)
+
+
+def sync_menu(s: dict | None = None) -> bool:
+    """Tell Telegram the current list, so the "/" menu in the chat matches (called on start and after every change)."""
+    s = s if s is not None else load()
+    token = s.get("telegram_token", "")
+    if not (token and ":" in token):
+        return False
+    cmds = [{"command": c[1:], "description": d[:256] or c} for c, d in all_commands(s).items()
+            if c != "/start" and re.fullmatch(r"/[a-z0-9_]{1,32}", c)]
+    try:
+        _call(token, "setMyCommands", commands=cmds[:100])
+        return True
+    except ValueError as e:
+        _cmd["error"] = f"menu: {e}"
+        return False
+
+
 def command_reply(text: str):
     """A reply for a command from your chat: a string, a {"text", "html"} card, or None (not a command we know)."""
     raw = (text or "").strip()
@@ -373,6 +415,8 @@ def command_reply(text: str):
         except Exception as e:                          # noqa: BLE001
             return f"⚠ {cmd} failed: {type(e).__name__}: {e}"
 
+    if cmd == "/commands":
+        return commands_text()
     if cmd in ("/help", "/start"):
         allcmds = {**COMMANDS, **{c: d for c, (d, _) in _extra.items()},
                    **{c: v.get("about") or (ACTIONS[v["action"]][0] if v.get("action") in ACTIONS else "your own reply")
@@ -418,6 +462,7 @@ def _commands_loop():
 
 
 def start_commands():
+    threading.Thread(target=sync_menu, name="telegram-menu", daemon=True).start()
     if _cmd["thread"] is None or not _cmd["thread"].is_alive():
         _cmd["thread"] = threading.Thread(target=_commands_loop, name="telegram-commands", daemon=True)
         _cmd["thread"].start()

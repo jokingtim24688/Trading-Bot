@@ -24,3 +24,22 @@ def test_sim_reads_its_own_ledger(monkeypatch):
     ledger.open_trade("replay", "XAUUSD", "sell", 0.1, 2655, 2660, 2645)
     got = server.sim_trades()
     assert [t["side"] for t in got["trades_open"]] == ["sell"] and got["trades_closed"][0]["pnl"] == 100.0
+
+
+def test_replay_rewinds_one_week_to_an_open_market():
+    from app.server import rewind_start
+    day, now = 86400, 1_700_000_000
+    week_ago = now - 7 * day
+    times = list(range(week_ago - 3 * day, week_ago - 2 * day, 60))     # market only open 2-3 days before "a week ago"
+    got = rewind_start(times, now)
+    assert got is not None and abs(got - (week_ago - 2 * day)) <= 300
+    on = list(range(week_ago - day, week_ago + day, 60))                # open at that moment: start right there
+    assert abs(rewind_start(on, now) - week_ago) <= 60
+    assert rewind_start([], now) is None and rewind_start([now], now) is None
+
+
+def test_replay_has_no_speed_control(client):
+    from app import server
+    r = client.post("/api/replay/control", json={"speed": 500, "paused": True}).json()
+    assert r.get("paused") is True and r.get("speed") != 500
+    assert json.loads(server.REPLAY_CONTROL.read_text()).get("speed") != 500

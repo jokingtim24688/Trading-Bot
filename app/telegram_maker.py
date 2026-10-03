@@ -11,7 +11,7 @@ import re
 
 from . import settings, telegram
 
-BUILTIN = {"/help", "/start", "/prof", "/loss", "/total"}
+BUILTIN = {"/help", "/start", "/prof", "/loss", "/total", "/commands"}
 # which words point at which action (first match wins, so the specific ones come first)
 ACTION_WORDS = [
     ("flatten", r"close (all|every|everything|my trades|them)|flatten|panic|kill"),
@@ -229,5 +229,6 @@ def apply(changes: list[dict]) -> dict:
         elif typ == "batch":
             upd["telegram_batch_over"] = max(1, min(50, int(ch.get("over") or 3)))
     upd.update(telegram_custom_commands=cmds, telegram_keyboard=kb[:12], telegram_layouts=lay)
-    settings.save(upd)
+    st = settings.save(upd)
+    telegram.sync_menu(st)                      # the chat's "/" menu and /commands show the new list right away
     return telegram.commands_status()

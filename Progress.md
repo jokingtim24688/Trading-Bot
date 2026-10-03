@@ -1380,6 +1380,16 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Telegram: alert layouts, start price on close alerts, batching -> HTML card, your own commands from 9 actions
   (flatten asks for yes), chat buttons; command maker understands plain words offline with a preview.
 
+### 2026-10-03: Telegram /commands; Replay = the real market rewound one week
+- User: a /commands command listing every command and what it does, updated when a new one is made; Replay should
+  be just the real market rewound a week (when it was open), no speed controls, the bot trades and doesn't learn.
+- /commands: built-ins + your own, each with what it does; the Telegram "/" menu is synced (`setMyCommands`) at start
+  and whenever the command maker saves.
+- Replay: one button "Rewind one week". Fetches MT5 candles, starts at the same moment 7 days ago (a day earlier
+  each time the market was closed), real speed (1 candle/min), pause/stop only, own `data/replay.db` (no learning,
+  not in your record). Live card and Hub follow it. Tests 65 -> 67. Checked on a copy: today (Sat) it rewound to
+  Fri 2026-09-25 07:10 and the bot is trading it.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

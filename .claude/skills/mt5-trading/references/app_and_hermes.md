@@ -86,8 +86,11 @@ stake the trade would need at 1:100; lot size still from the real margin). At go
 - Train tab → Add years of extra history: downloads free XAUUSD M1 candles back to 2009 (HistData) and merges them
   with the MT5 download for training and replay (MT5 candles win on overlap). 5 years ≈ 1.8M candles, ~2.5 GB RAM to train.
 - Bot card "Needs X%": in practice mode this is the top-10% cutoff of recent readings, not the Demo/Real threshold.
-- Market tab → Replay history: runs the bot over downloaded M1 history (model's unseen period or the most recent days) at
-  1-600 candles/s with pause/stop. Trades are mode "replay": they feed stats and learning, not the Paper → Demo gate.
+- Bot tab → Replay: the real market rewound exactly one week (stepped back to the last open day if it was closed),
+  played at real speed (one candle a minute), no period or speed controls, only pause/stop. The bot trades it with pretend
+  money into `data/replay.db`: it doesn't learn from it and it isn't in your real record. Sim (next to it) plays the
+  model's unseen history at one candle a second.
+- Telegram /commands: every command (built-in and yours) and what it does; the "/" menu in Telegram is kept in sync.
 - The Bot trade card and the Agent log show every candle's buy/sell confidence and decision (or skip reason).
 
 ## Quiz school (Quiz tab)

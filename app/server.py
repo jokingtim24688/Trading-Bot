@@ -693,27 +693,77 @@ def _replay_control(update: dict | None = None) -> dict:
     return ctl
 
 
+REPLAY_DB = ROOT / "data" / "replay.db"           # Replay's own trade record: it never feeds the bot's learning
+REPLAY_BARS = ROOT / "data" / "replay_M1.parquet"   # the real candles it plays (fetched from MT5 at each start)
+
+
+def server_now() -> int:
+    """Broker server time now, as the epoch the candles use (server time = New York time + 7 h, like agent/pro.py)."""
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+    ny = datetime.now(ZoneInfo("America/New_York")).replace(tzinfo=None) + timedelta(hours=7)
+    return int(ny.replace(tzinfo=timezone.utc).timestamp())
+
+
+def rewind_start(times: list[int], now: int, days: int = 7) -> int | None:
+    """The moment exactly `days` ago; if the market was closed then (weekend, daily break, holiday), the same clock time
+    one day earlier, and so on, until there are candles around it. None when the data has no open market at all."""
+    import bisect
+    if not times:
+        return None
+    t = now - days * 86400
+    for _ in range(10):
+        k = bisect.bisect_left(times, t)                 # the first candle at or just after that moment
+        if k < len(times) and times[k] <= t + 300:
+            return times[k]
+        if k and times[k - 1] >= t - 300:               # the data ends a few minutes short of it
+            return times[k - 1]
+        t -= 86400
+    return None
+
+
 @app.post("/api/replay/start")
 def replay_start(body: dict = Body(default={})):
+    """Replay = the real market rewound one week, played at real speed (one candle a minute, no speed controls). The
+    bot trades it exactly as live, with pretend money, into data/replay.db, so nothing it does there is learned from."""
+    import pandas as pd
     s = settings.load()
-    data = ROOT / "data" / f"{s['symbol']}_M1.parquet"
-    if not data.exists() and not (ROOT / "data" / f"{s['symbol']}_M1_history.parquet").exists():
-        raise HTTPException(400, "No M1 history yet. Train tab -> Fetch data or Download history first.")
-    if not mt5_service.model_exists(s["symbol"]):
+    sym = s["symbol"]
+    if not mt5_service.model_exists(sym):
         raise HTTPException(400, "Train a model first (Train tab).")
     if jobs.jobs["replay"].running:
-        raise HTTPException(409, "A replay is already running.")
-    args = _replay_args(s, data, body.get("days", 30), body.get("from", "test"))
+        raise HTTPException(409, "The replay is already running.")
+    try:                                              # ~2 weeks of real candles: the week to play + warm-up before it
+        r = mt5_service.m1_bars(sym, 20000)
+        bars = pd.DataFrame(r["bars"])
+    except Exception:                                 # noqa: BLE001 - MT5 offline: use the last download if it reaches
+        bars = pd.DataFrame()
+    if len(bars):
+        bars = pd.DataFrame({"time": pd.to_datetime(bars["time"], unit="s", utc=True), "open": bars["open"],
+                             "high": bars["high"], "low": bars["low"], "close": bars["close"],
+                             "tick_volume": bars["volume"], "spread": bars["spread"]})
+    else:
+        data = ROOT / "data" / f"{sym}_M1.parquet"
+        if not data.exists():
+            raise HTTPException(400, "Can't reach MT5 for last week's candles, and nothing is downloaded. Open MT5 and try again.")
+        bars = pd.read_parquet(data).tail(20000)
+        bars["time"] = pd.to_datetime(bars["time"], utc=True)
+    times = [int(t.timestamp()) for t in bars["time"]]
+    start = rewind_start(times, server_now())
+    if start is None or start - times[0] < 3000 * 60:
+        raise HTTPException(400, "Not enough real candles from a week ago yet. Fetch data (Train tab) and try again.")
+    REPLAY_BARS.parent.mkdir(parents=True, exist_ok=True)
+    bars.to_parquet(REPLAY_BARS)
+    when = pd.Timestamp(start, unit="s").strftime("%Y-%m-%dT%H:%M:%S")
+    args = _replay_args(s, REPLAY_BARS, 0, when) + ["--fresh", "--db", str(REPLAY_DB)]
     if s.get("practice", True):
         args.append("--practice")
     if not s.get("use_learned", True):
         args.append("--no-learned")
-    if body.get("fresh"):
-        args.append("--fresh")
     REPLAY_STATE.unlink(missing_ok=True)
-    _replay_control({"speed": body.get("speed", s.get("replay_speed", 20)), "paused": False, "stop": False})
+    _replay_control({"speed": 1 / 60, "paused": False, "stop": False})     # real time: one candle a minute
     jobs.start("replay", args)
-    return {"started": True}
+    return {"started": True, "from": when}
 
 
 def _replay_args(s: dict, data: Path, days, start) -> list[str]:
@@ -839,13 +889,15 @@ def sim_control(body: dict = Body(default={})):
     return _sim_control(body)
 
 
-def sim_trades(limit: int = 50) -> dict:
-    """Open and closed trades from the Sim's own ledger file, read directly (the app's ledger stays untouched)."""
+def sim_trades(limit: int = 50, db: Path | None = None) -> dict:
+    """Open and closed trades from the Sim's (or Replay's) own ledger file, read directly (the app's ledger stays
+    untouched)."""
     import sqlite3
-    if not SIM_DB.exists():
+    db = db or SIM_DB
+    if not db.exists():
         return {"trades_open": [], "trades_closed": []}
     try:
-        c = sqlite3.connect(SIM_DB, timeout=5)
+        c = sqlite3.connect(db, timeout=5)
         c.row_factory = sqlite3.Row
         rows = [dict(r) for r in c.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (int(limit) + 50,))]
         c.close()
@@ -872,9 +924,8 @@ def sim_state():
 
 @app.post("/api/replay/control")
 def replay_control(body: dict = Body(default={})):
-    if "speed" in body:
-        settings.save({"replay_speed": body["speed"]})
-    return _replay_control(body)
+    """Pause / resume / stop. The speed is fixed at real time (the market rewound, not fast-forwarded)."""
+    return _replay_control({k: v for k, v in body.items() if k in ("paused", "stop")})
 
 
 @app.get("/api/replay/state")
@@ -886,6 +937,7 @@ def replay_state():
     st["job_running"] = jobs.jobs["replay"].running
     st["control"] = _replay_control()
     st["log"] = jobs.jobs["replay"].tail(8)
+    st.update(sim_trades(300, REPLAY_DB))
     return st
 
 

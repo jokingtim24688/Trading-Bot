@@ -123,9 +123,9 @@
                   <svg viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="3.2"/></svg>Sim</button></div>
             </div>
             <div class="replay-bar hidden" id="replay-bar">
-              <p class="rp-what small" id="rp-what" hidden>Sim: real gold history the model never trained on, played forward like a live market. The bot trades it exactly as if it were running, with pretend money. Its trades are kept apart from your real record.</p>
+              <p class="rp-what small" id="rp-what">Sim: real gold history the model never trained on, played forward like a live market. The bot trades it exactly as if it were running, with pretend money. Its trades are kept apart from your real record.</p>
               <div class="row gap wrap">
-                <label class="inline">Period <select id="rp-days">
+                <label class="inline" id="rp-days-box">Period <select id="rp-days">
                   <optgroup label="Model's unseen data (honest results)">
                     <option value="test|1">1 day</option><option value="test|7">7 days</option><option value="test|30">30 days</option>
                     <option value="test|90">90 days</option><option value="test|365">1 year</option>
@@ -136,16 +136,11 @@
                   <optgroup label="Everything downloaded">
                     <option value="all|0">All history (includes training data, looks better than live)</option></optgroup>
                 </select></label>
-                <button class="btn primary xs" id="rp-start">Start replay</button>
+                <button class="btn primary xs" id="rp-start">Rewind one week</button>
                 <button class="btn xs" id="rp-pause">Pause</button>
                 <button class="btn xs" id="rp-stop">Stop</button>
               </div>
-              <div class="chips rp-presets" id="rp-presets"><span class="muted small">Speed</span>
-                <button class="chip" data-speed="1">1/s</button><button class="chip" data-speed="10">10/s</button>
-                <button class="chip" data-speed="60">60/s</button><button class="chip" data-speed="600">600/s</button>
-                <button class="chip" data-speed="2000">2000/s</button><button class="chip" data-speed="0">Max</button></div>
-              <label class="slider-label rp-speed">Custom <span id="rp-speed-txt" class="num"></span><input id="rp-speed" type="range" min="0" max="100" step="1"></label>
-              <div class="rp-progress"><div class="bar"><i id="rp-prog"></i></div><span id="rp-status" class="muted small">Replays your downloaded M1 history through the bot with all its rules. Trades are recorded as "replay" and feed its learning.</span></div>
+              <div class="rp-progress"><div class="bar"><i id="rp-prog"></i></div><span id="rp-status" class="muted small"></span></div>
             </div>
             <div class="chart-wrap"><div id="chart"></div><div id="chart-layer" class="chart-layer" aria-hidden="true"></div></div>
             <p id="chart-msg" class="chart-msg hidden"></p>
@@ -697,6 +692,7 @@
               <li><code>/prof</code><span>all the money earned (winning trades added up)</span></li>
               <li><code>/loss</code><span>all the money lost (losing trades added up)</span></li>
               <li><code>/total</code><span>profit and loss combined: what you actually have from trading</span></li>
+              <li><code>/commands</code><span>every command you have, yours included, and what each does (updates itself when you make one)</span></li>
               <li><code>/help</code><span>this list</span></li>
             </ul>
             <span class="help">Only your own chat (the one Find my chat saved) gets answers. Counts closed trades: MT5 paper, demo and real, in account money.</span>

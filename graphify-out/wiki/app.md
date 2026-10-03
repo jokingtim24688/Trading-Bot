@@ -56,7 +56,8 @@
   (`agent.history`); log shows in Train output. Train accepts history alone (no MT5 file needed).
 - Bot card: the needed % is the practice cutoff (`need` in agent_status.json / replay_state.json) instead of the 0.8
   threshold; "no signal" renamed "waiting for a strong setup" with a reason.
-- Replay bar: period optgroups (unseen / recent / everything), speed presets incl. 2000/s and Max, ETA; smooth chart via
+- Replay bar (2026-10-03: no period or speed for Replay any more, see "Replay = last week" below; the period picker
+  stays for the Sim only); smooth chart via
   `rpAnim` queue + requestAnimationFrame (`queueReplayBars`, `replayFrame`), poll 400 ms.
 - Quiz tab (layout A): /api/quiz/build, /api/quiz/train {resume|focus}, /api/quiz/control, /api/quiz/state,
   /api/quiz/labels, /api/quiz/question/{id}, /api/quiz/ask; canvas mastery board with picking; job "quiz";
@@ -321,7 +322,7 @@
   Momentum, Quiz agent; `catBox`/`catProfit` kept from the Solana tab), each with what it last said (`/api/agents`);
   typing pauses when the bot is stopped (`.hub-cats.idle`); a new winning close runs the profit sequence on all of
   them. Tiles: Market, Balance, Gain, Loss, Subtotal, Open now. Chart: last 240 M1 candles + entry arrows. Recent
-  trades: closed, trade, started at, ended at, gain/loss. While the Sim view is on it reads the Sim instead.
+  trades: closed, trade, started at, ended at, gain/loss. While the Sim or Replay view is on it reads that instead.
 - **Sim** (`#sim-toggle` next to Replay; the replay bar drives either, `state.replay.src`, `rpApi()`): `POST /api/sim/start`
   = `_replay_args` + `--fresh --db data/sim.db --state data/sim_state.json --control data/sim_control.json`, speed 1/s
   by default; `GET /api/sim/state` adds `trades_open` / `trades_closed` (read from sim.db directly). `simAsLive()`
@@ -334,3 +335,15 @@
   `telegram_custom_commands`, `keyboard()` from `telegram_keyboard` on every message.
 - **Command maker** (`app/telegram_maker.py`, Settings > Phone alerts): `parse(text)` -> changes + plain sentences +
   preview, `apply(changes)`; routes `POST /api/telegram/maker`, `/api/telegram/maker/apply`. Rule-based, offline.
+- **/commands** (`telegram.all_commands`, `commands_text`, `sync_menu`): lists every built-in and custom command with
+  what it does (custom: `about`, else the action's description, else "replies ..."). `sync_menu` pushes the same list to
+  Telegram's "/" menu (`setMyCommands`, names `[a-z0-9_]{1,32}`, max 100, /start left out) at startup and after every
+  `telegram_maker.apply`, so a new command shows in /commands and the menu at once. `BUILTIN` includes /commands.
+- **Replay = last week** (`POST /api/replay/start`, empty body): takes ~20,000 M1 candles from MT5 (`m1_bars`; falls back
+  to `data/{sym}_M1.parquet`), writes `data/replay_M1.parquet`, starts at `rewind_start(times, server_now())` = the first
+  candle at the same moment 7 days ago, stepping back a day at a time (max 10) while the market was closed; needs 3000
+  warm-up candles before it. Speed fixed at real time (1/60 candle/s); `/api/replay/control` takes only paused/stop.
+  Trades go to `data/replay.db` (`--fresh --db`), not the main ledger, so nothing is learned from them;
+  `GET /api/replay/state` adds `trades_open`/`trades_closed`. UI: "Rewind one week" button, `RP_WHAT` text, status
+  "LAST WEEK · time · bot decision · balance · open · closed · net"; Live card (`simAsLive`) and Hub follow the Replay
+  as well as the Sim (`state.sim` holds whichever is on).

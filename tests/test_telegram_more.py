@@ -95,3 +95,18 @@ def test_command_maker_understands_plain_words(client):
     assert telegram.command_reply("/pnl").startswith("📊")
     client.post("/api/telegram/maker/apply", json={"changes": tm.parse("delete the command /pnl")["changes"]})
     assert list(telegram.custom_commands()) == ["/today"] and settings.load()["telegram_keyboard"] == ["/today"]
+
+
+def test_commands_lists_everything_and_updates_the_menu(client, monkeypatch):
+    from app import telegram_maker as tm
+    sent = Sent()
+    monkeypatch.setattr(telegram.httpx, "post", sent.post)
+    settings.save({"telegram_token": "1:A", "telegram_chat_id": "42"})
+    t = telegram.command_reply("/commands")
+    assert "/total — profit and loss combined" in t and "/commands" in t and "none yet" in t
+    client.post("/api/telegram/maker/apply", json={"changes": tm.parse("make /pnl show my total")["changes"]})
+    t = telegram.command_reply("/commands")
+    assert "Made by you:\n/pnl — profit and loss combined" in t
+    menu = [m for m in sent.msgs if m and "commands" in m][-1]["commands"]  # setMyCommands after the change
+    assert {"command": "pnl", "description": "profit and loss combined"} in menu
+    assert any(c["command"] == "commands" for c in menu) and not any(c["command"] == "start" for c in menu)

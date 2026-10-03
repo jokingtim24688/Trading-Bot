@@ -379,6 +379,9 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-10-03, **FYI, no action needed** (user asked Chat A directly): Replay no longer has speed or period controls.
+  `#rp-presets` and the `.rp-speed` slider are gone from index.html; `#rp-days` sits in `#rp-days-box`, shown only for
+  the Sim; `#rp-start` reads "Rewind one week" for Replay; `#rp-what` text comes from `RP_WHAT`. Restyle freely.
 - 2026-10-03, **FYI, no action needed** (user asked Chat A directly): Solana, Ranks and Hermes tabs and code are gone
   (index.html sections, app.js blocks, `sol/`, `hermes/`, brain/memory/tools). The cat avatar code stayed (`CAT_*`,
   `catBox`, `catProfit`, `catRain`) and now powers the new **Hub** view (`#tab-hub`, Bot switch Live | Agent details |
