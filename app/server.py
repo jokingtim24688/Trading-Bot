@@ -779,6 +779,84 @@ def backtest_get():
             "log": jobs.jobs["backtest"].tail(6)}
 
 
+# ---------- sim: real history played forward at a live pace; the bot trades it as if it were running ----------
+SIM_CONTROL = ROOT / "data" / "sim_control.json"
+SIM_STATE = ROOT / "data" / "sim_state.json"
+SIM_DB = ROOT / "data" / "sim.db"
+
+
+def _sim_control(update: dict | None = None) -> dict:
+    try:
+        c = json.loads(SIM_CONTROL.read_text())
+    except (OSError, ValueError):
+        c = {"speed": 1, "paused": False, "stop": False}
+    if update:
+        c.update({k: v for k, v in update.items() if k in ("speed", "paused", "stop")})
+        SIM_CONTROL.parent.mkdir(parents=True, exist_ok=True)
+        SIM_CONTROL.write_text(json.dumps(c))
+    return c
+
+
+@app.post("/api/sim/start")
+def sim_start(body: dict = Body(default={})):
+    """The Sim: the same engine as Replay, on real M1 history the model never trained on, paced like a live market
+    (default 1 candle a second), with its own pretend balance and its own trade record (data/sim.db)."""
+    s = settings.load()
+    data = ROOT / "data" / f"{s['symbol']}_M1.parquet"
+    if not data.exists() and not (ROOT / "data" / f"{s['symbol']}_M1_history.parquet").exists():
+        raise HTTPException(400, "No M1 history yet. Train tab -> Fetch data or Download history first.")
+    if not mt5_service.model_exists(s["symbol"]):
+        raise HTTPException(400, "Train a model first (Train tab).")
+    if jobs.jobs["sim"].running:
+        raise HTTPException(409, "A sim is already running.")
+    args = _replay_args(s, data, body.get("days", 5), body.get("from", "test")) + [
+        "--fresh", "--db", str(SIM_DB), "--state", str(SIM_STATE), "--control", str(SIM_CONTROL)]
+    if s.get("practice", True):
+        args.append("--practice")
+    if not s.get("use_learned", True):
+        args.append("--no-learned")
+    SIM_STATE.unlink(missing_ok=True)
+    _sim_control({"speed": body.get("speed", 1), "paused": False, "stop": False})
+    jobs.start("sim", args)
+    return {"started": True}
+
+
+@app.post("/api/sim/control")
+def sim_control(body: dict = Body(default={})):
+    return _sim_control(body)
+
+
+def sim_trades(limit: int = 50) -> dict:
+    """Open and closed trades from the Sim's own ledger file, read directly (the app's ledger stays untouched)."""
+    import sqlite3
+    if not SIM_DB.exists():
+        return {"trades_open": [], "trades_closed": []}
+    try:
+        c = sqlite3.connect(SIM_DB, timeout=5)
+        c.row_factory = sqlite3.Row
+        rows = [dict(r) for r in c.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (int(limit) + 50,))]
+        c.close()
+    except sqlite3.Error:
+        return {"trades_open": [], "trades_closed": []}
+    for r in rows:                              # the names the charts use (server-time epochs)
+        r.update(entry_time=r.get("open_bar"), exit_time=r.get("close_bar"))
+    return {"trades_open": [r for r in rows if r.get("status") == "open"],
+            "trades_closed": [r for r in rows if r.get("status") == "closed"][:limit]}
+
+
+@app.get("/api/sim/state")
+def sim_state():
+    try:
+        st = json.loads(SIM_STATE.read_text())
+    except (OSError, ValueError):
+        st = {"bars": []}
+    st["job_running"] = jobs.jobs["sim"].running
+    st["control"] = _sim_control()
+    st["log"] = jobs.jobs["sim"].tail(8)
+    st.update(sim_trades(300))
+    return st
+
+
 @app.post("/api/replay/control")
 def replay_control(body: dict = Body(default={})):
     if "speed" in body:

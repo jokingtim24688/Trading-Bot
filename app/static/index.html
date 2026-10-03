@@ -72,7 +72,7 @@
 <main>
   <!-- BOT: one full-screen live card. No stop loss anywhere on this tab (it stays in every order at the broker). -->
   <section id="tab-bot" class="tab active">
-    <div class="seg-row subtabs" role="tablist" aria-label="Bot views"><button type="button" class="seg-opt" data-goto="bot">Live</button><button type="button" class="seg-opt" data-goto="agent">Agent details</button></div>
+    <div class="seg-row subtabs subtabs-3" role="tablist" aria-label="Bot views"><button type="button" class="seg-opt" data-goto="bot">Live</button><button type="button" class="seg-opt" data-goto="agent">Agent details</button><button type="button" class="seg-opt" data-goto="hub">Hub</button></div>
     <div class="bot-live">
       <header class="panel bl-head">
         <div class="bl-sym">
@@ -118,9 +118,12 @@
                 </button>
                 <span class="head-sep" aria-hidden="true"></span>
                 <button class="replay-btn" id="replay-toggle" type="button" title="Run the bot on downloaded history, fast">
-                  <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z"/></svg>Replay</button></div>
+                  <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z"/></svg>Replay</button>
+                <button class="replay-btn" id="sim-toggle" type="button" title="Sim: real gold history played forward like a live market; the bot trades it as if it were running, with pretend money">
+                  <svg viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="3.2"/></svg>Sim</button></div>
             </div>
             <div class="replay-bar hidden" id="replay-bar">
+              <p class="rp-what small" id="rp-what" hidden>Sim: real gold history the model never trained on, played forward like a live market. The bot trades it exactly as if it were running, with pretend money. Its trades are kept apart from your real record.</p>
               <div class="row gap wrap">
                 <label class="inline">Period <select id="rp-days">
                   <optgroup label="Model's unseen data (honest results)">
@@ -280,9 +283,29 @@
     </div>
   </section>
 
+  <!-- HUB: the bot's crew (the cats), the market, money and recent trades on one page. Follows the Sim while it runs. -->
+  <section id="tab-hub" class="tab">
+    <div class="seg-row subtabs subtabs-3" role="tablist" aria-label="Bot views"><button type="button" class="seg-opt" data-goto="bot">Live</button><button type="button" class="seg-opt" data-goto="agent">Agent details</button><button type="button" class="seg-opt" data-goto="hub">Hub</button></div>
+    <div class="panel hub-crew">
+      <div class="hub-cats" id="hub-cats" aria-label="The bot and its checkers"></div>
+      <div class="hub-crew-side"><span id="hub-src" class="hub-src"></span><b id="hub-crew-state">Loading…</b><span id="hub-crew-sub" class="muted small"></span></div>
+    </div>
+    <div class="hub-tiles" id="hub-tiles"></div>
+    <div class="hub-grid">
+      <div class="panel hub-chart-panel">
+        <div class="panel-head"><h3 id="hub-chart-h">Market</h3><span id="hub-chart-meta" class="muted small"></span></div>
+        <div id="hub-chart" class="hub-chart"></div>
+      </div>
+      <div class="panel hub-trades">
+        <div class="panel-head"><h3>Recent trades</h3><span id="hub-trades-meta" class="muted small"></span></div>
+        <div class="table-wrap"><table id="hub-trades"><thead><tr><th>Closed</th><th>Trade</th><th>Started at</th><th>Ended at</th><th>Gain / loss</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
   <!-- AGENT -->
   <section id="tab-agent" class="tab">
-    <div class="seg-row subtabs" role="tablist" aria-label="Bot views"><button type="button" class="seg-opt" data-goto="bot">Live</button><button type="button" class="seg-opt" data-goto="agent">Agent details</button></div>
+    <div class="seg-row subtabs subtabs-3" role="tablist" aria-label="Bot views"><button type="button" class="seg-opt" data-goto="bot">Live</button><button type="button" class="seg-opt" data-goto="agent">Agent details</button><button type="button" class="seg-opt" data-goto="hub">Hub</button></div>
     <div class="panel ctl">
       <div class="ctl-top">
         <ol class="path" id="ladder" aria-label="Stages: Paper, Demo, then real money in three steps"></ol>

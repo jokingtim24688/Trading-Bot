@@ -1805,3 +1805,27 @@ body.on-bot .notes { top: var(--notes-top, 170px); }
 .sol-advanced[open] > summary::before { transform: rotate(90deg); }
 .sol-advanced[open] > :not(summary) { margin-top: 14px; }
 .sol-feed-wrap { max-height: 380px; }
+
+/* ---------- Hub (Chat A, 2026-10-03): crew of cats, money tiles, market chart, recent trades ---------- */
+.hub-crew { display: flex; align-items: center; gap: 24px; padding: 18px 20px 16px; }
+.hub-cats { display: flex; flex-wrap: wrap; gap: 18px; }
+.hub-pf { width: 116px; }
+.hub-pf .cat-box { width: 88px; height: 88px; border-color: color-mix(in srgb, var(--c) 45%, var(--line)); }
+.hub-pf .bot-name { font-size: 12.5px; color: var(--text); }
+.hub-says { font-size: 11px; line-height: 1.3; text-align: center; min-height: 2.6em; max-width: 116px; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.hub-pf.veto .hub-says { color: var(--down); }
+.hub-cats.idle .cat-me, .hub-cats.idle .cat-arm { animation-play-state: paused; }
+.hub-crew-side { margin-left: auto; display: grid; justify-items: end; gap: 4px; text-align: right; max-width: 34ch; }
+.hub-src { font: 600 11px var(--mono); letter-spacing: .06em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.hub-src.sim { color: var(--gold); border-color: rgba(201,162,74,.5); }
+.hub-src.real { color: var(--down); border-color: rgba(224,87,79,.5); }
+.hub-tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
+.hub-tile { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--surface); }
+.hub-tile > span { font-size: 12px; color: var(--muted); }
+.hub-tile b { font: 600 18px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hub-tile small { font-size: 11px; }
+.hub-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.hub-chart { height: 380px; }
+.hub-trades .table-wrap { max-height: 380px; }
+@media (max-width: 1250px) { .hub-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } .hub-grid { grid-template-columns: minmax(0, 1fr); } }

@@ -317,45 +317,62 @@ function wireChartAuto() {
   let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { moveRailInd(); scheduleSessions(); if (state.chartAuto && !state.autoT && state.tab === "bot") realignChart(true); }, 200); });
 }
 /* ---------- replay: bot on downloaded history ---------- */
-state.replay = { view: false, running: false };
+state.replay = { view: false, running: false, src: "replay" };   // src: "replay" (fast) or "sim" (live pace, own ledger)
+const rpApi = path => `/api/${state.replay.src}/${path}`;
 const speedFromSlider = v => +v >= 100 ? 0 : Math.round(Math.pow(20000, v / 100));   // 0..99 -> 1..~18k candles/s (log), 100 = max
 const sliderFromSpeed = s => !s ? 100 : Math.min(99, Math.round(Math.log(Math.max(1, s)) / Math.log(20000) * 100));
 const speedText = s => !s ? "Max (as fast as the PC can)" : `${s.toLocaleString()} candles/s`;
-function setReplayView(on) {
-  state.replay.view = on;
-  $("#replay-toggle").classList.toggle("active", on);
+function setReplayView(on, src = state.replay.src) {
+  state.replay.view = on; state.replay.src = src;
+  const sim = src === "sim";
+  $("#replay-toggle").classList.toggle("active", on && !sim);
+  $("#sim-toggle").classList.toggle("active", on && sim);
+  $("#rp-what").hidden = !sim;
+  $("#rp-start").textContent = sim ? "Start sim" : "Start replay";
+  if (sim && $("#rp-days").value === "test|0") $("#rp-days").value = "test|7";
   $("#replay-bar").classList.toggle("hidden", !on);
   if (on) $("#chart-msg").classList.add("hidden");
   state.series && state.series.setData([]);
   state.realignNext = true; state.lastBidShown = null; state.win = newWin(); clearPriorDay(); scheduleSessions();
   loadBars();
 }
-$("#replay-toggle").onclick = () => setReplayView(!state.replay.view);
+$("#replay-toggle").onclick = () => setReplayView(!(state.replay.view && state.replay.src === "replay"), "replay");
+$("#sim-toggle").onclick = () => setReplayView(!(state.replay.view && state.replay.src === "sim"), "sim");
 $("#rp-speed").addEventListener("input", e => { $("#rp-speed-txt").textContent = speedText(speedFromSlider(e.target.value)); });
 $("#rp-speed").addEventListener("change", e => setReplaySpeed(speedFromSlider(e.target.value)));
 $("#rp-start").onclick = async () => {
   const [from, days] = $("#rp-days").value.split("|");
-  try { await api("/api/replay/start", { method: "POST", body: { from, days: Number(days), speed: speedFromSlider($("#rp-speed").value), fresh: true } }); toast("Replay started. Scoring the history first, a few seconds."); }
+  const sim = state.replay.src === "sim";
+  try { await api(rpApi("start"), { method: "POST", body: { from, days: Number(days), speed: sim ? 1 : speedFromSlider($("#rp-speed").value), fresh: true } });
+        toast(sim ? "Sim started: one candle a second, like a live market. The bot is trading it now." : "Replay started. Scoring the history first, a few seconds."); }
   catch (e) { toast(e.message, true); }
 };
-$("#rp-pause").onclick = async () => { const c = await api("/api/replay/state"); await api("/api/replay/control", { method: "POST", body: { paused: !c.control?.paused } }); };
+$("#rp-pause").onclick = async () => { const c = await api(rpApi("state")); await api(rpApi("control"), { method: "POST", body: { paused: !c.control?.paused } }); };
 const setReplaySpeed = sp => {
   $("#rp-speed").value = sliderFromSpeed(sp); $("#rp-speed-txt").textContent = speedText(sp);
   document.querySelectorAll("#rp-presets button").forEach(b => b.classList.toggle("active", +b.dataset.speed === sp));
-  return api("/api/replay/control", { method: "POST", body: { speed: sp } });
+  return api(rpApi("control"), { method: "POST", body: { speed: sp } });
 };
 document.querySelectorAll("#rp-presets button").forEach(b => b.onclick = () => setReplaySpeed(+b.dataset.speed));
-$("#rp-stop").onclick = () => api("/api/replay/control", { method: "POST", body: { stop: true } });
+$("#rp-stop").onclick = () => api(rpApi("control"), { method: "POST", body: { stop: true } });
 const eta = sec => sec < 90 ? `${Math.round(sec)}s` : sec < 5400 ? `${Math.round(sec / 60)} min` : `${(sec / 3600).toFixed(1)} h`;
 async function loadReplay() {
   let r;
-  try { r = await api("/api/replay/state"); } catch (e) { return; }
+  try { r = await api(rpApi("state")); } catch (e) { return; }
+  if (state.replay.src === "sim") { state.sim = r; if (state.tab === "bot") renderBotLive(); }
   state.replay.running = r.job_running; state.replay.last = r;
   $("#rp-pause").textContent = r.control?.paused ? "Resume" : "Pause";
   if (document.activeElement !== $("#rp-speed")) { $("#rp-speed").value = sliderFromSpeed(r.control?.speed ?? 20); $("#rp-speed-txt").textContent = speedText(r.control?.speed ?? 20);
     document.querySelectorAll("#rp-presets button").forEach(b => b.classList.toggle("active", +b.dataset.speed === (r.control?.speed ?? 20))); }
   $("#rp-prog").style.width = r.total ? `${(100 * r.index / r.total).toFixed(1)}%` : "0";
   const st = r.stats || {};
+  if (state.replay.src === "sim") {
+    const closed = r.trades_closed || [], net = closed.reduce((a, t) => a + (t.pnl || 0), 0);
+    $("#rp-status").textContent = !r.total ? (r.job_running ? "Getting the market ready (scoring the history)..." : "Press Start sim: the bot trades a real stretch of gold as if it were live.")
+      : `SIM · ${(r.bar_time_utc || "").slice(0, 16)} · bot: ${r.decision || "watching"}${r.reason ? ` (${r.reason})` : ""} · balance ${fmt(r.balance ?? 0, 2)} · ${r.open}/${r.max_open} open · ${closed.length} closed · net ${signed(net)}${r.done ? " · finished" : r.control?.paused ? " · paused" : ""}`;
+    if (state.series && r.bars?.length) queueReplayBars(r);
+    return;
+  }
   $("#rp-status").textContent = !r.total ? (r.job_running ? "Scoring the history with the model..." : "Replays your downloaded M1 history through the bot with all its rules. Trades are recorded as \"replay\" and feed its learning.")
     : `${(r.bar_time_utc || "").slice(0, 16)} · ${r.index.toLocaleString()} / ${r.total.toLocaleString()} candles · ${r.open}/${r.max_open} open · ${st.closed || 0} closed · win ${st.win_pct ?? "–"}% · net ${signed(st.net_pnl || 0)} · score ${pts(st.score || 0)}${!r.done && r.rate ? ` · ${r.rate.toLocaleString()}/s · ${eta((r.total - r.index) / r.rate)} left` : ""}${r.done ? " · finished" : r.control?.paused ? " · paused" : ""}${r.skips?.length ? ` · signals skipped: ${r.skips.slice(0, 2).map(([k, n]) => `${k} ${n.toLocaleString()}`).join(", ")}` : ""}`;
   if (state.series && r.bars?.length) queueReplayBars(r);
@@ -381,7 +398,7 @@ function queueReplayBars(r) {
 }
 function showReplayPrice(bar) {
   state.barRange = [rpAnim.first, bar.time];
-  $("#q-sym").textContent = "Replay"; $("#q-bid").textContent = fmt(bar.close, state.digits); $("#q-spr").textContent = "–";
+  $("#q-sym").textContent = state.replay.src === "sim" ? "Sim" : "Replay"; $("#q-bid").textContent = fmt(bar.close, state.digits); $("#q-spr").textContent = "–";
 }
 function replayFrame(now) {
   const dt = rpAnim.lastFrame ? Math.min(0.1, (now - rpAnim.lastFrame) / 1000) : 0.016;
@@ -2816,8 +2833,22 @@ function setMode(m) {
   strip.hidden = m !== "copilot";
   $("#bl-copilot-txt").textContent = `Co-pilot is on: every trade waits ${d?.copilot_seconds ?? 30} s for Approve or Skip${d?.running ? "" : " once the agent runs"}.`;
 }
+// While the Sim is on, the Live card shows the Sim as if the bot were running live on it.
+function simAsLive(base) {
+  const r = state.sim;
+  if (!(state.replay?.view && state.replay.src === "sim" && r && r.total)) return base;
+  const closed = r.trades_closed || [], net = closed.reduce((a, t) => a + (t.pnl || 0), 0), float = simFloating(r);
+  return { ...(base || {}), symbol: r.symbol || base?.symbol, running: !!(r.job_running && !r.done && !r.control?.paused), positions: [],
+    status: { mode: "sim", decision: r.decision, reason: r.reason, headline: `Sim: ${r.decision || "watching"}${r.reason ? ` (${r.reason})` : ""}`,
+              time_utc: (r.bar_time_utc || "").replace(" ", "T") },
+    points: { ...(base?.points || {}), total: net, today: net, floating: float, closed_trades: closed.length } };
+}
+function simFloating(r) {                        // open Sim trades at the last candle's close (gold: 100 oz a lot)
+  const last = r?.bars?.length ? r.bars[r.bars.length - 1].close : null; if (last == null) return 0;
+  return (r.trades_open || []).reduce((a, t) => a + (last - t.entry) * (t.side === "buy" ? 1 : -1) * (t.lots || 0) * (/XAU/.test(t.symbol || "") ? 100 : 100000), 0);
+}
 function renderBotLive() {
-  const d = bl.d; if (!d) return;
+  const d = simAsLive(bl.d); if (!d) return;
   // header: symbol + live price, heartbeat, points, mode, clock
   $("#bl-sym").textContent = d.symbol || "—";
   const f = d.heartbeat?.feed || {};
@@ -3162,6 +3193,108 @@ function catRain(box, ms) {                      // gold and green $ falling fro
   rain.raf = requestAnimationFrame(step);
 }
 window.__cat = { profit: catProfit, phase: catPhase, rain: catRain, state: cat };
+
+/* ---------- the Hub (Bot tab > Hub): the bot's crew as cats, the market, money and recent trades on one page.
+   The crew = the main agent (it makes the call) + the checkers it asks before every trade (agent/desk.py:
+   Confidence, Reward/risk, Momentum, Quiz agent). Every cat types while the bot runs; all of them do the profit
+   sequence when a trade closes in profit. While the Sim runs (Live > Sim) the Hub follows the Sim instead. ---------- */
+const HUB_CREW = [
+  { id: "main", name: "The bot", col: "#c9a24a", job: "makes the call" },
+  { id: "Confidence", name: "Confidence", col: "#3987e5", job: "is the model sure enough?" },
+  { id: "Reward/risk", name: "Reward/risk", col: "#199e70", job: "is the target bigger than the stop?" },
+  { id: "Momentum", name: "Momentum", col: "#d95926", job: "are the last candles on our side?" },
+  { id: "Quiz agent", name: "Quiz agent", col: "#8c9098", job: "what would the quiz agent do?" },
+];
+const hub = { chart: null, series: null, seenWin: null, busy: false, lastSym: "" };
+function hubChart() {
+  if (hub.chart || !window.LightweightCharts) return;
+  hub.chart = LightweightCharts.createChart($("#hub-chart"), {
+    autoSize: true, layout: { background: { color: "transparent" }, textColor: "#8c9098", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
+    grid: { vertLines: { color: "rgba(255,255,255,.035)" }, horzLines: { color: "rgba(255,255,255,.035)" } },
+    rightPriceScale: { borderColor: "#262c34" }, timeScale: { borderColor: "#262c34", timeVisible: true, secondsVisible: false },
+    crosshair: { mode: 0 } });
+  hub.series = hub.chart.addCandlestickSeries({ upColor: "#3fb68b", downColor: "#e0574f", borderVisible: false, wickUpColor: "#3fb68b", wickDownColor: "#e0574f" });
+}
+function openHub() { hubChart(); loadHub(); }
+function hubCats(running, review, sim) {
+  const box = $("#hub-cats");
+  if (!box._built) {
+    box._built = true;
+    box.innerHTML = HUB_CREW.map(c => `<div class="bot-pf hub-pf" data-id="${esc(c.id)}" style="--c:${c.col}">${catBox()}<b class="bot-name">${esc(c.name)}</b><span class="hub-says muted small"></span></div>`).join("");
+  }
+  box.classList.toggle("idle", !running);
+  const subs = Object.fromEntries((review?.subagents || []).map(x => [x.role, x]));
+  HUB_CREW.forEach(c => {
+    const el = box.querySelector(`.hub-pf[data-id="${CSS.escape(c.id)}"]`); if (!el) return;
+    let says;
+    if (!running) says = "resting";
+    else if (c.id === "main") says = review ? `${review.final === "PASS" && review.decision !== "PASS" ? "held back" : review.final} ${review.asset}` : `watching ${sim ? "the sim" : state.symbol || "the market"}`;
+    else if (subs[c.id]) says = `${subs[c.id].verdict === "veto" ? "said no" : "said yes"}: ${subs[c.id].says}`;
+    else says = c.job;
+    const sEl = el.querySelector(".hub-says"); if (sEl.textContent !== says) { sEl.textContent = says; sEl.title = says; }
+    el.classList.toggle("veto", !!(subs[c.id] && subs[c.id].verdict === "veto"));
+  });
+}
+function hubCelebrate() { $$("#hub-cats .cat-box").forEach((b, i) => setTimeout(() => catProfit(b), i * 90)); }
+async function loadHub() {
+  if (hub.busy || state.tab !== "hub") return; hub.busy = true;
+  try {
+    const sim = state.replay.view && state.replay.src === "sim";
+    let open = [], closed = [], balance = null, equity = null, review = null, running = false, bars = [], sym = state.symbol || state.settings?.symbol || "";
+    if (sim) {
+      const r = state.sim || await api("/api/sim/state");
+      open = (r.trades_open || []).map(t => ({ ...t, pnl: t.pnl ?? simFloating({ ...r, trades_open: [t] }) }));
+      closed = r.trades_closed || []; balance = r.balance; running = !!r.job_running && !r.done && !r.control?.paused;
+      bars = (r.bars || []).slice(-240); sym = r.symbol || sym;
+      review = r.decision ? { final: (r.decision || "").startsWith("OPENED") ? "BUY" : "PASS", decision: r.decision, asset: sym, subagents: [] } : null;
+    } else {
+      const mode = state.mode || "paper";
+      const [acct, tr, desk, bb] = await Promise.all([api("/api/account").catch(() => null), api("/api/bot/trades?limit=300").catch(() => null),
+        api("/api/agents").catch(() => null), sym ? api(`/api/bars?symbol=${encodeURIComponent(sym)}&count=240`).catch(() => null) : null]);
+      open = (tr?.open || []).filter(t => t.mode === mode); closed = (tr?.recent || []).filter(t => t.status === "closed" && t.mode === mode);
+      balance = mode === "paper" ? (state.settings?.paper_balance ?? 0) + (tr?.stats?.paper?.net_pnl || 0) : acct?.balance;
+      equity = acct?.equity; running = !!(bl.d?.running || tr?.agent); review = (desk?.mt5 || []).find(r => r.asset === sym) || (desk?.mt5 || [])[0] || null;
+      bars = bb?.bars || [];
+    }
+    const gain = closed.reduce((a, t) => a + Math.max(0, t.pnl || 0), 0), loss = closed.reduce((a, t) => a + Math.min(0, t.pnl || 0), 0);
+    const openPnl = open.reduce((a, t) => a + (t.pnl || 0), 0), wins = closed.filter(t => (t.pnl || 0) > 0).length;
+    const last = bars.length ? bars[bars.length - 1] : null, first = bars.length ? bars[0] : null;
+    const tile = (k, v, c = "", sub = "") => `<div class="hub-tile"><span>${k}</span><b class="num ${c}">${v}</b>${sub ? `<small class="muted">${sub}</small>` : ""}</div>`;
+    setHTML($("#hub-tiles"),
+      tile("Market", last ? `${esc(sym)} ${fmt(last.close, last.close < 20 ? 5 : 2)}` : esc(sym || "—"), "", first && last ? `${signed(last.close - first.close)} over ${bars.length} min` : "")
+      + tile("Balance", balance == null ? "—" : fmt(balance), "", equity != null && !sim ? `equity ${fmt(equity)}` : sim ? "pretend money" : "")
+      + tile("Gain", `+${fmt(gain)}`, gain > 0 ? "up" : "", `${wins} winning trade${wins === 1 ? "" : "s"}`)
+      + tile("Loss", `−${fmt(Math.abs(loss))}`, loss < 0 ? "down" : "", `${closed.length - wins} losing trade${closed.length - wins === 1 ? "" : "s"}`)
+      + tile("Subtotal", signed(gain + loss), cls(gain + loss), `${closed.length} closed${closed.length ? ` · ${Math.round(100 * wins / closed.length)}% won` : ""}`)
+      + tile("Open now", signed(openPnl), cls(openPnl), `${open.length} open trade${open.length === 1 ? "" : "s"}`));
+    $("#hub-src").textContent = sim ? "SIM" : (state.mode || "paper").toUpperCase();
+    $("#hub-src").className = `hub-src ${sim ? "sim" : state.mode === "real" ? "real" : ""}`;
+    $("#hub-crew-state").textContent = sim ? (running ? "Trading the sim" : "Sim paused or stopped") : running ? "The bot is running" : "The bot is stopped";
+    $("#hub-crew-sub").textContent = review?.says || (running ? "every candle, the checkers look before any trade" : "press Start on the Live view");
+    hubCats(running, review, sim);
+    const winKey = closed.filter(t => (t.pnl || 0) > 0).map(t => t.id).slice(0, 1).join();
+    if (hub.seenWin != null && winKey && winKey !== hub.seenWin) hubCelebrate();
+    hub.seenWin = winKey;
+    $("#hub-chart-h").textContent = sim ? `Sim market · ${sym}` : `Market · ${sym}`;
+    $("#hub-chart-meta").textContent = last ? `last ${bars.length} one-minute candles` : "no candles yet";
+    if (hub.series) {
+      const key = `${sim}|${sym}`;
+      if (hub.lastSym !== key) { hub.series.setData(bars); hub.lastSym = key; hub.chart.timeScale().fitContent(); }
+      else if (bars.length) hub.series.setData(bars);
+      hub.series.setMarkers(closed.concat(open).filter(t => t.entry_time || t.open_bar).slice(0, 60).map(t => ({
+        time: t.entry_time || t.open_bar, position: t.side === "buy" ? "belowBar" : "aboveBar", color: t.side === "buy" ? "#3fb68b" : "#e0574f",
+        shape: t.side === "buy" ? "arrowUp" : "arrowDown" })).filter(m => m.time).sort((a, b) => a.time - b.time));
+    }
+    $("#hub-trades-meta").textContent = closed.length ? `${closed.length} closed` : "";
+    setHTML($("#hub-trades tbody"), closed.slice(0, 40).map(t => `<tr><td>${esc(String(t.close_utc || "").slice(5, 16).replace("T", " "))}</td>
+      <td><span class="${t.side === "buy" ? "up" : "down"}">${t.side === "buy" ? "▲ Buy" : "▼ Sell"}</span> ${t.lots ?? ""} ${esc(t.symbol || "")}</td>
+      <td class="num">${fmt(t.entry, t.entry < 20 ? 5 : 2)}</td><td class="num">${fmt(t.exit, t.exit < 20 ? 5 : 2)}</td>
+      <td class="num ${cls(t.pnl)}"><b>${signed(t.pnl)}</b></td></tr>`).join("")
+      || `<tr><td colspan="5" class="muted">No closed trades yet${sim ? " in this sim" : ""}.</td></tr>`);
+  } finally { hub.busy = false; }
+}
+setInterval(() => seen() && state.tab === "hub" && loadHub(), 2000);
+
 
 /* ---------- boot ---------- */
 initChart();
