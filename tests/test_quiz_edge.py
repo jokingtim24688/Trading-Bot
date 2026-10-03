@@ -20,3 +20,13 @@ def test_edge_check_reads_every_setup_found(tmp_path, monkeypatch):
     md = R._markdown({"generated": "2026-10-03T00:00:00", "edge": e, "weak": [], "groups": [],
                       "summary": {"built": "2026-10-03T00:00", "questions": 0, "practice": 0, "finished": 0, "stuck": 0}})
     assert "## Do the setups pay on their own?" in md and "Setups that lose on their own: Reclaimed session average" in md
+
+
+def test_losing_setup_drops_drill_advice(tmp_path, monkeypatch):
+    from agent import quiz as Q, quiz_report as R
+    monkeypatch.setattr(Q, "SLICE_DIR", tmp_path)
+    won = np.arange(2000) % 4 == 0
+    np.savez(tmp_path / "a.npz", fvg_bull__won=won, fvg_bull__mins=np.full(2000, 30, np.int16))
+    g = {"setup": "fvg_bull", "trap": False, "fix": ["Work on these questions (...)", "Its mistake is almost always STAY OUT", "keep"]}
+    e = R.edge_check()["fvg_bull"]
+    assert e["verdict"] == "loses on its own"

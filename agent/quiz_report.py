@@ -277,6 +277,7 @@ def make_report(verbose=False):
     for g in weak:                                 # a setup that loses money on its own: its BUY/SELL is hindsight
         e = edge.get(g["setup"])
         if e and not g["trap"] and e["verdict"] == "loses on its own":
+            g["fix"] = [x for x in g["fix"] if not x.startswith(("Work on these", "Its mistake is almost always"))]
             g["fix"].insert(0, f"Taken every time it appears in your history, this setup hits its 2R target only "
                                f"{round(100 * e['hit'])}% of the time (break-even is 33%), about {e['r']:+.2f}R a trade. "
                                "Its pro answer is hindsight: the agent's STAY OUT is the money-safe answer here. Don't "

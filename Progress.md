@@ -1402,6 +1402,12 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Skill pages: quiz-weak-spots/references/claude-setups-without-edge.md, claude-stay-out-bias.md; note on
   quiz-setups avg_reclaim_long/short. No change to the points (explained in the page).
 
+### 2026-10-03: real-history edge check (user's 16:57 report)
+- On the user's real 2009-2026 gold history (~1.04M setups), 16 of 18 setups "lose on its own" (28-30% at 2R,
+  -0.10..-0.17R a trade); prior-day tests are too few to call. None pays the quiz's way, same as random entries.
+- quiz_report: weak spots on a losing setup no longer suggest "Work on these" / "pro answer is BUY" (test added, 69 pass).
+- claude-setups-without-edge.md updated with the real table and what it means. No change to the live bot (needs the user's OK).
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
