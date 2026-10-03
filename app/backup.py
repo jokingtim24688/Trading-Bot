@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .settings import DATA, ROOT, load
 
-FILES = ["settings.json", "hermes_memory.json", "learned_rules.json", "mistakes.json", "progression.json",
+FILES = ["settings.json", "learned_rules.json", "mistakes.json", "progression.json",
          "manual_auto.json", "closed_levels.json", "trade_notes.json", "quiz_report.json", "quiz_report.md"]
 DIRS = ["reviews", "notes", "sounds"]
 MODEL_GLOBS = ["*.json"]                               # models/: XGBoost + quiz policy, a few MB

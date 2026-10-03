@@ -14,15 +14,13 @@ from agent import learn, ledger, progression, score as scoring
 from agent.pro import SETUP_NAMES
 
 from . import update as update_mod
-from . import backup, botlive, brain, bridge, manual, memory, mt5_service, platform_info, review, settings, sounds, stats, telegram, watch, watchdog
+from . import backup, botlive, bridge, manual, mt5_service, platform_info, review, settings, sounds, stats, telegram, watch, watchdog
 from .jobs import LOGS, jobs
-from sol import api as sol_api
 from .settings import ROOT
 
 STATIC = Path(__file__).parent / "static"
 AGENT_MAGIC = 260923
 app = FastAPI(title="Trading Bot")
-app.include_router(sol_api.router)
 
 
 @app.exception_handler(mt5_service.MT5Unavailable)
@@ -227,12 +225,6 @@ def setup_checklist():
     add("history", "Extra years of history", hist.exists(), "" if hist.exists() else "optional, gold only",
         "/api/history/download", optional=True)
     add("model", "Model trained", mt5_service.model_exists(sym), "", "/api/train")
-    try:
-        st = brain.status()
-        ready = st["hermes_agent"] if s["assistant_backend"] == "hermes_agent" else st.get("local") == "ready"
-        add("hermes", "Hermes ready", ready, st.get("next_step") or st.get("local") or "", "/api/assistant/setup")
-    except Exception as e:                          # noqa: BLE001
-        add("hermes", "Hermes ready", False, str(e), "/api/assistant/setup")
     br = bridge.status(int(s["mcp_http_port"]))           # asks the port: a bridge from an earlier session counts
     add("mcp", "MCP bridge running", br["running"], br.get("error") or f"port {s['mcp_http_port']}", "/api/mcp/start")
     try:
@@ -1069,24 +1061,6 @@ def journal(limit: int = 200):
     return rows[-limit:]
 
 
-# ---------- assistant ----------
-@app.get("/api/assistant/status")
-def assistant_status():
-    return brain.status()
-
-
-@app.post("/api/assistant/sleep")
-def assistant_sleep():
-    """Unload Hermes's model from RAM/VRAM now (called when you leave the Hermes tab). Memory stays on disk."""
-    return brain.sleep()
-
-
-@app.post("/api/assistant/setup")
-def assistant_setup(body: dict = Body(default={})):
-    """Set up the local model: install Ollama (winget) if missing, start it, download the model."""
-    return brain.setup(install=bool(body.get("install", True)))
-
-
 @app.on_event("startup")
 def _watchers():
     """The 1 s watcher (trailing stop, break-even, alerts) and the weekly review, both inside the app."""
@@ -1097,9 +1071,8 @@ def _watchers():
 
 
 @app.on_event("startup")
-def _trenching():
-    """Solana bot: load the merged model, watch open positions, keep 2+ trenching question creators running."""
-    sol_api.startup()
+def _telegram_commands():
+    """Answers /prof, /loss, /total, /help and your own commands (Settings > Phone alerts) from your Telegram chat."""
     telegram.start_commands()
 
 
@@ -1115,49 +1088,11 @@ def _question_bank():
             pass
 
 
-@app.on_event("startup")
-def _assistant_warmup():
-    """Start Ollama and fetch the model in the background as the app opens, so Hermes is ready when you need it."""
-    import threading
-    s = settings.load()
-    if s.get("assistant_autosetup", True) and s["assistant_backend"] != "hermes_agent":
-        threading.Thread(target=lambda: brain.prepare(s), daemon=True).start()
-    if s["assistant_backend"] != "local" and s.get("hermes_agent_autostart", True):     # the full Hermes app, if installed
-        threading.Thread(target=lambda: brain.start_hermes_agent(s), daemon=True).start()
-
-
-@app.post("/api/chat")
-def chat(body: dict = Body(...)):
-    text = (body.get("text") or "").strip()
-    if not text:
-        raise HTTPException(400, "empty message")
-    return brain.chat(text)
-
-
-@app.get("/api/chat/history")
-def chat_history(n: int = 60):
-    return memory.recent_messages(n)
-
-
-@app.delete("/api/chat/history")
-def chat_clear():
-    memory.clear_chat()
-    return {"ok": True}
-
-
-@app.get("/api/memory")
-def memory_list():
-    return memory.all_facts()
-
-
-@app.post("/api/memory")
-def memory_add(body: dict = Body(...)):
-    return {"result": memory.remember(body.get("text", ""))}
-
-
-@app.delete("/api/memory/{fact_id}")
-def memory_del(fact_id: int):
-    return {"result": memory.forget(fact_id)}
+# ---------- the agents desk: the main agent and its checkers (the Hub's cats) ----------
+@app.get("/api/agents")
+def agents_desk():
+    from agent import desk
+    return desk.desk()
 
 
 # ---------- UI ----------

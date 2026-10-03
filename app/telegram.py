@@ -150,24 +150,16 @@ _cmd = {"thread": None, "offset": 0, "answered": 0, "last": "", "error": ""}
 
 
 def money_summary() -> dict:
-    """Closed-trade profit and loss per account: MT5 (paper / demo / real, in account money) and Solana (paper / live,
-    in SOL). Open trades are not counted until they close."""
+    """Closed-trade profit and loss per account: MT5 paper / demo / real, in account money. Open trades are not
+    counted until they close."""
     from agent import ledger
-    out = {"mt5": {}, "sol": {}}
+    out = {"mt5": {}}
     for mode in ("paper", "demo", "real"):
         rows = [r for r in ledger.recent(100_000, mode) if r["status"] == "closed"]
         if rows:
             prof = sum(r["pnl"] for r in rows if (r["pnl"] or 0) > 0)
             loss = sum(r["pnl"] for r in rows if (r["pnl"] or 0) < 0)
             out["mt5"][mode] = {"prof": prof, "loss": loss, "total": prof + loss, "n": len(rows)}
-    try:
-        from sol import store
-        for mode in ("paper", "live"):
-            r = store.realized(mode)
-            if r["n"]:
-                out["sol"][mode] = {"prof": r["prof"], "loss": r["loss"], "total": r["prof"] + r["loss"], "n": r["n"]}
-    except Exception:                                   # noqa: BLE001 - no Solana data yet
-        pass
     return out
 
 
@@ -208,11 +200,8 @@ def command_reply(text: str) -> str | None:
     title = {"prof": "💰 Money earned", "loss": "🔻 Money lost", "total": "📊 Profit + loss combined"}[key]
     lines = [title]
     usd = lambda v: f"{'+' if v >= 0 else '-'}${abs(v):,.2f}"
-    sol = lambda v: f"{'+' if v >= 0 else '-'}{abs(v):.4f} SOL"
     for mode, r in m["mt5"].items():
         lines.append(f"MT5 {mode}: {usd(r[key])}  ({r['n']} trades)")
-    for mode, r in m["sol"].items():
-        lines.append(f"Solana {mode}: {sol(r[key])}  ({r['n']} trades)")
     if len(lines) == 1:
         lines.append("No closed trades yet.")
     return "\n".join(lines)

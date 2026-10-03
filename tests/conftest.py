@@ -18,23 +18,20 @@ import MetaTrader5 as fake_mt5  # noqa: E402
 def sandbox(tmp_path, monkeypatch):
     """Point every file the app and the agent write at tmp_path, and reset all in-memory state."""
     from agent import learn, ledger, news, progression
-    from app import (backup, brain, jobs, manual, memory, mt5_service, review, server, settings, sounds, tools, watch,
-                     watchdog)
+    from app import backup, jobs, manual, mt5_service, review, server, settings, sounds, watch, watchdog
     data = tmp_path / "data"
     data.mkdir()
     for mod, name, value in [
             (settings, "DATA", data), (settings, "PATH", data / "settings.json"), (settings, "BACKUPS", data / "backups"),
             (backup, "DATA", data), (backup, "ROOT", tmp_path), (watchdog, "DATA", data),
-            (memory, "FILE", data / "hermes_memory.json"), (memory, "OLD_DB", data / "memory.db"),
             (review, "DIR", data / "reviews"), (sounds, "DIR", data / "sounds"),
-            (sounds, "INDEX", data / "sounds" / "index.json"), (tools, "NOTES", data / "notes"),
+            (sounds, "INDEX", data / "sounds" / "index.json"),
             (watch, "RULES_FILE", data / "manual_auto.json"), (watch, "LEVELS_FILE", data / "closed_levels.json"),
             (ledger, "DB", data / "trades.db"), (learn, "RULES_PATH", data / "learned_rules.json"),
             (learn, "MISTAKES_PATH", data / "mistakes.json"), (learn, "SKILL_DIR", tmp_path / "skill"),
             (progression, "PATH", data / "progression.json"), (news, "CACHE", data / "news_calendar.json"),
             (server, "REPLAY_CONTROL", data / "replay_control.json"), (server, "REPLAY_STATE", data / "replay_state.json"),
-            (server, "BACKTEST_REPORT", data / "backtest.json"), (server, "BACKTEST_STATE", data / "backtest_state.json"),
-            (brain, "GATEWAY_LOG", tmp_path / "hermes_gateway.log")]:
+            (server, "BACKTEST_REPORT", data / "backtest.json"), (server, "BACKTEST_STATE", data / "backtest_state.json")]:
         monkeypatch.setattr(mod, name, value)
     for job in jobs.jobs.jobs.values():
         monkeypatch.setattr(job, "log_path", tmp_path / f"{job.name}.log")
@@ -47,7 +44,6 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(watch, "_rules", None)
     monkeypatch.setattr(watch, "_closed_levels", None)
     manual._seen.clear()
-    monkeypatch.setattr(memory, "_mem", None)
     mt5_service._sync["t"] = 0.0
     yield data
     for job in jobs.jobs.jobs.values():

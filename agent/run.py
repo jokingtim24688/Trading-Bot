@@ -119,7 +119,7 @@ def main():
     spec_digits = max(0, int(round(-np.log10(spec.point)))) if spec.point else 5
     probs = {"buy": None, "sell": None, "need": None, "setups": []}
     from .quiz import load_policy
-    from sol import agents as desk
+    from . import desk
     quiz_pol = load_policy()               # its answer is recorded on every trade, so the app can measure if it helps
     if args.quiz_filter:
         print("quiz agent second opinion: " + ("on" if quiz_pol else "off (no trained quiz agent yet)"))

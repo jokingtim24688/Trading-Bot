@@ -118,23 +118,6 @@ def test_mac_notification_escapes_quotes():
     assert '\\"2650\\"' in cmd[2] and 'Take profit \\"hit\\"' in cmd[2] and "\\\\ done" in cmd[2]
 
 
-def test_libomp_hint_on_a_mac(monkeypatch):
-    from sol import model
-    def fake_make(m):
-        if m == "xgb":
-            raise OSError("dlopen(libxgboost.dylib): Library not loaded: @rpath/libomp.dylib")
-        if m == "cat":
-            raise ImportError("No module named 'catboost'")
-        return object()
-    monkeypatch.setattr(model, "_make", fake_make)
-    monkeypatch.setattr(model.sys, "platform", "darwin")
-    monkeypatch.setitem(model._avail, "at", 0.0)
-    assert model.available() == ["lgbm", "rf"]
-    p = model.problems()
-    assert "brew install libomp" in p["xgb"] and p["cat"] == "not installed (optional)"
-    monkeypatch.setitem(model._avail, "at", 0.0)
-
-
 needs_bash = pytest.mark.skipif(not shutil.which("bash") or os.name == "nt", reason="needs bash")
 
 

@@ -14,7 +14,7 @@ import httpx
 
 from agent import learn
 
-from . import brain, stats
+from . import stats
 from .settings import DATA, load
 
 DIR = DATA / "reviews"
@@ -119,26 +119,8 @@ def rule_text(f: dict) -> tuple[list[str], list[str]]:
 
 
 def _hermes_text(f: dict, good: list[str], fix: list[str]) -> tuple[list[str], list[str]] | None:
-    """Ask Hermes to rewrite the lists in its own words, only if its model is already running. None on any trouble."""
-    s = load()
-    try:
-        if not (brain.ollama_alive(s) and brain.model_ready(s)):
-            return None
-        facts = {"you": stats.lite(f["you"]), "bot": stats.lite(f["bot"]), "p_l_by_day": f["days"],
-                 "draft_went_well": good, "draft_fix": fix}
-        prompt = ("You are Hermes, a trading coach. Here is last week's trading summary as JSON:\n"
-                  f"{json.dumps(facts)}\n"
-                  "Write 3 to 5 short, plain sentences for what went well and 3 to 5 for what to fix. Use only these "
-                  "numbers; don't invent any. Reply with JSON only: {\"went_well\": [...], \"fix\": [...]}")
-        r = httpx.post(f"{s['ollama_url']}/api/generate", timeout=httpx.Timeout(10, read=180),
-                       json={"model": s["ollama_model"], "prompt": prompt, "stream": False, "format": "json",
-                             "keep_alive": brain._keep_alive(s), "options": brain._options(s)})
-        out = json.loads(r.json()["response"])
-        g = [str(x).strip() for x in out.get("went_well", []) if str(x).strip()][:5]
-        x = [str(x).strip() for x in out.get("fix", []) if str(x).strip()][:5]
-        return (g, x) if g and x else None
-    except Exception:                                      # noqa: BLE001 - fall back to the rule-based text
-        return None
+    """The assistant that used to rewrite this text is gone (2026-10-03): the rule-based text is the summary."""
+    return None
 
 
 def build(week: str | None = None, use_hermes: bool = True) -> dict:

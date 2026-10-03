@@ -58,10 +58,10 @@ def test_data_backup_zip_and_pruning(sandbox):
     (sandbox / "trades.db").write_bytes(b"")
     from agent import ledger
     ledger.open_trade("paper", "XAUUSD", "buy", 0.1, 2650, 2649, 2652)
-    (sandbox / "hermes_memory.json").write_text("{}")
+    (sandbox / "learned_rules.json").write_text("{}")
     settings.save({"backup_keep": 2})
     names = [backup.make()["name"] for _ in range(3)]
     kept = [r["name"] for r in backup.listing()]
     assert kept == names[:0:-1]                       # the two newest, newest first
     z = zipfile.ZipFile(backup.listing()[0]["path"]).namelist()
-    assert "data/trades.db" in z and "data/settings.json" in z and "data/hermes_memory.json" in z
+    assert "data/trades.db" in z and "data/settings.json" in z and "data/learned_rules.json" in z

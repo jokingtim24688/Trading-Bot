@@ -31,15 +31,12 @@
       <rect x="23" y="6" width="4" height="11" rx="1" fill="var(--gold)"/><line x1="25" y1="3" x2="25" y2="20" stroke="var(--gold)" stroke-width="1.5"/>
     </svg>
   </div>
-  <button class="rail-btn active" data-tab="sol" title="Solana: your meme-coin bot dashboard"><svg viewBox="0 0 24 24"><path d="M7 6h13l-3 3H4zM4 10.5h13l3 3H7zM7 15h13l-3 3H4z"/></svg><span>Solana</span></button>
-  <button class="rail-btn" data-tab="bot" title="Bot: the live chart, co-pilot / full auto, and the agent's details"><svg viewBox="0 0 24 24"><path d="M3.5 16a8.5 8.5 0 0 1 17 0"/><path d="M12 16l4.2-5"/><circle cx="12" cy="16" r="1.4"/><path d="M6.2 16h-.01M17.8 16h-.01"/></svg><span>Bot</span></button>
+  <button class="rail-btn active" data-tab="bot" title="Bot: the live chart, co-pilot / full auto, and the agent's details"><svg viewBox="0 0 24 24"><path d="M3.5 16a8.5 8.5 0 0 1 17 0"/><path d="M12 16l4.2-5"/><circle cx="12" cy="16" r="1.4"/><path d="M6.2 16h-.01M17.8 16h-.01"/></svg><span>Bot</span></button>
   <button class="rail-btn" data-tab="manual" title="Trade by hand"><svg viewBox="0 0 24 24"><path d="M7 17V7M7 7l-3 3M7 7l3 3M17 7v10M17 17l-3-3M17 17l3-3"/></svg><span>Manual</span></button>
-  <button class="rail-btn" data-tab="chat" title="Assistant"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Hermes</span></button>
   <button class="rail-btn" data-tab="settings" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Settings</span></button>
-  <button class="rail-btn rail-more-btn" id="rail-more-btn" type="button" aria-expanded="false" aria-controls="rail-more" title="More: Ranks, Review, Train, Quiz">
+  <button class="rail-btn rail-more-btn" id="rail-more-btn" type="button" aria-expanded="false" aria-controls="rail-more" title="More: Review, Train, Quiz">
     <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg><span>More</span></button>
   <div class="rail-more" id="rail-more">
-    <button class="rail-btn" data-tab="ranks" title="Ranks: the crew's career ladder, who is where, and how close each agent is to its next rank"><svg viewBox="0 0 24 24"><path d="M5 12.5l7-4.5 7 4.5M5 18l7-4.5 7 4.5M12 2.8l1.2 2.4 2.6.4-1.9 1.8.5 2.6L12 8.8l-2.4 1.2.5-2.6-1.9-1.8 2.6-.4z"/></svg><span>Ranks</span></button>
     <button class="rail-btn" data-tab="review" title="Review your trades and the bot's"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Review</span></button>
     <button class="rail-btn" data-tab="train" title="Train"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-3 3 2 5-6"/><circle cx="19" cy="8" r="1.5"/></svg><span>Train</span></button>
     <button class="rail-btn" data-tab="quiz" title="Quiz school"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.5.2-.8.6-.8 1.1v.5M12 16.5h.01"/></svg><span>Quiz</span></button>
@@ -74,7 +71,7 @@
 
 <main>
   <!-- BOT: one full-screen live card. No stop loss anywhere on this tab (it stays in every order at the broker). -->
-  <section id="tab-bot" class="tab">
+  <section id="tab-bot" class="tab active">
     <div class="seg-row subtabs" role="tablist" aria-label="Bot views"><button type="button" class="seg-opt" data-goto="bot">Live</button><button type="button" class="seg-opt" data-goto="agent">Agent details</button></div>
     <div class="bot-live">
       <header class="panel bl-head">
@@ -104,7 +101,7 @@
           </div>
           <div class="bl-hb" id="bl-hb">
             <span class="hb" data-hb="broker"><i></i>Broker</span>
-            <span class="hb" data-hb="ai"><i></i>Hermes AI</span>
+            <span class="hb" data-hb="ai"><i></i>AI model</span>
             <span class="hb" data-hb="feed"><i></i>Data Feed</span>
           </div>
         </div>
@@ -194,119 +191,9 @@
   </section>
 
 
-  <!-- SOLANA: meme-coin scanner, anti-rug gatekeeper, ML ensemble that debates each trade, paper / live trades -->
-  <section id="tab-sol" class="tab active">
-    <div id="sol-missing" class="panel sol-missing" hidden></div>
-    <div class="panel sol-ctl">
-      <div class="sol-ctl-top">
-        <div class="sol-title">
-          <h2>Solana meme coins</h2>
-          <span id="sol-status" class="muted small">Loading…</span>
-          <p id="sol-dataline" class="sol-dataline small"></p>
-        </div>
-        <div class="sol-actions">
-          <button id="sol-scan" class="btn primary" type="button">Start scanner</button>
-          <div class="seg-row sol-mode" id="sol-mode" role="radiogroup" aria-label="Trading mode">
-            <button type="button" class="seg-opt on" data-mode="paper" role="radio" aria-checked="true">Paper</button>
-            <button type="button" class="seg-opt" data-mode="live" role="radio" aria-checked="false">Live wallet</button>
-          </div>
-          <label class="switch" title="When on, a BUY verdict from the debate opens a trade by itself"><input type="checkbox" id="sol-auto"><span>Auto-trade</span></label>
-        </div>
-      </div>
-      <div class="sol-ctl-bottom">
-        <details class="sol-adv" id="sol-adv">
-          <summary class="btn ghost xs" title="Fresh data and retraining now happen by themselves (see the Quiz tab's Trenching school) - these are only for doing it right now">Data &amp; training</summary>
-          <div class="sol-adv-pop">
-            <p class="muted small">Fresh pool data and retraining now happen by themselves in the background as new real data comes in (watch the history chart in the Quiz tab's Trenching school). These two do it right now instead of waiting.</p>
-            <div class="row-inline">
-              <button id="sol-dataset" class="btn" type="button" title="Pull fresh Solana pool data right now, without waiting for the automatic timer">Pull fresh data now</button>
-              <button id="sol-train" class="btn" type="button">Train now</button>
-            </div>
-          </div>
-        </details>
-        <div class="sol-progress" id="sol-progress" hidden><div class="bar"><i id="sol-prog-bar"></i></div><span id="sol-prog-txt" class="muted small"></span></div>
-        <div class="sol-chips" id="sol-chips"></div>
-      </div>
-    </div>
-    <div class="panel sol-port">
-      <div class="panel-head"><h3>Your money and trades</h3><span id="sol-port-meta" class="muted small"></span></div>
-      <div class="sol-port-grid">
-        <div class="sol-stats" id="sol-stats"></div>
-        <div class="sol-pnl" id="sol-pnl"></div>
-      </div>
-      <div class="table-wrap"><table id="sol-pos"><thead><tr><th>Token</th><th>Mode</th><th>Size</th><th>Entry</th><th>Now</th><th>P/L</th><th>Stop</th><th>Time left</th><th></th></tr></thead><tbody></tbody></table></div>
-      <details class="sol-trades"><summary>Closed trades <span id="sol-trades-meta" class="muted small"></span></summary>
-        <div class="table-wrap"><table id="sol-trades"><thead><tr><th>Closed</th><th>Token</th><th>Mode</th><th>Size</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Why</th></tr></thead><tbody></tbody></table></div></details>
-    </div>
-    <div class="panel sol-feed-panel">
-        <div class="panel-head"><h3>Coins checked right now <span class="muted small">(real, live from GeckoTerminal)</span></h3><span id="sol-feed-meta" class="muted small"></span></div>
-        <div class="seg-row sol-filter" id="sol-filter" role="radiogroup" aria-label="Show">
-          <button type="button" class="seg-opt on" data-f="all">All</button><button type="button" class="seg-opt" data-f="passed">Passed</button><button type="button" class="seg-opt" data-f="blocked">Blocked</button>
-        </div>
-        <div class="table-wrap sol-feed-wrap"><table id="sol-feed"><thead><tr><th>Seen</th><th>Token</th><th>Liquidity</th><th>Age</th><th>Buys/Sells 5m</th><th>Gate</th><th>Why</th></tr></thead><tbody></tbody></table></div>
-      </div>
-    <details class="panel sol-advanced" id="sol-advanced">
-      <summary><b>Advanced</b> <span class="muted small">the AI crew, how they argue each trade, and the tweet radar</span></summary>
-      <div class="sol-crew" id="sol-crew" aria-label="The models: score, what each is doing"></div>
-      <div class="crew-profile" id="crew-profile" aria-live="polite"><div class="cp-inner" id="cp-inner"></div></div>
-      <div class="panel sol-brain">
-        <div class="panel-head"><h3>Ensemble brain</h3><span id="sol-brain-tok" class="muted small"></span></div>
-        <div id="sol-bars" class="sol-bars"></div>
-        <div class="panel-head sol-debate-head"><h3>The debate</h3><span id="sol-debate-meta" class="muted small"></span></div>
-        <div id="sol-debate" class="sol-debate"></div>
-      </div>
-      <div class="panel sol-x" id="sol-x">
-      <div class="panel-head">
-        <h3>Tweet radar</h3><span id="solx-meta" class="muted small"></span>
-      </div>
-      <p class="solx-lead small">Every agent reads a different part of X and brings back coins worth a look. A find is
-        only a candidate: it still has to pass the six rug rules, the model floor, the debate and the subagents' veto,
-        exactly like a coin the scanner found. The radar only decides <em>which coins get looked at first</em>.</p>
-      <div class="solx-setup">
-        <div class="seg-row solx-prov" id="solx-prov" role="radiogroup" aria-label="Where the posts come from">
-          <button type="button" class="seg-opt on" data-p="off" role="radio" aria-checked="true">Off</button>
-          <button type="button" class="seg-opt" data-p="twitterapi" role="radio" aria-checked="false" title="twitterapi.io — $0.15 per 1,000 posts">twitterapi.io</button>
-          <button type="button" class="seg-opt" data-p="x" role="radio" aria-checked="false" title="The official X API — $0.005 per post read">X API</button>
-        </div>
-        <label class="solx-key"><span class="muted small">API key</span><input id="solx-key" type="password" autocomplete="off" spellcheck="false" placeholder="paste the key"></label>
-        <button id="solx-save" class="btn" type="button">Save key</button>
-        <button id="solx-run" class="btn primary" type="button">Start monitors</button>
-        <button id="solx-now" class="btn" type="button" title="Read every beat once, without waiting for the timer">Read now</button>
-        <span id="solx-cost" class="muted small"></span>
-      </div>
-      <details class="solx-beats-wrap" id="solx-beats-wrap">
-        <summary>Each agent's own beat <span class="muted small">— what it's reading and how much it's found</span></summary>
-        <div class="solx-beats" id="solx-beats"></div>
-      </details>
-      <div class="table-wrap solx-wrap"><table id="solx-finds"><thead><tr><th>Found</th><th>Coin</th><th>Agent</th><th>Heat</th><th>Voices</th><th>The post</th><th>What happened to it</th></tr></thead><tbody></tbody></table></div>
-    </div>
-    </details>
-  </section>
 
-  <!-- MANUAL TRADING -->
-  <section id="tab-ranks" class="tab">
-    <div class="panel rk-intro">
-      <div class="panel-head"><h3>Ranks</h3><span id="rk-meta" class="muted small"></span></div>
-      <p class="muted small">Every agent starts as an Intern and climbs the desk by earning points (trade points plus its latest quiz grade), closing trades and, from Senior Trader up, being right often enough. A higher rank changes its suit and makes its vote count more in the debate. Promotions happen the moment every requirement is met; an agent only drops a rank when it falls clearly below it.</p>
-    </div>
-    <div id="rk-missing" class="panel sol-missing" hidden></div>
-    <div class="rk-grid">
-      <div class="panel rk-ladder-panel">
-        <div class="panel-head"><h3>The ladder</h3><span class="muted small">top to bottom</span></div>
-        <div class="rk-ladder" id="rk-ladder"></div>
-      </div>
-      <div class="rk-side">
-        <div class="panel">
-          <div class="panel-head"><h3>Standings</h3><span id="rk-stand-meta" class="muted small"></span></div>
-          <div class="table-wrap"><table class="rk-table"><thead><tr><th>#</th><th>Agent</th><th>Rank</th><th>Points</th><th>To the next rank</th></tr></thead><tbody id="rk-stand"></tbody></table></div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><h3>Promotions</h3><span class="muted small">and the odd demotion</span></div>
-          <ul class="rk-log" id="rk-log"></ul>
-        </div>
-      </div>
-    </div>
-  </section>
+
+
   <section id="tab-manual" class="tab">
     <div id="man-backend" class="empty-state man-banner" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>
       <div><b>Placing orders needs its backend</b>Chat A is building it from the spec in TWO_CHATS.md. Until then you can already watch prices and close positions (one at a time or in bulk) from here.</div></div>
@@ -357,7 +244,7 @@
         <div class="panel open-strip">
           <div class="strip-head">
             <h3>Open trades</h3><span id="man-open-sum" class="muted small"></span>
-            <div class="chips" id="man-owner" role="radiogroup" aria-label="Whose trades"><button class="chip active" data-o="any" type="button">Everyone's</button><button class="chip" data-o="you" type="button">Mine</button><button class="chip" data-o="bot" type="button">Bot</button><button class="chip" data-o="hermes" type="button">Hermes</button></div>
+            <div class="chips" id="man-owner" role="radiogroup" aria-label="Whose trades"><button class="chip active" data-o="any" type="button">Everyone's</button><button class="chip" data-o="you" type="button">Mine</button><button class="chip" data-o="bot" type="button">Bot</button></div>
             <div class="bulk-btns">
               <button class="btn xs" data-bulk="profit" type="button">Close profitable</button>
               <button class="btn xs" data-bulk="loss" type="button">Close negative</button>
@@ -481,35 +368,6 @@
 
   <!-- QUIZ SCHOOL -->
   <section id="tab-quiz" class="tab">
-    <div class="panel quiz-modes" id="quiz-modes">
-      <div class="panel-head"><h3>What should the quiz train?</h3><span id="qm-note" class="muted small"></span></div>
-      <div class="qm-opts" role="radiogroup" aria-label="Quiz school">
-        <button class="qm-opt" type="button" role="radio" aria-checked="false" data-mode="stocks"><b>Stocks</b><span>MT5 charts: the 18 pro gold setups, the traps and the stay-outs. Trains the MT5 bot.</span></button>
-        <button class="qm-opt" type="button" role="radio" aria-checked="false" data-mode="trenching"><b>Trenching</b><span>Fresh Solana meme coins: buy or pass, graded on +25 % before −12 % within 30 minutes. Trains the Solana crew.</span>
-          <em class="qm-rec">Recommended<small>the bot trades the trenches, and one school at a time trains fastest</small></em></button>
-        <button class="qm-opt" type="button" role="radio" aria-checked="false" data-mode="combined"><b>Combined</b><span>Both schools at once. Each bot still learns only from its own market, so neither gets confused.</span></button>
-      </div>
-    </div>
-    <div class="panel quiz-trench" id="quiz-trench" hidden>
-      <div class="panel-head"><h3>Trenching school</h3><span id="qt-status" class="muted small"></span></div>
-      <p class="muted small qt-intro">Every question is a real moment of a fresh Solana coin: liquidity, age, buys and sells in the last 5 minutes, the move so far and how much the top wallets hold. The answer is <b>BUY</b> if the price then hit +25 % before −12 % within 30 minutes, otherwise <b>PASS</b>. Training splits the bot into its models, each learns from every question, they're graded on questions they never saw, then they merge back into one bot. Questions are kept on disk, not in memory.</p>
-      <div class="qt-stats" id="qt-stats"></div>
-      <div class="row-inline">
-        <button id="qt-train" class="btn primary" type="button">Train the crew now</button>
-        <button id="qt-download" class="btn" type="button">Download fresh trenching data</button>
-        <span id="qt-hint" class="muted small"></span>
-      </div>
-      <div id="qt-prog" class="build-prog" hidden><div class="build-line"><span id="qt-stage" class="small"></span><span id="qt-pct" class="muted small num"></span></div><div class="bar"><i id="qt-bar"></i></div></div>
-      <div class="qt-cols">
-        <div><h4 class="qt-h">The crew's grades</h4><div id="qt-crew" class="qt-crew"></div></div>
-        <div><h4 class="qt-h">A question from the bank <button id="qt-next" class="btn xs" type="button">Another</button></h4><div id="qt-q" class="qt-q"></div></div>
-      </div>
-      <section class="qt-hist" id="qt-hist-sec" hidden>
-        <h4 class="qt-h">Real improvement over time <span id="qt-hist-meta" class="muted small"></span></h4>
-        <div id="qt-hist-chart"></div>
-        <p class="muted small" id="qt-hist-note"></p>
-      </section>
-    </div>
     <div class="quiz-grid">
       <div class="quiz-side">
         <div class="panel">
@@ -594,34 +452,7 @@
     </div>
   </section>
 
-  <!-- HERMES -->
-  <section id="tab-chat" class="tab">
-    <div class="chat-grid">
-      <div class="panel chat-panel">
-        <div class="panel-head"><h3>Hermes</h3><div class="row gap"><button id="brain-setup" class="btn primary xs" hidden>Set up</button><span id="brain-which" class="by" hidden></span><span id="brain-state" class="pill">checking…</span></div></div>
-        <p id="brain-next" class="brain-next small" hidden></p>
-        <div id="brain-dl" class="bar brain-bar" hidden><i id="brain-bar"></i></div>
-        <div id="thread" class="thread"></div>
-        <p id="chat-intro" class="empty intro">Hermes can read your MT5 account, summarise M1 price action, size trades, start or stop the agent, save notes, read web pages and remember what you tell it. It isn't limited to trading, so ask it anything.</p>
-        <div id="suggest" class="suggest">
-          <button>What's XAUUSD's spread compared with its M1 ATR right now?</button>
-          <button>Remember: I never open trades 10 minutes either side of NFP or CPI.</button>
-          <button>Size a buy on XAUUSD, entry 2650.00, stop 2647.50, 0.5% risk.</button>
-          <button>Is the agent running? Summarise its last few log lines.</button>
-        </div>
-        <form id="chat-form" class="composer">
-          <textarea id="chat-input" rows="1" placeholder="Ask about your account, the market, or anything else…"></textarea>
-          <button class="btn primary" type="submit">Send</button>
-        </form>
-      </div>
-      <aside class="panel memory-panel">
-        <div class="panel-head"><h3>Memory</h3><span id="fact-count" class="muted small"></span></div>
-        <p class="muted small">Saved on disk in <code>data/hermes_memory.json</code>, so it survives restarts. Hermes adds to it when you tell it something worth keeping.</p>
-        <ul id="facts" class="facts"></ul>
-        <form id="fact-form" class="row gap"><input id="fact-input" placeholder="Add something to remember"><button class="btn">Save</button></form>
-      </aside>
-    </div>
-  </section>
+
 
   <!-- REVIEW -->
   <section id="tab-review" class="tab">
@@ -740,7 +571,6 @@
         <a href="#set-news">News pause<span class="dot"></span></a>
         <a href="#set-manual">Manual trading<span class="dot"></span></a>
         <a href="#set-quiz">Quiz school<span class="dot"></span></a>
-        <a href="#set-hermes">Hermes<span class="dot"></span></a>
         <a href="#set-telegram">Phone alerts<span class="dot"></span></a>
         <a href="#set-display">Display<span class="dot"></span></a>
         <a href="#set-backup">Backup<span class="dot"></span></a>
@@ -821,24 +651,7 @@
           <label class="check"><input type="checkbox" name="quiz_filter"> Second opinion from the quiz agent: only enter when it picks the same side</label>
           <span class="help" id="quiz-verdict"></span>
         </fieldset>
-        <fieldset class="panel" id="set-hermes"><legend>Hermes<small>your assistant</small></legend>
-          <label>Assistant backend
-            <select name="assistant_backend"><option value="auto">Auto (Hermes Agent if running, else local)</option><option value="hermes_agent">Hermes Agent (WSL)</option><option value="local">Local Hermes model (Ollama)</option></select>
-          </label>
-          <label>Hermes Agent URL<input name="hermes_url"></label>
-          <label>Command that starts Hermes Agent<input name="hermes_agent_cmd" spellcheck="false"></label>
-          <label>WSL distro (blank = the default one)<input name="hermes_wsl_distro" spellcheck="false"></label>
-          <label>Hermes Agent API key<input name="hermes_key" type="password"></label>
-          <label>Ollama URL<input name="ollama_url"></label>
-          <label>Local model<input name="ollama_model"></label>
-          <label>Unload the model after idle (0 = right after each reply)<input name="ollama_keep_alive"></label>
-          <label class="check"><input type="checkbox" name="ollama_cpu_only"> Run the local model on the CPU only, so the RTX 4060 stays free for training</label>
-          <label class="check"><input type="checkbox" name="allow_web"> Let Hermes read web pages</label>
-          <label class="span-all">Hermes may only open these trading and market sites (one per line; "site/path" keeps it to one section, e.g. reuters.com/markets)<textarea name="web_sites" rows="4" spellcheck="false"></textarea></label>
-          <label class="check"><input type="checkbox" name="hermes_agent_autostart"> Start Hermes Agent (in WSL) when the app opens, if it's installed</label>
-          <span class="help">Hermes Agent does the real work: longer tasks, tools, the web. The small local model only answers when it isn't running.</span>
-          <label class="check"><input type="checkbox" name="mcp_autostart"> Start the MT5 bridge for Hermes Agent when the app opens</label>
-        </fieldset>
+        
         <fieldset class="panel" id="set-telegram"><legend>Phone alerts<small>take profit, stop loss and more on your phone, through Telegram</small></legend>
           <label class="check"><input type="checkbox" name="telegram_enabled"> Send alerts to my phone through Telegram</label>
           <label class="span-all">Your bot's token<input name="telegram_token" type="password" autocomplete="off" spellcheck="false" placeholder="123456789:AA…"></label>
@@ -863,7 +676,7 @@
               <li><code>/total</code><span>profit and loss combined: what you actually have from trading</span></li>
               <li><code>/help</code><span>this list</span></li>
             </ul>
-            <span class="help">Only your own chat (the one Find my chat saved) gets answers. Counts closed trades: MT5 paper, demo and real in account money, and the Solana bot's paper and live trades in SOL.</span>
+            <span class="help">Only your own chat (the one Find my chat saved) gets answers. Counts closed trades: MT5 paper, demo and real, in account money.</span>
             <span id="tg-cmd-status" class="muted small"></span>
           </div>
         </fieldset>
@@ -922,14 +735,6 @@
       <button class="btn xs" type="button" id="cb-close">Close</button></div>
   </div>
   <div id="cb-rows" class="cb-rows"></div>
-</dialog>
-<dialog id="sol-live-dlg" class="dlg glass" aria-labelledby="sol-live-h">
-  <form method="dialog">
-    <h3 id="sol-live-h">Trade from your Solana wallet?</h3>
-    <p>Live mode signs real swaps with the key in your <code>.env</code> (it never leaves this PC). Meme coins can go to zero in minutes; the rug filter lowers that risk, it can't remove it. Every BUY verdict will spend real SOL.</p>
-    <label>Type LIVE to continue<input id="sol-live-input" autocomplete="off" spellcheck="false"></label>
-    <div class="dlg-btns"><button class="btn" value="cancel">Cancel</button><button class="btn danger" id="sol-live-ok" value="ok" disabled>Go live</button></div>
-  </form>
 </dialog>
 <dialog id="real-dlg" class="dlg glass" aria-labelledby="real-h">
   <form method="dialog">

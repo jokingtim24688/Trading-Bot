@@ -75,72 +75,18 @@ DEFAULTS = {
     # MT5 from a Mac / Linux: the bridge running next to MT5 on a Windows PC or VM (agent/mt5_remote.py)
     "mt5_bridge_url": "",                  # e.g. http://192.168.1.20:18812 ("" = none; Windows uses MT5 directly)
     "mt5_bridge_token": "",             # answer /prof /loss /total (only from your saved chat)
-    # Quiz: which school the Quiz tab trains ("stocks" = MT5 setups, "trenching" = Solana meme coins, "combined")
-    "quiz_mode": "trenching",
     "quiz_min_creators": 2,                # question creators kept running while the app is open (per school)
-    # Trenching data growth (sol/trench.py): keeps pulling real PumpSwap/new-pool candles while the app is open,
-    # and retrains the crew by itself once enough new real data has come in, so improvement is visible without
-    # pressing Train every time.
-    "trench_download_min": 20,             # minutes between background downloads (the first one runs at once)
-    "trench_download_pools": 40,           # fresh pools looked at per download round (was a fixed 24, one-shot)
-    "trench_auto_retrain": True,
-    "trench_auto_retrain_gap": 400,        # new real labelled moments since the last training before it retrains
-    # Solana trenching bot (sol/): paper by default; live needs SOL_PRIVATE_KEY in .env and a typed LIVE
-    "sol_trade_size_sol": 0.1,
-    "sol_max_open": 3,
-    "sol_tp_pct": 30.0,
-    "sol_trail_pct": 10.0,
-    "sol_timeout_min": 20,
-    "sol_buy_threshold": 0.78,
-    "sol_model_floor": 0.65,
-    "sol_min_liq_usd": 5000,
-    "sol_scan_s": 10,
-    "sol_paper_start": 10.0,
-    # Each agent's own tweet monitor (sol/tweets.py). Off until a key is saved; a find still goes through every
-    # filter (rug rules -> model floor -> debate -> subagents), it only decides which coins get looked at first.
-    "x_provider": "off",                   # "off" | "twitterapi" (twitterapi.io) | "x" (official X API v2)
-    "x_api_key": "",                       # stays on this machine; routes only ever report whether it is set
-    "x_scan_s": 300,                       # seconds between rounds (every agent reads its own beat once a round)
-    "x_per_beat": 15,                      # posts pulled per agent per round - this is what the provider bills
-    "x_min_likes": 4,                      # a post nobody liked is not a signal
-    "x_min_followers": 400,                # nor is one from an account nobody follows
-    "x_min_account_days": 30,              # brand-new accounts are how coin spam is posted
-    "x_max_age_min": 45,                   # older than this and the move already happened
-    "x_min_voices": 2,                     # distinct accounts on the same coin before it is worth a look
-    "x_big_voice": 25000,                  # unless one account this big posts it alone
-    "x_max_per_round": 6,                  # coins actually evaluated per round, best heat first
-    "x_accounts": "",                      # extra handles to follow, comma separated, no @
-    "x_beats": {},                         # per-agent overrides: {"xgb": {"on": false, "terms": "..."}}
     # Owned by the UI (Keybinds and Sounds pages); the server only stores them so they survive and ride in backups
     "keybinds": {},                        # {"bindings": {"man.buy": "B", ...}, "groups": {"app": true, ...}}
     "sounds": {},                          # {"master": {...}, "events": {"profit": {...}, ...}}
-    # Assistant
-    "assistant_backend": "auto",           # auto | hermes_agent | local
-    "hermes_url": "http://127.0.0.1:8642",
-    "hermes_key": "",
-    "hermes_agent_autostart": True,        # start the Hermes Agent app (`hermes gateway`, in WSL) when it's installed
-    "hermes_agent_cmd": "hermes gateway",  # the command that runs its API server
-    "hermes_wsl_distro": "",               # WSL distro Hermes Agent is installed in ("" = the default one)
-    "ollama_url": "http://127.0.0.1:11434",
-    "ollama_model": "llama3.2:3b",         # small model (~2 GB) for the Hermes chat tab
-    "ollama_cpu_only": True,               # run it on the CPU so it never uses the RTX 4060's VRAM
-    "ollama_keep_alive": "0",              # unload the model right after each reply (0 = no lingering)
-    "assistant_autosetup": True,           # start Ollama and download the model automatically when needed
-    "allow_web": True,
-    # Hermes may only open pages on these trading/market sites (a site covers its subdomains; "site/path" limits it
-    # to that section). Anything else is refused.
-    "web_sites": ["federalreserve.gov", "bls.gov", "bea.gov", "treasury.gov", "ecb.europa.eu", "gold.org",
-                  "lbma.org.uk", "kitco.com", "cmegroup.com", "fxstreet.com", "forexfactory.com", "investing.com",
-                  "tradingeconomics.com", "marketwatch.com", "finance.yahoo.com", "investopedia.com", "babypips.com",
-                  "reuters.com/markets", "mql5.com", "metatrader5.com"],
-    # MCP bridge for Hermes Agent
+    # MCP bridge (MT5 tools for Claude Code / other MCP clients)
     "mcp_http_port": 8765,
     "mcp_autostart": True,
     "settings_version": 8,
 }
 
 
-SECRETS = ("x_api_key",)        # never returned by a route: the app only learns whether one is set
+SECRETS: tuple[str, ...] = ()   # keys never returned by a route (the app only learns whether one is set)
 
 
 def load() -> dict:

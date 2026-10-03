@@ -1,6 +1,6 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const state = { settings: null, symbol: null, mode: "paper", tab: "sol", chart: null, series: null, lastBid: null, digits: 2, equityShown: false };
+const state = { settings: null, symbol: null, mode: "paper", tab: "bot", chart: null, series: null, lastBid: null, digits: 2, equityShown: false };
 
 async function api(path, opts = {}) {
   if (opts.method && opts.method !== "GET") posCache.at = 0;       // a close/order/edit: the next positions read is fresh
@@ -105,9 +105,9 @@ function setNum(el, v, format, { flashIt = true } = {}) {
    Agent, Hermes, Settings) stay put; the other six (Ranks, Review, Train, Quiz, Keys, Sounds) fold under one
    "More" toggle, collapsed by default. Nothing is removed or re-routed - showTab() still does the same thing for
    all twelve - a link or shortcut into a folded tab just opens the group first so the button exists to activate. */
-const RAIL_MORE_TABS = new Set(["ranks", "review", "train", "quiz"]);
+const RAIL_MORE_TABS = new Set(["review", "train", "quiz"]);
 // Views that live inside another rail button: Agent details is part of Bot, Keybinds and Sounds are part of Settings.
-const RAIL_PARENT = { agent: "bot", keys: "settings", sounds: "settings" };
+const RAIL_PARENT = { agent: "bot", hub: "bot", keys: "settings", sounds: "settings" };
 function railMoreOpen(open) {
   const wrap = $("#rail-more"), btn = $("#rail-more-btn"); if (!wrap || !btn) return;
   wrap.classList.toggle("open", open); btn.setAttribute("aria-expanded", String(open));
@@ -126,8 +126,6 @@ function moveRailInd() {                        // slide the highlight to the ac
 }
 $$(".tab").forEach(t => $$(".panel", t).forEach((p, i) => p.style.setProperty("--i", i)));   // stagger order per tab
 function showTab(name) {
-  // leaving the Hermes tab puts the local model to sleep (frees RAM/VRAM; the next message reloads it)
-  if (state.tab === "chat" && name !== "chat") api("/api/assistant/sleep", { method: "POST" }).catch(() => {});
   if (name !== "agent") closeLog();
   if (name !== "bot") closeSymPop();
   if (name === "settings" && state.settings && !$("#savebar").classList.contains("is-dirty")) { fillSettings(); updateDirty(); }
@@ -140,9 +138,7 @@ function showTab(name) {
   moveRailInd();
   if (name === "bot" && state.chart && state.chartAuto && !state.autoT) realignChart(true);
   if (name === "bot") openBot();
-  if (name === "sol") openSol();
-  if (name === "ranks") loadRanks();
-  if (name === "chat") { loadHistory(); loadFacts(); }
+  if (name === "hub") openHub();
   if (name === "manual") openManual();
   if (name === "review") openReview();
   if (name === "keys") renderKeys();
@@ -150,7 +146,7 @@ function showTab(name) {
   if (name === "agent") { pollAgentLog(); loadJournal(); renderBotTable(); loadPlan(); loadProgress(); loadCalendar(); loadBacktest(); loadWatchdog(); }
   if (name === "settings") onSettingsOpen();
   if (name === "train") pollTrainLog();
-  if (name === "quiz") { loadQuiz(); loadReport(false); loadTrench(true); }
+  if (name === "quiz") { loadQuiz(); loadReport(false); }
 }
 $$(".rail-btn[data-tab]").forEach(b => b.onclick = () => showTab(b.dataset.tab));   // the "More" toggle has no data-tab, so it never fires showTab()
 document.addEventListener("click", e => { const g = e.target.closest("[data-goto]"); if (g) { if (g.tagName === "A") e.preventDefault(); showTab(g.dataset.goto); } });
@@ -1023,101 +1019,6 @@ async function pollTrainLog() {
   try { const r = await api(`/api/jobs/${lastTrainJob}/log?lines=400`); showLog("train", r.log, false); } catch (e) {}
 }
 
-/* ---------- Hermes chat ---------- */
-const BACKEND_NAME = { hermes_agent: "Hermes Agent", local: "Local model" };
-function addMsg(role, text, tools, animate = false, backend = null) {
-  const d = document.createElement("div"); d.className = `msg ${role}${animate ? " enter" : ""}`; d.textContent = text;
-  if ((tools && tools.length) || backend) {
-    const t = document.createElement("div"); t.className = "tools";
-    if (backend) { const b = document.createElement("span"); b.className = `by ${backend}`; b.textContent = BACKEND_NAME[backend] || backend; t.appendChild(b); }
-    if (tools && tools.length) t.append(`used: ${tools.map(x => x.tool).join(", ")}`);
-    d.appendChild(t);
-  }
-  $("#thread").appendChild(d); $("#thread").scrollTop = $("#thread").scrollHeight; return d;
-}
-async function loadHistory() {
-  try {
-    const h = await api("/api/chat/history?n=60"); $("#thread").innerHTML = "";
-    h.forEach(m => addMsg(m.role, m.content));
-    $("#suggest").classList.toggle("hidden", h.length > 0);
-    $("#chat-intro").classList.toggle("hidden", h.length > 0);
-  } catch (e) {}
-}
-async function send(text) {
-  text = text.trim(); if (!text) return;
-  $("#suggest").classList.add("hidden"); $("#chat-intro").classList.add("hidden"); addMsg("user", text, null, true);
-  const agent = whoAnswers() === "hermes_agent", pending = addMsg("assistant pending", agent ? "Hermes Agent is working" : "Thinking", null, true), t0 = Date.now();
-  const tick = setInterval(() => {                // Hermes Agent tasks can take minutes: show that it's still going
-    const sec = Math.round((Date.now() - t0) / 1000); if (sec < 8) return;
-    pending.textContent = `${agent ? "Hermes Agent is still working" : "Still thinking"} (${sec < 60 ? `${sec} s` : `${Math.floor(sec / 60)} min ${sec % 60} s`})${agent && sec >= 20 ? ". Agent tasks can take a few minutes." : ""}`;
-  }, 1000);
-  try {
-    const r = await api("/api/chat", { method: "POST", body: { text } }); pending.remove(); addMsg("assistant", r.reply, r.tools, true, r.backend); loadFacts();
-    if (state.tab !== "chat" || document.hidden) playEvent("hermes");
-    if ((r.reply || "").startsWith("⚠")) brainStatus();       // set-up messages: refresh the status line
-  }
-  catch (e) { pending.remove(); addMsg("assistant", `Couldn't reach the assistant: ${e.message}`, null, true); }
-  clearInterval(tick);
-}
-$("#chat-form").onsubmit = e => { e.preventDefault(); const i = $("#chat-input"); const t = i.value; i.value = ""; i.style.height = ""; send(t); };
-$("#chat-input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chat-form").requestSubmit(); } });
-$("#chat-input").addEventListener("input", e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; });
-$$("#suggest button").forEach(b => b.onclick = () => send(b.textContent));
-// status pill + next step + Set up button; the local model can install/start/download itself (backend by Chat A)
-const LOCAL_TEXT = { not_installed: "Ollama not installed", stopped: "Ollama not running", no_model: "Model not downloaded", error: "Set-up problem", starting: "Starting Ollama…" };
-/* which one answers the next message: the Hermes Agent app when it's up (or forced), else the small local model */
-function whoAnswers(s = state.brain) {
-  if (!s) return null;
-  const agentUp = s.agent ? s.agent === "ready" : s.hermes_agent;
-  return s.backend_setting === "hermes_agent" || (s.backend_setting === "auto" && agentUp) ? "hermes_agent" : "local";
-}
-async function brainStatus() {
-  let s; try { s = await api("/api/assistant/status"); } catch (e) { return; }
-  state.brain = s;
-  const el = $("#brain-state"), next = $("#brain-next"), setup = $("#brain-setup");
-  const useAgent = whoAnswers(s) === "hermes_agent", agentUp = s.agent ? s.agent === "ready" : s.hermes_agent;
-  const agentBusy = s.agent === "starting", agentFix = ["stopped", "error"].includes(s.agent) && s.backend_setting !== "local";
-  const localReady = s.local ? s.local === "ready" : s.ollama;
-  const which = $("#brain-which"); which.hidden = !s.agent; which.textContent = useAgent ? "Hermes Agent" : "Local model";
-  which.className = `by ${useAgent ? "hermes_agent" : "local"}`;
-  which.title = useAgent ? "Replies come from the Hermes Agent app in WSL" : `Replies come from the small local model${s.agent && s.agent !== "off" && s.agent !== "ready" ? " until Hermes Agent is running" : ""}`;
-  let text, live = false;
-  if (useAgent && agentUp) { text = "Hermes Agent · ready"; live = true; }
-  else if (agentBusy && s.backend_setting !== "local") text = "Starting Hermes Agent…";
-  else if (useAgent) text = "Hermes Agent not running";
-  else if (localReady) { text = `${s.model} on ${s.device || "GPU"}`; live = true; }
-  else if (s.installing) text = "Installing Ollama…";
-  else if (s.local === "downloading") text = `Downloading ${Math.round((s.download_pct || 0) * 100)}%`;
-  else text = LOCAL_TEXT[s.local] || "Ollama not running";
-  setHTML(el, live ? `<span class="live-dot"></span>${text}` : text);
-  el.className = "pill " + (live ? "live" : "warn");
-  const step = s.agent_step && s.backend_setting !== "local" && s.agent !== "off" && !agentUp ? s.agent_step : !live && s.next_step ? s.next_step : "";
-  if (next.textContent !== step) next.textContent = step;
-  next.hidden = !step;
-  setup.hidden = !agentFix && (useAgent || s.installing || !["not_installed", "stopped", "no_model", "error"].includes(s.local));
-  const dl = s.local === "downloading" && !useAgent;
-  $("#brain-dl").hidden = !dl; if (dl) $("#brain-bar").style.width = `${Math.round((s.download_pct || 0) * 100)}%`;
-  clearTimeout(state.brainT);                    // poll faster while it is busy setting itself up
-  if (agentBusy || (!useAgent && (s.installing || ["downloading", "starting"].includes(s.local)))) state.brainT = setTimeout(brainStatus, 2000);
-}
-$("#brain-setup").onclick = async () => {
-  const b = $("#brain-setup"); b.disabled = true; b.textContent = "Setting up…";
-  try { const r = await api("/api/assistant/setup", { method: "POST", body: {} }); if (r.note) toast(r.note); }
-  catch (e) { toast(e.message, true); }
-  b.disabled = false; b.textContent = "Set up"; brainStatus();
-};
-async function loadFacts() {
-  try {
-    const f = await api("/api/memory"), max = state.factMax;
-    state.factMax = f.reduce((mx, x) => Math.max(mx, x.id), max ?? 0);
-    $("#fact-count").textContent = f.length ? `${f.length} saved` : "";
-    setHTML($("#facts"), f.map(x => `<li${max != null && x.id > max ? ` class="enter"` : ""}><span>${x.text.replace(/</g, "&lt;")}</span><button title="Forget" data-forget="${x.id}">×</button></li>`).join("")
-      || `<li class="muted">Nothing yet. Try "Remember my broker is on GMT+3" or "Remember I only trade the London–New York overlap".</li>`);
-  } catch (e) {}
-}
-$("#facts").addEventListener("click", async e => { const b = e.target.closest("[data-forget]"); if (!b) return; await api(`/api/memory/${b.dataset.forget}`, { method: "DELETE" }); loadFacts(); });
-$("#fact-form").onsubmit = async e => { e.preventDefault(); const i = $("#fact-input"); if (!i.value.trim()) return; await api("/api/memory", { method: "POST", body: { text: i.value } }); i.value = ""; loadFacts(); };
-
 /* ---------- settings ---------- */
 function fillSettings() {
   const f = $("#settings-form"), s = state.settings;
@@ -1181,7 +1082,7 @@ $("#set-discard").onclick = () => { fillSettings(); updateDirty(); };
 $("#settings-form").onsubmit = async e => {
   e.preventDefault();
   const body = formValues(), msg = $("#settings-msg");
-  try { state.settings = await api("/api/settings", { method: "POST", body }); msg.textContent = "Saved to data/settings.json"; initFromSettings(true); brainStatus(); loadPlan(); }
+  try { state.settings = await api("/api/settings", { method: "POST", body }); msg.textContent = "Saved to data/settings.json"; initFromSettings(true); loadPlan(); }
   catch (err) { msg.textContent = err.message; }
   updateDirty();
   if (msg.animate && motionOK()) msg.animate([{ opacity: 0, transform: "translateX(-4px)" }, { opacity: 1, transform: "none" }], { duration: 260, easing: "cubic-bezier(.22,1,.36,1)" });
@@ -1963,7 +1864,7 @@ async function loadWeek(poll = 0) {
     return;
   }
   rv.weekGen = w.generated_utc;
-  src.hidden = false; src.className = `tag ${w.source === "hermes" ? "hermes" : ""}`; src.textContent = w.source === "hermes" ? "Written by Hermes" : "Rule-based (Hermes was off)";
+  src.hidden = false; src.className = `tag ${w.source === "hermes" ? "hermes" : ""}`; src.textContent = w.source === "hermes" ? "Written by the assistant" : "Rule-based";
   const li = a => (a || []).map(x => `<li>${String(x).replace(/</g, "&lt;")}</li>`).join("");
   const nums = (who, n) => n ? `<span><b class="${who}">${WHO[who]}</b> ${n.trades} trade${n.trades === 1 ? "" : "s"}, ${n.win_rate != null ? `${Math.round(n.win_rate)}% won, ` : ""}<b class="num ${cls(n.net)}">${signed(n.net)}</b>${n.profit_factor ? `, profit factor ${(+n.profit_factor).toFixed(2)}` : ""}</span>` : "";
   setHTML(box, `<div class="wk-cols"><div class="wk-col good"><h4>What went well</h4><ul>${li(w.went_well) || "<li class='muted'>Nothing stood out.</li>"}</ul></div>
@@ -2043,7 +1944,7 @@ $("#bk-copy").onclick = async () => {
 
 /* ---------- first-run checklist: a Setup pill in the top bar while anything required is missing; the list opens
    by itself once on a fresh install. /api/setup/checklist when it exists, else built from what the app already knows. ---------- */
-const FIX = { "/api/fetch": "Download data", "/api/train": "Train", "/api/assistant/setup": "Set up Hermes", "/api/mcp/start": "Start bridge", "/api/history/download": "Download" };
+const FIX = { "/api/fetch": "Download data", "/api/train": "Train", "/api/mcp/start": "Start bridge", "/api/history/download": "Download" };
 const setup = { data: null, api: undefined, t: 0 };
 function localChecklist() {
   const st = state.status, a = state.acct, b = state.brain, j = st?.jobs || {};
@@ -2053,8 +1954,6 @@ function localChecklist() {
     item("account", "Logged in to a trading account", !!a, a ? (a.demo ? "demo account" : "real account") : "Log in inside MT5."),
     item("data", "Price history downloaded", st?.data_ready, st?.data_ready ? `${state.settings?.symbol} M1` : "Downloads the M1 candles the bot learns from.", "/api/fetch"),
     item("model", "Bot trained", st?.model_ready, st?.model_ready ? "model ready" : "Trains the bot on the downloaded history (a few minutes on the RTX 4060).", "/api/train"),
-    item("hermes", "Hermes assistant ready", b && (b.local === "ready" || b.hermes_agent), b ? (b.next_step || "ready") : "Checking…", b && b.local !== "ready" ? "/api/assistant/setup" : null, true),
-    item("mcp", "MT5 bridge for Hermes Agent", j.mcp?.running, j.mcp?.running ? "running" : "Only needed for Hermes Agent in WSL.", "/api/mcp/start", true),
   ];
   return { items, done: items.filter(i => i.ok).length, total: items.length };
 }
@@ -2123,7 +2022,7 @@ const KEY_GROUPS = {
     desc: "These place and close orders on the first press, with nothing to confirm. On a real account the first order of the session asks you to type REAL." },
   app: { label: "Moving around", on: true, desc: "Switch tabs, realign charts, step through replays, mute. Safe to leave on." },
 };
-const TAB_NAME = { bot: "Bot", sol: "Solana", ranks: "Ranks", manual: "Manual", agent: "Agent", review: "Review", train: "Train", quiz: "Quiz", chat: "Hermes", keys: "Keys", sounds: "Sounds", settings: "Settings" };
+const TAB_NAME = { bot: "Bot", hub: "Hub", manual: "Manual", agent: "Agent", review: "Review", train: "Train", quiz: "Quiz", keys: "Keys", sounds: "Sounds", settings: "Settings" };
 function pressBtn(sel) {
   const el = $(sel); if (!el || el.disabled) return;
   el.click(); if (el.animate && motionOK()) el.animate([{ transform: "scale(.96)" }, { transform: "none" }], { duration: 160 });
@@ -2150,13 +2049,12 @@ const KEY_ACTIONS = [
   { id: "man.market", group: "manual", tabs: ["manual"], label: "Order type: market", short: "Market", key: null, run: () => pressBtn('#man-type [data-type="market"]') },
   { id: "man.limit", group: "manual", tabs: ["manual"], label: "Order type: limit", short: "Limit", key: null, run: () => pressBtn('#man-type [data-type="limit"]') },
   { id: "man.stop", group: "manual", tabs: ["manual"], label: "Order type: stop", short: "Stop", key: null, run: () => pressBtn('#man-type [data-type="stop"]') },
-  ...Object.entries({ bot: "1", sol: "`", ranks: null, manual: "2", agent: "3", review: "4", train: "5", quiz: "6", chat: "7", keys: "8", sounds: "9", settings: "0" })
+  ...Object.entries({ bot: "1", hub: "`", manual: "2", agent: "3", review: "4", train: "5", quiz: "6", keys: "8", sounds: "9", settings: "0" })
     .map(([t, k]) => ({ id: `tab.${t}`, group: "app", label: `Go to ${TAB_NAME[t]}`, short: TAB_NAME[t], key: k, run: () => showTab(t) })),
   { id: "chart.realign", group: "app", tabs: ["bot", "manual", "review"], label: "Realign the chart", short: "Realign", key: "R", run: realignHere },
   { id: "log", group: "app", tabs: ["agent"], label: "Open or close the live log", short: "Log", key: "L", run: () => $("#log-drawer").classList.contains("open") ? closeLog() : openLog() },
   { id: "review.next", group: "app", tabs: ["review"], label: "Next trade in the replay list", short: "Next", key: "ArrowDown", repeat: true, run: () => stepReplay(1) },
   { id: "review.prev", group: "app", tabs: ["review"], label: "Previous trade in the replay list", short: "Prev", key: "ArrowUp", repeat: true, run: () => stepReplay(-1) },
-  { id: "hermes", group: "app", label: "Write to Hermes", short: "Hermes", key: "/", run: () => { showTab("chat"); setTimeout(() => $("#chat-input").focus(), 60); } },
   { id: "mute", group: "app", label: "Mute or unmute every sound", short: "Mute", key: "M", run: () => toggleMute() },
   { id: "setup", group: "app", label: "Open the setup checklist", short: "Setup", key: null, run: () => openSetup() },
 ];
@@ -2381,7 +2279,6 @@ const SOUND_EVENTS = [
   { id: "promoted", label: "Bot moved up a stage", short: "stage up", def: { sound: "rise", volume: .7 } },
   { id: "demoted", label: "Bot moved back a stage", short: "stage down", desc: "Its drawdown limit was hit.", def: { sound: "gong", volume: .8, tone: .6 } },
   { id: "feedLost", label: "MT5 or the price feed went quiet", short: "feed lost", desc: "MT5 closed or lost its connection, or prices stopped while the market is open.", def: { sound: "alarm", volume: .5, tone: .7 } },
-  { id: "hermes", label: "Hermes replied", short: "Hermes", desc: "Only when you're not looking at the Hermes tab.", def: { sound: "pop", volume: .6 } },
   { id: "copilot", label: "Co-pilot proposal", short: "co-pilot", desc: "The bot proposes a trade on the Bot tab and waits for Approve or Skip.", def: { sound: "chime", pitch: 5, volume: .85 } },
   { id: "watchdog", label: "Bot crashed or looks stuck", short: "watchdog", desc: "The watchdog restarts it; this rings when it gives up or the bot stops reporting.", def: { sound: "alarm", volume: .6, tone: .7 } },
 ];
@@ -2928,7 +2825,7 @@ function renderBotLive() {
   if (f.bid != null && d.symbol === state.symbol && !state.replay?.view) setBid(f.bid, f.ask, f.digits ?? 2);
   ["broker", "ai", "feed"].forEach(k => {
     const h = d.heartbeat?.[k] || {}, el = $(`#bl-hb [data-hb="${k}"]`);
-    el.className = `hb ${h.ok ? "ok" : "bad"}`; el.title = `${{ broker: "Broker", ai: "Hermes AI", feed: "Data Feed" }[k]}: ${h.text || "unknown"}`;
+    el.className = `hb ${h.ok ? "ok" : "bad"}`; el.title = `${{ broker: "Broker", ai: "AI model", feed: "Data Feed" }[k]}: ${h.text || "unknown"}`;
   });
   const pt = d.points || {}, tot = $("#bl-pts");
   setHTML(tot, `${signed(pt.total ?? 0)}<em>PTS</em>`); tot.className = `num ${cls(pt.total)}`;
@@ -3158,55 +3055,10 @@ setInterval(() => {                                // 1 s while you look at the 
   if (onTab) renderClock();
 }, 1000);
 
-/* ---------- Solana tab: meme-coin scanner, anti-rug gatekeeper, the ML models' debate, paper / live trades.
-   Backend: /api/sol/* (Chat A). Polls every 2 s while the tab is open (a WebSocket at /api/sol/ws pushes sooner when
-   the backend has one) and every 10 s elsewhere, so new trades still notify. ---------- */
-const SOL_MODEL = {                              // identity colours, checked for colour-blind separation on the panel colour
-  xgb: { name: "XGBoost", col: "#3987e5" }, lgbm: { name: "LightGBM", col: "#d95926" },
-  rf: { name: "RandomForest", col: "#199e70" }, cat: { name: "CatBoost", col: "#8c9098", dash: true },
-};
-const SOL_EXIT = { take_profit: "Take profit", trailing_stop: "Trailing stop", stop_loss: "Stop loss", timeout: "20-min timeout", manual: "Closed by you", kill: "Panic sell" };
-const sol = { state: null, feed: [], pos: [], trades: [], pnl: null, sel: null, filter: "all", missing: false, busy: false, t: 0,
-              debate: null, debateKey: "", knownPos: null, knownTrades: null, ws: null, wsTried: 0 };
-const solPx = v => v == null || isNaN(v) ? "—" : Math.abs(v) >= 1 ? fmt(v, 4) : Number(v).toPrecision(4);
-const solSol = (v, d = 3) => v == null || isNaN(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`;
-const solPct = v => v == null || isNaN(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}%`;
-const solAge = m => m == null ? "—" : m < 60 ? `${Math.round(m)} min` : m < 1440 ? `${(m / 60).toFixed(1)} h` : `${(m / 1440).toFixed(1)} d`;
-const solTime = e => e ? new Date(e * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
-const solUsd = v => v == null ? "—" : v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `$${(v / 1e3).toFixed(1)}k` : `$${Math.round(v)}`;
-const solShort = m => m ? `${m.slice(0, 4)}…${m.slice(-4)}` : "";
-const solModels = o => Object.keys(SOL_MODEL).filter(k => o?.[`${k}_prob`] != null);
-
-function openSol() { loadSol(true); solSocket(); }
-async function loadSol(all = false) {
-  if (sol.busy) return; sol.busy = true;
-  try {
-    const st = await api("/api/sol/state");
-    sol.state = st; sol.missing = false;
-    const [feed, pos, pnl] = await Promise.all([api("/api/sol/feed?limit=150"), api("/api/sol/positions"), api("/api/sol/pnl")]);
-    sol.feed = feed || []; sol.pos = pos || []; sol.pnl = pnl;
-    if (all || sol.t % 5 === 0 || !sol.knownTrades) sol.trades = await api("/api/sol/trades?limit=200") || [];
-    if (all || sol.t % 2 === 0) loadTweets();
-    solNotify(); renderSol();
-  } catch (e) {
-    if (e.status === 404) { sol.missing = true; renderSol(); }
-    else if (state.tab === "sol") $("#sol-status").textContent = `Can't reach the Solana engine: ${e.message}`;
-  }
-  sol.busy = false;
-}
-function solSocket() {                           // optional push; the 2 s poll covers everything without it
-  if (sol.ws || sol.missing || Date.now() - sol.wsTried < 30000) return;
-  sol.wsTried = Date.now();
-  try {
-    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/sol/ws`);
-    ws.onmessage = e => { try { const m = JSON.parse(e.data); if (m.type === "debate" && m.data?.mint === sol.sel) { sol.debate = m.data; renderSolDebate(); } else loadSol(); } catch (err) {} };
-    ws.onclose = () => { sol.ws = null; }; ws.onerror = () => { try { ws.close(); } catch (err) {} };
-    sol.ws = ws;
-  } catch (e) { sol.ws = null; }
-}
-/* the crew: one suited Bongo Cat per main agent (model) at the top of the tab, in a square frame. There are only
-   two animations on purpose: typing, which runs the whole time an agent is doing anything at all (watching a coin,
-   debating, reading X, holding a trade), and the profit sequence below. Nothing else changes the cat's pose.
+/* ---------- Hub cats ---------- */
+/* the cats (moved from the old Solana tab to the Bot tab's Hub): one suited Bongo Cat per agent, in a square frame.
+   Two animations on purpose: typing, which runs the whole time an agent is doing anything at all (watching the market,
+   checking a setup, holding a trade), and the profit sequence below. Nothing else changes the cat's pose.
    On profit the cat turns profit-green, throws its arms up and waves, $ rain from the top of the frame
    (canvas layer), two $ land on its eyes and shake, stay locked for 2 s, then clear and the cat goes back to typing.
    Phases are classes on .cat-box (p-drop -> p-shake -> p-hold -> p-back); CSS does the motion, JS only the timing. */
@@ -3310,674 +3162,6 @@ function catRain(box, ms) {                      // gold and green $ falling fro
   rain.raf = requestAnimationFrame(step);
 }
 window.__cat = { profit: catProfit, phase: catPhase, rain: catRain, state: cat };
-/* ranks (sol/ranks.py): Intern -> Legend. Pips count the rank, Legend gets a star; the suit changes with it */
-const STAR_SVG = `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 .8l1.5 3.1 3.4.5-2.5 2.4.6 3.4L6 8.6 3 10.2l.6-3.4L1.1 4.4l3.4-.5z"/></svg>`;
-const rankPips = r => r >= 6 ? `<i class="rk-star">${STAR_SVG}</i>` : `<i class="rk-pips" aria-hidden="true">${Array.from({ length: 6 }, (_, i) => `<b class="${i < r ? "on" : ""}"></b>`).join("")}</i>`;
-const rankChip = (rk, full = false) => rk ? `<span class="rank-chip" data-r="${rk.id}" title="${esc(rk.name)}${rk.perk ? `: ${esc(rk.perk)}` : ""}">${rankPips(rk.id)}${esc(full ? rk.name : rk.short)}</span>` : "";
-function crewRankChange(model, prev, rk) {
-  const el = $(`#sol-crew .bot-pf[data-model="${model}"]`), name = SOL_MODEL[model]?.name || model;
-  if (rk.id > prev) {
-    if (el) {
-      el.classList.remove("promo"); void el.offsetWidth; el.classList.add("promo");
-      const tag = document.createElement("span"); tag.className = "promo-tag"; tag.textContent = "Promoted";
-      el.appendChild(tag); setTimeout(() => { el.classList.remove("promo"); tag.remove(); }, 2600);
-    }
-    notify({ kind: "tp", title: `${name} promoted to ${rk.name}`, body: rk.perk ? rk.perk[0].toUpperCase() + rk.perk.slice(1) : "", onClick: () => showTab("ranks") });
-    playEvent("profit");
-  } else notify({ kind: "info", title: `${name} dropped to ${rk.name}`, body: "It fell clearly below its old rank.", onClick: () => showTab("ranks") });
-}
-function crewBots() {                            // the main agents only: the backend's bots[], else the default crew
-  const st = sol.state || {};
-  if (Array.isArray(st.bots) && st.bots.length) return st.bots.filter(b => SOL_MODEL[b.model]);
-  const d = sol.feed.find(r => r.status === "passed" && r.ensemble);
-  const ms = d ? solModels(d.ensemble) : ["xgb", "lgbm", "rf"];
-  return ms.map(m => ({ model: m, score: null }));
-}
-function renderCrew() {
-  const box = $("#sol-crew"), bots = crewBots(), sig = bots.map(b => b.model).join(",");
-  if (box._sig !== sig) {
-    box._sig = sig;
-    box.innerHTML = bots.map(b => `<div class="bot-pf" data-model="${b.model}" style="--c:${SOL_MODEL[b.model].col}">
-        <span class="bot-score num" title="${SOL_MODEL[b.model].name}'s points for being right"></span>
-        ${catBox("", `<button class="cat-expand" type="button" data-agent="${b.model}" aria-expanded="false" aria-controls="crew-profile" aria-label="Open ${SOL_MODEL[b.model].name}'s profile" title="Profile: chart, confidence, what it has done">${EXPAND_ICON}</button>`)}<b class="bot-name">${SOL_MODEL[b.model].name}</b><span class="bot-rank"></span></div>`).join("")
-      + `<span class="crew-total num" title="All the main agents' points together"></span>
-         <div class="crew-side"><span class="crew-state muted small"></span><button class="btn xs ghost" type="button" id="cat-board-open" title="See and test every phase of the avatar animation">Preview animations</button></div>`;
-  }
-  let total = 0, known = false;
-  bots.forEach(b => {
-    const el = box.querySelector(`.bot-pf[data-model="${b.model}"]`); if (!el) return;
-    const sc = el.querySelector(".bot-score"), txt = b.score == null ? "–" : `${b.score >= 0 ? "+" : "−"}${Math.abs(Math.round(b.score))}`;
-    if (sc.textContent !== txt) sc.textContent = txt;
-    sc.classList.toggle("up", b.score > 0); sc.classList.toggle("down", b.score < 0);
-    if (b.score != null) { total += b.score; known = true; }
-    const prev = sol.lastWin?.[b.model];
-    if (b.last_win && prev != null && b.last_win > prev) crewWin(b.model);
-    (sol.lastWin ||= {})[b.model] = b.last_win || 0;
-    const rk = b.rank, rEl = el.querySelector(".bot-rank"), box2 = el.querySelector(".cat-box");
-    if (rk) {
-      if (box2.dataset.rank !== String(rk.id)) box2.dataset.rank = rk.id;
-      const html = rankChip(rk); if (rEl._h !== html) { rEl._h = html; rEl.innerHTML = html; }
-      const was = sol.lastRank?.[b.model];
-      if (was != null && was !== rk.id) crewRankChange(b.model, was, rk);
-      (sol.lastRank ||= {})[b.model] = rk.id;
-    }
-  });
-  box.querySelector(".crew-total").textContent = known ? `Σ ${total >= 0 ? "+" : "−"}${Math.abs(Math.round(total))} pts` : "Σ – pts";
-  const cr = sol.state?.crew, m = sol.state?.model, stTxt = cr?.training ? `Training: split into ${bots.length} models${m && sol.state?.training?.progress != null ? ` · ${Math.round(sol.state.training.progress * 100)}%` : ""}`
-    : cr?.merged ? "Merged into one bot" : "";
-  const cs = box.querySelector(".crew-state"); if (cs.textContent !== stTxt) cs.textContent = stTxt;
-}
-function crewWin(model) {                        // profit: the whole cat sequence on that agent (and in its open profile)
-  catProfit($(`#sol-crew .bot-pf[data-model="${model}"] .cat-box`));
-  if (prof.model === model) catProfit($("#cp-inner .cp-cat .cat-box"));
-}
-
-/* an agent's profile: the expand button at the bottom right of its avatar opens it under the crew, with the chart of
-   the coin it's on (its buys and sells marked), its confidence (now, over its last debates) and what it has done */
-const prof = { model: null, data: null, chart: null, series: null, timer: 0, key: "" };
-document.addEventListener("click", e => {
-  const b = e.target.closest(".cat-expand");
-  if (b) { e.stopPropagation(); openProfile(prof.model === b.dataset.agent ? null : b.dataset.agent); return; }
-  if (e.target.closest("#cp-close")) openProfile(null);
-});
-async function openProfile(model) {
-  prof.model = model;
-  $$("#sol-crew .cat-expand").forEach(x => { const on = x.dataset.agent === model; x.setAttribute("aria-expanded", String(on)); x.closest(".bot-pf").classList.toggle("open", on); });
-  const box = $("#crew-profile");
-  clearInterval(prof.timer);
-  if (!model) { box.classList.remove("open"); setTimeout(() => { if (!prof.model) { destroyProfileChart(); setHTML($("#cp-inner"), ""); prof.key = ""; } }, 400); return; }
-  if (prof.key && !prof.key.startsWith(model + "|")) { destroyProfileChart(); prof.key = ""; }
-  box.classList.add("open");
-  await loadProfile();
-  prof.timer = setInterval(() => state.tab === "sol" && seen() && prof.model && loadProfile(), 3000);
-}
-async function loadProfile() {
-  const model = prof.model; if (!model) return;
-  let d;
-  try { d = await api(`/api/sol/agent/${encodeURIComponent(model)}`); }
-  catch (e) { if (prof.model === model) setHTML($("#cp-inner"), `<div class="cp"><p class="muted small">${e.status === 404 ? "The Solana engine isn't running yet, so this agent has no profile." : esc(e.message)}</p></div>`); return; }
-  if (prof.model !== model) return;
-  prof.data = d; renderProfile();
-}
-function destroyProfileChart() { try { prof.chart?.remove(); } catch (e) {} prof.chart = prof.series = null; }
-const solWhen = t => { const s = Date.now() / 1000 - t; return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : new Date(t * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
-function renderProfile() {
-  const d = prof.data, m = SOL_MODEL[d.model] || { name: d.model, col: "var(--gold)" }, c = d.confidence || {}, st = d.stats || {};
-  const key = `${d.model}|${d.chart?.mint || ""}`, root = $("#cp-inner");
-  if (prof.key !== key) {                        // first paint for this agent / coin: the layout, the cat and the chart
-    destroyProfileChart();
-    root.innerHTML = `<div class="cp" style="--c:${m.col}">
-      <div class="cp-head">
-        <div class="cp-cat">${catBox()}</div>
-        <div class="cp-id"><div class="cp-title"><h3>${esc(m.name)}</h3><span id="cp-rchip"></span><span class="cp-rank num" id="cp-rank"></span></div>
-          <div class="cp-sub muted small" id="cp-sub"></div>
-          <div class="cp-pts" id="cp-pts"></div></div>
-        <button class="btn xs cp-close" id="cp-close" type="button" aria-label="Close the profile">Close</button>
-      </div>
-      <section class="cp-sec cp-career" id="cp-career"></section>
-      <section class="cp-sec cp-x-sec" id="cp-x-sec" hidden></section>
-      <div class="cp-grid">
-        <section class="cp-sec cp-chart-sec"><h4 id="cp-chart-h">Chart</h4><div class="cp-chart" id="cp-chart"></div><p class="muted small cp-chart-note" id="cp-chart-note"></p></section>
-        <section class="cp-sec"><h4>Confidence</h4><div class="cp-conf" id="cp-conf"></div><div class="cp-conf-chart" id="cp-conf-chart"></div><p class="muted small" id="cp-conf-note"></p></section>
-      </div>
-      <section class="cp-sec"><h4>What it has done <span class="muted small" id="cp-act-meta"></span></h4>
-        <div class="table-wrap cp-act"><table><thead><tr><th>When</th><th>Coin</th><th>Its call</th><th>Crew</th><th>Result</th></tr></thead><tbody id="cp-act"></tbody></table></div></section>
-    </div>`;
-    prof.key = key;
-    buildProfileChart();
-  }
-  const pts = (k, v, sub = "") => `<div class="cp-tile"><span>${k}</span><b class="num ${v > 0 ? "up" : v < 0 ? "down" : ""}">${v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(Math.round(v))}`}</b>${sub ? `<small class="muted">${sub}</small>` : ""}</div>`;
-  $("#cp-rank").textContent = d.rank ? `#${d.rank} of ${d.of}` : "";
-  const car = d.career;
-  if (car) {
-    const cb = $("#cp-inner .cp-cat .cat-box"); if (cb) cb.dataset.rank = car.rank.id;
-    $("#cp-rchip").innerHTML = rankChip(car.rank, true);
-    const nx = car.next, lbl = { points: "Points", trades: "Closed trades", accuracy: "Right calls" };
-    const val = n => n.what === "accuracy" ? `${Math.round(n.have * 100)}% of ${Math.round(n.need * 100)}%` : `${n.what === "points" ? Math.round(n.have) : n.have} of ${n.need}`;
-    setHTML($("#cp-career"), `<h4>Career <span class="muted small">${esc(car.rank.perk || "")}</span></h4>
-      ${nx ? `<div class="cp-next"><span>Next: ${rankChip(nx, true)}</span><b class="num">${car.pct}%</b><span class="muted small">there once every bar is full</span></div>
-        <div class="cp-reqs">${nx.needs.map(n => `<div class="cp-req"><span>${lbl[n.what]}</span><div class="rk-bar"><i style="width:${Math.round(n.frac * 100)}%"></i></div><span class="num small">${val(n)}</span></div>`).join("")}</div>`
-        : `<p class="small">Top of the ladder: ${esc(car.rank.name)}. Its vote counts double.</p>`}
-      ${car.history?.length ? `<div class="cp-hist small">${car.history.slice(0, 4).map(h => `<span class="${h.rank.id > h.prev.id ? "up" : "down"}">${h.rank.id > h.prev.id ? "▲" : "▼"} ${esc(h.rank.name)} <em class="muted">${solWhen(h.t)}</em></span>`).join("")}</div>` : ""}`);
-  }
-  renderProfileTweets(d.tweets, m);
-  $("#cp-sub").textContent = [d.model_info?.auc != null ? `quiz grade AUC ${d.model_info.auc.toFixed(3)}` : "not graded by the quiz yet",
-    d.model_info?.weight != null ? `the merged bot trusts it ${d.model_info.weight >= 0 ? "+" : ""}${d.model_info.weight.toFixed(2)}` : "",
-    st.accuracy != null ? `right on ${Math.round(st.accuracy * 100)}% of its closed trades` : ""].filter(Boolean).join(" · ");
-  setHTML($("#cp-pts"), pts("Points", d.score, "all together") + pts("From trades", d.trade_score, `${st.right ?? 0} right · ${st.wrong ?? 0} wrong`) + pts("From the quiz", d.quiz_score, "how well it answers"));
-  // confidence now: a bar with the BUY line and the floor, the stance it took
-  const p = c.last, need = c.need ?? 0.78, floor = c.floor ?? 0.65;
-  setHTML($("#cp-conf"), p == null ? `<p class="muted small">No debates yet. Its confidence shows here from its first coin.</p>`
-    : `<div class="cp-now"><b class="num">${Math.round(p * 100)}%</b><span class="sol-stance ${c.last_stance === "BUY" ? "buy" : ""}">${c.last_stance === "BUY" ? "BUY" : c.last_stance === "PASS" ? "PASS" : "UNSURE"}</span><span class="muted small">on ${esc(c.last_symbol || "?")}</span></div>
-       <div class="sol-track cp-track" title="Its confidence: ${(p * 100).toFixed(1)}%"><b style="width:${Math.max(0, Math.min(100, p * 100))}%;background:${m.col}"></b><u style="left:${need * 100}%" title="BUY needs ${Math.round(need * 100)}%"></u><u style="left:${floor * 100}%" title="floor ${Math.round(floor * 100)}%"></u></div>
-       <div class="cp-conf-stats small muted">${st.avg_confidence != null ? `average ${Math.round(st.avg_confidence * 100)}%` : ""}${st.buy_rate != null ? ` · says BUY on ${Math.round(st.buy_rate * 100)}% of coins` : ""}${st.debates ? ` · ${st.debates} debates` : ""}</div>`);
-  const ser = (c.series || []).map(x => ({ x: x.t, y: x.p }));
-  const lo = Math.max(0, Math.min(0.25, ...ser.map(q => q.y)) - 0.05);   // room between the BUY and floor labels
-  if (ser.length > 1) solChart($("#cp-conf-chart"), [{ key: d.model, name: m.name, col: m.col, pts: ser }], { time: true, yMin: lo, yMax: 1, yFmt: v => `${Math.round(v * 100)}%`, refs: [{ y: need, label: `BUY ${Math.round(need * 100)}%` }, { y: floor, label: `floor ${Math.round(floor * 100)}%` }], xLabel: t => new Date(t * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }), height: 150, unit: "" });
-  else setHTML($("#cp-conf-chart"), "");
-  $("#cp-conf-note").textContent = ser.length > 1 ? `Its final confidence in each of its last ${ser.length} debates.` : "";
-  // what it has done
-  const act = d.activity || [];
-  $("#cp-act-meta").textContent = act.length ? `(last ${act.length})` : "";
-  setHTML($("#cp-act"), act.map(a => {
-    const res = a.status === "passed" ? `<span class="muted">${a.verdict === "BLOCKED" ? "blocked" : "no trade"}</span>`
-      : a.status === "open" ? `<span class="${cls(a.pnl_pct)}">open ${solPct(a.pnl_pct)}</span>`
-      : a.status === "closed" ? `<span class="${cls(a.pnl_pct)}">${solPct(a.pnl_pct)}</span> <b class="num ${a.points > 0 ? "up" : a.points < 0 ? "down" : ""}">${a.points > 0 ? "+" : a.points < 0 ? "−" : ""}${Math.abs(Math.round(a.points ?? 0))} pts</b>` : `<span class="muted">bought</span>`;
-    return `<tr><td>${solWhen(a.t)}</td><td class="sol-tok"><b>${esc(a.symbol || "?")}</b></td>
-      <td><span class="sol-stance ${a.stance === "BUY" ? "buy" : ""}">${a.stance === "BUY" ? "BUY" : a.stance === "PASS" ? "PASS" : "UNSURE"} ${Math.round(a.final_prob * 100)}%</span>${Math.abs(a.final_prob - a.open_prob) >= 0.005 ? ` <span class="muted small">from ${Math.round(a.open_prob * 100)}%</span>` : ""}</td>
-      <td>${a.verdict === "BUY" ? `<span class="sol-verdict buy">BUY</span>` : `<span class="muted">${a.verdict === "BLOCKED" ? "blocked" : "PASS"}</span>`}</td><td>${res}</td></tr>`;
-  }).join("") || `<tr><td colspan="5" class="muted sol-empty">Nothing yet. Every coin it debates shows up here, with how the trade turned out.</td></tr>`);
-  updateProfileChart();
-}
-/* the agent's own tweet monitor, inside its profile: its beat, what it read, the coins it brought back */
-function renderProfileTweets(t, m) {
-  const sec = $("#cp-x-sec"); if (!sec) return;
-  sec.hidden = !t?.beat;
-  if (!t?.beat) return;
-  const l = t.live || {}, st = t.stats || {};
-  setHTML(sec, `<h4>Its tweet monitor <span class="solx-tag">${esc(t.beat.name)}</span>
-      <span class="muted small">${t.on ? "reading now" : t.beat.on ? "switched off with the radar" : "this agent's monitor is off"}</span></h4>
-    <div class="cp-x">
-      <p class="muted small">${esc(m.name)} ${esc(t.beat.model_note)}: ${esc(t.beat.what)}. Whatever it brings back
-        still goes through the rug rules, the model floor, the debate and the subagents before anything is bought.</p>
-      <div class="cp-x-head small"><span class="muted">${l.read != null ? `read <b class="num">${l.read}</b> posts last round` : "hasn't read a round yet"}</span>
-        <span class="muted">brought back <b class="num">${st.found ?? 0}</b></span>
-        <span class="muted">bought <b class="num">${st.bought ?? 0}</b></span>
-        <span class="muted">blocked by the filters <b class="num">${st.blocked ?? 0}</b></span></div>
-      <div class="cp-x-list">${(t.finds || []).map(f => {
-        const [word] = SOLX_STATUS[f.status] || [f.status];
-        return `<div class="cp-x-find"><b>${esc(f.symbol || solShort(f.mint) || "?")}</b>
-          <span class="solx-st ${esc(f.status)}">${esc(word)}</span>
-          <span class="muted">${esc(f.why || "")}</span>
-          <span class="muted">heat ${Math.round(f.heat || 0)} · ${f.voices ?? 1} voice${f.voices === 1 ? "" : "s"} · ${solWhen(f.t)}</span>
-          <a href="${esc(f.url || "#")}" target="_blank" rel="noreferrer noopener">@${esc(f.author || "?")}</a></div>`;
-      }).join("") || `<p class="muted small">Nothing yet. The coins this one picks out of X show up here.</p>`}</div>
-    </div>`);
-}
-function buildProfileChart() {
-  const d = prof.data, el = $("#cp-chart"), ch = d.chart;
-  $("#cp-chart-h").textContent = ch ? `${ch.symbol || "?"} · 1-minute chart` : "Chart";
-  if (!ch || !ch.candles?.length || !window.LightweightCharts) {
-    el.classList.add("empty");
-    setHTML(el, `<p class="muted small">${!ch ? "No coin yet: the chart of what it's trading shows here." : "No candles for this coin right now (the price feed didn't answer). Its buys and sells show here once it does."}</p>`);
-    return;
-  }
-  el.classList.remove("empty"); el.innerHTML = "";
-  const last = ch.candles[ch.candles.length - 1][4] || 1, prec = Math.max(2, Math.min(10, Math.ceil(-Math.log10(last)) + 3));
-  prof.chart = LightweightCharts.createChart(el, {
-    autoSize: true, layout: { background: { color: "transparent" }, textColor: "#8c9098", fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
-    grid: { vertLines: { color: "rgba(255,255,255,.035)" }, horzLines: { color: "rgba(255,255,255,.035)" } },
-    rightPriceScale: { borderColor: "#262c34" }, timeScale: { borderColor: "#262c34", timeVisible: true, secondsVisible: false, rightOffset: 4 },
-    crosshair: { mode: 0 }, localization: { locale: "en-US" }, handleScroll: false, handleScale: false,
-  });
-  prof.series = prof.chart.addCandlestickSeries({ upColor: "#3fb68b", downColor: "#e0574f", borderVisible: false, wickUpColor: "#3fb68b", wickDownColor: "#e0574f", priceFormat: { type: "price", precision: prec, minMove: Math.pow(10, -prec) } });
-  updateProfileChart(true);
-}
-function updateProfileChart(fit = false) {
-  const ch = prof.data?.chart; if (!prof.series || !ch?.candles?.length) return;
-  prof.series.setData(ch.candles.map(([t, o, h, l, cl]) => ({ time: t, open: o, high: h, low: l, close: cl })));
-  const t0 = ch.candles[0][0], snap = t => Math.max(t0, Math.floor(t / 60) * 60);
-  prof.series.setMarkers((ch.markers || []).map(k => ({ time: snap(k.t), position: k.kind === "buy" ? "belowBar" : "aboveBar", color: k.kind === "buy" ? "#3fb68b" : "#c9a24a", shape: k.kind === "buy" ? "arrowUp" : "arrowDown", text: k.text })).sort((a, b) => a.time - b.time));
-  (prof.lines || []).forEach(l => { try { prof.series.removePriceLine(l); } catch (e) {} });
-  prof.lines = [];
-  if (ch.position) {
-    prof.lines.push(prof.series.createPriceLine({ price: ch.position.entry, color: "#8c9098", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "entry" }));
-    if (ch.position.tp_pct) prof.lines.push(prof.series.createPriceLine({ price: ch.position.entry * (1 + ch.position.tp_pct / 100), color: "#3fb68b", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: `TP +${ch.position.tp_pct}%` }));
-  }
-  $("#cp-chart-note").textContent = ch.position ? `Holding: ${solPct(ch.position.pnl_pct)} since its buy.` : (ch.markers || []).length ? "Arrows: where the crew bought (green) and sold (gold)." : "";
-  if (fit) prof.chart.timeScale().fitContent();
-}
-/* Tweet radar: every agent has its own monitor on X (sol/tweets.py). Four beats so four agents don't keep finding
-   the same coin: new launches, runners, the crowd, the callers. A find is a candidate and nothing more — it goes
-   into the same pipeline as a scanner find, so the rug rules, the model floor, the debate and the subagents all
-   still get their say. The panel shows what each monitor read, what it brought back and what happened to it. */
-const solx = { d: null, busy: false, t: 0, held: 0 };
-const SOLX_STATUS = {
-  checking: ["checking", "sent through the rug rules and the debate"],
-  traded: ["bought", "passed every filter and the crew bought it"],
-  blocked: ["blocked", "a filter or the crew said no"],
-  filtered: ["skipped", "didn't clear the monitor's own bar"],
-  error: ["error", "something went wrong looking it up"],
-};
-async function loadTweets() {
-  if (solx.busy) return; solx.busy = true;
-  try { solx.d = await api("/api/sol/tweets"); renderTweets(); }
-  catch (e) { if (e.status !== 404) $("#solx-meta").textContent = e.message; }
-  solx.busy = false;
-}
-function renderTweets() {
-  const d = solx.d; if (!d) return;
-  const on = d.running, live = d.beats.filter(b => b.on).length;
-  $("#solx-meta").textContent = d.error && !on ? d.error
-    : `${on ? `${live} monitor${live === 1 ? "" : "s"} reading` : "monitors off"} · ${d.stats.found.toLocaleString()} coins brought back · ${d.stats.bought.toLocaleString()} bought${d.last_round ? ` · last round ${solWhen(d.last_round)}` : ""}`;
-  $$("#solx-prov .seg-opt").forEach(b => { const sel = b.dataset.p === d.provider; b.classList.toggle("on", sel); b.setAttribute("aria-checked", String(sel)); });
-  const key = $("#solx-key");
-  if (document.activeElement !== key && Date.now() - solx.held > 4000) { key.value = ""; key.placeholder = d.key_set ? "a key is saved" : "paste the key"; }
-  const run = $("#solx-run");
-  run.textContent = on ? "Stop monitors" : "Start monitors";
-  run.classList.toggle("primary", !on); run.classList.toggle("danger-outline", on);
-  run.disabled = $("#solx-now").disabled = d.provider === "off" || !d.key_set;
-  const c = d.cost;
-  $("#solx-cost").textContent = d.provider === "off" ? "Pick a provider and save its key to switch the monitors on."
-    : !d.key_set ? "No key saved yet — the monitors have nothing to read."
-    : `${c.monitors} monitors × ${d.config.per_beat} posts every ${Math.round(d.config.scan_s / 60)} min ≈ ${c.posts_per_day.toLocaleString()} posts a day, about $${c.usd_per_day.toFixed(2)} at this provider's price.`
-      + (d.api.ok === false ? ` · ${d.api.said}` : "");
-  // one card per agent: whose beat it is, what it looks for, what it read last round
-  setHTML($("#solx-beats"), d.beats.map(b => {
-    const m = SOL_MODEL[b.model] || { name: b.model, col: "var(--gold)" }, l = b.live || {}, st = b.stats || {};
-    return `<div class="solx-beat${b.on ? "" : " off"}" style="--c:${m.col}" data-model="${b.model}">
-      <div class="solx-beat-top"><b>${esc(m.name)}</b><span class="solx-tag">${esc(b.name)}</span>
-        <label class="switch xs" title="${b.on ? "Stop" : "Start"} ${esc(m.name)}'s monitor"><input type="checkbox" class="solx-on" data-model="${b.model}"${b.on ? " checked" : ""}><span class="sr-only">${esc(m.name)}'s monitor</span></label></div>
-      <p class="solx-what small muted">${esc(b.what)}</p>
-      <div class="solx-beat-stats small"><span>${l.read != null ? `read <b class="num">${l.read}</b>` : "not read yet"}</span>
-        <span>kept <b class="num">${l.kept ?? 0}</b></span><span>found <b class="num">${st.found ?? 0}</b></span>
-        <span class="up">bought <b class="num">${st.bought ?? 0}</b></span></div>
-      <details class="solx-q"><summary class="small muted">Its search</summary><code class="small">${esc(b.query)}</code></details>
-    </div>`;
-  }).join(""));
-  // what the monitors brought back
-  setHTML($("#solx-finds tbody"), (d.finds || []).map(f => {
-    const m = SOL_MODEL[f.model] || { name: f.model, col: "var(--gold)" }, [word, why] = SOLX_STATUS[f.status] || [f.status, ""];
-    const also = (f.also || "").split(",").filter(Boolean).map(x => SOL_MODEL[x]?.name || x);
-    return `<tr class="solx-row s-${esc(f.status)}">
-      <td>${solWhen(f.t)}</td>
-      <td class="sol-tok"><b>${esc(f.symbol || solShort(f.mint) || "?")}</b>${f.mint && f.symbol ? `<span class="muted small">${solShort(f.mint)}</span>` : ""}</td>
-      <td><span class="solx-who" style="--c:${m.col}">${esc(m.name)}</span>${also.length ? `<span class="muted small"> +${esc(also.join(", "))}</span>` : ""}</td>
-      <td><div class="solx-heat" title="How loud, fresh and repeated the post was, and how high the agent that found it ranks"><span><i style="width:${Math.max(3, Math.min(100, f.heat || 0))}%"></i></span><b class="num">${Math.round(f.heat || 0)}</b></div></td>
-      <td class="num">${f.voices ?? 1}</td>
-      <td class="solx-post"><a href="${esc(f.url || "#")}" target="_blank" rel="noreferrer noopener">@${esc(f.author || "?")}</a>
-        <span class="muted small">${(f.likes ?? 0).toLocaleString()} likes · ${Math.round((f.followers || 0) / 1000)}k followers</span></td>
-      <td><span class="solx-st ${esc(f.status)}" title="${esc(why)}">${esc(word)}</span>${f.why ? ` <span class="muted small">${esc(f.why)}</span>` : ""}</td></tr>`;
-  }).join("") || `<tr><td colspan="7" class="muted sol-empty">${d.key_set ? "Nothing yet. Every coin a monitor picks out shows up here with the post that put it there, and what the filters did with it." : "Save an X API key above and each agent starts reading its own beat."}</td></tr>`);
-}
-$("#solx-prov").addEventListener("click", async e => {
-  const b = e.target.closest(".seg-opt"); if (!b) return;
-  try { await api("/api/sol/tweets/key", { method: "POST", body: { provider: b.dataset.p, key: $("#solx-key").value || null } }); $("#solx-key").value = ""; loadTweets(); }
-  catch (err) { toast(err.message); }
-});
-$("#solx-save").onclick = async () => {
-  const key = $("#solx-key").value.trim(), prov = $("#solx-prov .seg-opt.on")?.dataset.p || "off";
-  if (!key) return toast("Paste the key first.");
-  if (prov === "off") return toast("Pick twitterapi.io or the X API first, so the key has somewhere to go.");
-  try { await api("/api/sol/tweets/key", { method: "POST", body: { provider: prov, key } }); $("#solx-key").value = ""; toast("Key saved. It stays in data/settings.json and no page ever reads it back."); loadTweets(); }
-  catch (err) { toast(err.message); }
-};
-$("#solx-run").onclick = async () => {
-  const on = !solx.d?.running;
-  try { await api("/api/sol/tweets/monitor", { method: "POST", body: { on } }); toast(on ? "Every agent is on its beat." : "Monitors stopped."); loadTweets(); }
-  catch (err) { toast(err.message); }
-};
-$("#solx-now").onclick = async () => {
-  try { await api("/api/sol/tweets/round", { method: "POST" }); toast("Reading every beat once…"); setTimeout(loadTweets, 2500); }
-  catch (err) { toast(err.message); }
-};
-$("#solx-beats").addEventListener("change", async e => {
-  const c = e.target.closest(".solx-on"); if (!c) return;
-  solx.held = Date.now();
-  try { solx.d = await api("/api/sol/tweets/beat", { method: "POST", body: { model: c.dataset.model, on: c.checked } }); renderTweets(); }
-  catch (err) { toast(err.message); loadTweets(); }
-});
-
-/* the Ranks tab: the ladder top to bottom with the agents on each rank, their points and % to the next rank */
-const rk = { data: null, busy: false, missing: false, err: "" };
-async function loadRanks() {
-  if (rk.busy) return; rk.busy = true;
-  try { rk.data = await api("/api/sol/ranks"); rk.missing = false; rk.err = ""; }
-  catch (e) { rk.missing = e.status === 404; rk.err = e.message; }
-  rk.busy = false; renderRanks();
-}
-const rkReq = r => r.id === 0 ? "where every agent starts" : [r.pts != null ? `${r.pts} points` : "", r.trades ? `${r.trades} closed trades` : "", r.acc != null ? `${Math.round(r.acc * 100)}% right` : ""].filter(Boolean).join(" · ");
-function renderRanks() {
-  const miss = $("#rk-missing");
-  miss.hidden = !rk.missing && !rk.err;
-  if (!miss.hidden) setHTML(miss, `<p class="muted small">${rk.missing ? "The Solana engine isn't running in this version, so there are no agents to rank yet." : esc(rk.err)}</p>`);
-  const d = rk.data; if (!d) return;
-  const byModel = Object.fromEntries(d.agents.map(a => [a.model, a]));
-  const top = d.agents[0];
-  $("#rk-meta").textContent = d.agents.length ? `${d.agents.length} agents · top: ${SOL_MODEL[top.model]?.name || top.model}, ${top.rank.name}` : "";
-  const ladder = $("#rk-ladder"), sig = d.agents.map(a => `${a.model}:${a.rank.id}`).join(",");
-  if (ladder._sig !== sig) {                        // rebuild only when someone changes rank (the cats keep typing)
-    ladder._sig = sig;
-    ladder.innerHTML = [...d.ranks].reverse().map(r => `<div class="rk-rung${r.agents.length ? " has" : ""}" data-r="${r.id}">
-        <div class="rk-badge">${rankChip(r, true)}<span class="muted small">vote ×${r.weight}</span></div>
-        <div class="rk-req small muted">${rkReq(r)}</div>
-        <div class="rk-agents">${r.agents.map(m => `<button class="rk-agent" type="button" data-agent="${m}" style="--c:${SOL_MODEL[m]?.col || "var(--gold)"}" title="Open ${esc(SOL_MODEL[m]?.name || m)}'s profile">
-            ${catBox()}<span class="rk-a-meta"><b>${esc(SOL_MODEL[m]?.name || m)}</b><span class="num rk-pts"></span><span class="rk-bar"><i></i></span><span class="small muted rk-pct"></span></span></button>`).join("")
-          || `<span class="muted small rk-empty">${r.id === 6 ? "Nobody has made it yet." : "Nobody here right now."}</span>`}</div></div>`).join("");
-    ladder.querySelectorAll(".rk-agent").forEach(b => { const a = byModel[b.dataset.agent]; if (a) b.querySelector(".cat-box").dataset.rank = a.rank.id; });
-  }
-  ladder.querySelectorAll(".rk-agent").forEach(b => {
-    const a = byModel[b.dataset.agent]; if (!a) return;
-    b.querySelector(".rk-pts").textContent = `${Math.round(a.points)} pts`;
-    b.querySelector(".rk-bar i").style.width = `${a.pct}%`;
-    b.querySelector(".rk-pct").textContent = a.next ? `${Math.round(a.pct)}% to ${a.next.name}` : "top of the ladder";
-  });
-  $("#rk-stand-meta").textContent = d.agents.length ? "by rank, then points" : "";
-  setHTML($("#rk-stand"), d.agents.map((a, i) => `<tr data-agent="${a.model}"><td class="num">${i + 1}</td>
-      <td class="sol-tok"><b style="color:${SOL_MODEL[a.model]?.col || "inherit"}">${esc(SOL_MODEL[a.model]?.name || a.model)}</b></td>
-      <td>${rankChip(a.rank, true)}</td><td class="num">${Math.round(a.points)}</td>
-      <td><div class="rk-to"><span class="rk-bar"><i style="width:${a.pct}%"></i></span><span class="num small">${a.next ? `${Math.round(a.pct)}%` : "top"}</span></div>
-        <span class="muted small">${a.next ? a.next.needs.map(n => n.what === "accuracy" ? `${Math.round(n.have * 100)}/${Math.round(n.need * 100)}% right` : n.what === "trades" ? `${n.have}/${n.need} trades` : `${Math.round(n.have)}/${n.need} pts`).join(" · ") : "Legend"}</span></td></tr>`).join("")
-    || `<tr><td colspan="5" class="muted sol-empty">No agents yet: they appear once the Solana crew has models.</td></tr>`);
-  setHTML($("#rk-log"), (d.log || []).map(l => `<li class="${l.rank.id > l.prev.id ? "up" : "down"}"><span class="rk-arrow">${l.rank.id > l.prev.id ? "▲" : "▼"}</span>
-      <b>${esc(SOL_MODEL[l.model]?.name || l.model)}</b> ${l.rank.id > l.prev.id ? "promoted to" : "dropped to"} ${rankChip(l.rank, true)}<em class="muted small">${solWhen(l.t)} · ${Math.round(l.points)} pts</em></li>`).join("")
-    || `<li class="muted small">No promotions yet. The first one comes with the first quiz grade: Interns become Junior Traders at 25 points.</li>`);
-}
-document.addEventListener("click", e => {
-  const a = e.target.closest("#tab-ranks [data-agent]"); if (!a) return;
-  showTab("sol"); setTimeout(() => openProfile(a.dataset.agent), 250);
-});
-setInterval(() => seen() && state.tab === "ranks" && loadRanks(), 4000);
-
-/* the preview board: every phase of the animation, one row each, looping, so it can be seen and tested */
-const CAT_ROWS = [
-  { id: "idle", name: "Typing (everything else)", note: "Watching, debating, trading, resting: the only animation is typing. Paws take turns on the keys, the head bobs, the eyes blink now and then." },
-  { id: "drop", name: "Profit: $ drop in, green", note: "Fur turns profit-green, arms fly up, $ start raining and two $ fall toward the eyes." },
-  { id: "shake", name: "$ shake / arms waving", note: "The two $ land on the eyes and shake; both arms wave side to side." },
-  { id: "hold", name: "$ fall away (2s hold)", note: "The $ stay locked on the eyes for 2 s while the rest fall past the keyboard and out." },
-  { id: "back", name: "Back to typing after 2s", note: "The $ clear, the fur goes back to white, the arms come down and typing resumes." }];
-const catBoard = { timers: [] };
-function openCatBoard() {
-  const dlg = $("#cat-board");
-  setHTML($("#cb-rows"), CAT_ROWS.map(r => `<div class="cb-row" data-row="${r.id}">
-      <div class="cb-label"><b>${r.name}</b><span class="muted small">${r.note}</span><span class="cb-clock num small"></span></div>
-      <div class="cb-cats">${["xgb", "lgbm", "rf"].map(m => `<div class="cb-cat">${catBox()}<span class="small">${SOL_MODEL[m].name}</span></div>`).join("")}</div>
-      <button class="btn xs" type="button" data-cb-play="${r.id}" title="Play the whole profit sequence on this row">Play</button></div>`).join("")
-    + `<div class="cb-row cb-ranks"><div class="cb-label"><b>Ranks: what each one wears</b><span class="muted small">Intern's lanyard, then ties, a pocket square, a tie bar, a gold tie with a pin; Legend adds a brass frame.</span></div>
-      <div class="cb-cats">${["Intern", "Junior Trader", "Trader", "Senior Trader", "Portfolio Manager", "Partner", "Legend"].map((n, i) => `<div class="cb-cat" data-rank-demo="${i}">${catBox()}<span class="small">${n}</span></div>`).join("")}</div></div>`);
-  $$("#cb-rows [data-rank-demo]").forEach(c => { c.querySelector(".cat-box").dataset.rank = c.dataset.rankDemo; });
-  dlg.showModal?.() ?? dlg.setAttribute("open", "");
-  catBoardLoop();
-}
-function catBoardStop() {
-  catBoard.timers.forEach(t => { clearTimeout(t); clearInterval(t); });
-  catBoard.timers = [];
-  $$("#cb-rows .cat-box").forEach(b => { (b._catT || []).forEach(clearTimeout); catPhase(b, null); });
-}
-function catBoardLoop() {                        // each row repeats its own phase
-  catBoardStop();
-  const k = $("#cat-board").classList.contains("slow") ? 4 : 1, T = CAT_T, rows = {};
-  CAT_ROWS.forEach(r => { rows[r.id] = { boxes: $$(`#cb-rows .cb-row[data-row="${r.id}"] .cat-box`), clock: $(`#cb-rows .cb-row[data-row="${r.id}"] .cb-clock`), t0: 0 }; });
-  const all = (id, ph) => rows[id].boxes.forEach(b => catPhase(b, ph));
-  const rain = (id, ms) => rows[id].boxes.forEach(b => catRain(b, ms));
-  const every = (ms, fn) => { fn(); catBoard.timers.push(setInterval(fn, ms)); };
-  every(1700 * k, () => { rows.drop.t0 = performance.now(); all("drop", null); requestAnimationFrame(() => { all("drop", "p-drop"); rain("drop", 900 * k); }); });
-  all("shake", "p-shake");
-  every(900 * k, () => { rows.shake.t0 = performance.now(); rows.shake.boxes.forEach(b => { b.classList.remove("p-shake"); void b.offsetWidth; b.classList.add("p-shake"); }); });
-  all("hold", "p-hold"); rows.hold.t0 = performance.now();
-  every(1000, () => rain("hold", 1400 * k));
-  every((T.hold + T.back + 900) * k, () => {
-    rows.back.t0 = performance.now(); all("back", "p-hold");
-    catBoard.timers.push(setTimeout(() => all("back", "p-back"), T.hold * k), setTimeout(() => all("back", null), (T.hold + T.back) * k));
-  });
-  const tick = () => {
-    const now = performance.now();
-    rows.idle.clock.textContent = "loop";
-    rows.drop.clock.textContent = `${Math.round((now - rows.drop.t0) / k)} ms since profit`;
-    rows.shake.clock.textContent = `landed ${Math.round((now - rows.shake.t0) / k)} ms ago`;
-    rows.hold.clock.textContent = "held: $ locked on the eyes";
-    const b = (now - rows.back.t0) / k;
-    rows.back.clock.textContent = b < T.hold ? `hold ${(b / 1000).toFixed(1)} s of 2.0 s` : b < T.hold + T.back ? "clearing…" : "typing again";
-  };
-  catBoard.timers.push(setInterval(tick, 100));
-}
-document.addEventListener("click", e => {
-  if (e.target.closest("#cat-board-open")) { openCatBoard(); return; }
-  const p = e.target.closest("[data-cb-play]");
-  if (p) {                                        // the full sequence on this row, then back to its loop
-    catBoardStop();
-    const boxes = $$(`#cb-rows .cb-row[data-row="${p.dataset.cbPlay}"] .cat-box`);
-    boxes.forEach((b, i) => catProfit(b, i === boxes.length - 1 ? () => catBoardLoop() : null));
-  }
-});
-$("#cb-play").onclick = () => { catBoardStop(); const bs = $$("#cb-rows .cat-box"); bs.forEach((b, i) => catProfit(b, i === bs.length - 1 ? () => catBoardLoop() : null)); };
-$("#cb-slow").onchange = e => { $("#cat-board").classList.toggle("slow", e.target.checked); catBoardLoop(); };
-$("#cb-close").onclick = () => { catBoardStop(); $("#cat-board").close?.(); $("#cat-board").removeAttribute("open"); };
-$("#cat-board").addEventListener("close", catBoardStop);
-function solNotify() {                           // a trade opened or closed: a notification and the usual sounds
-  const ids = new Set(sol.pos.map(p => p.id)), tids = new Set(sol.trades.map(t => t.id));
-  if (sol.knownPos) sol.pos.filter(p => !sol.knownPos.has(p.id)).forEach(p => {
-    notify({ kind: "info", title: `Solana: bought ${p.symbol} (${p.mode})`, body: `${p.size_sol} SOL at ${solPx(p.entry_price)}`, onClick: () => showTab("sol") });
-    playEvent("botOpen");
-  });
-  if (sol.knownTrades) sol.trades.filter(t => !sol.knownTrades.has(t.id)).forEach(t => {
-    notify({ kind: t.pnl_sol >= 0 ? "tp" : "sl", title: `Solana: closed ${t.symbol} (${t.mode})`, body: `${SOL_EXIT[t.exit_reason] || t.exit_reason || "closed"} · ${solPct(t.pnl_pct)}`, amount: t.pnl_sol, onClick: () => showTab("sol") });
-    playEvent(t.pnl_sol >= 0 ? "profit" : "loss");
-    if (t.pnl_sol > 0 && !sol.state?.bots?.length) crewBots().forEach(b => crewWin(b.model));
-  });
-  sol.knownPos = ids; if (sol.trades.length || sol.knownTrades) sol.knownTrades = tids;
-}
-function renderSol() {
-  const miss = $("#sol-missing"); miss.hidden = !sol.missing;
-  $$("#tab-sol > :not(#sol-missing):not(#sol-crew)").forEach(el => el.hidden = sol.missing);
-  renderCrew();
-  if (sol.missing) {
-    setHTML(miss, `<div class="empty-state">${ICON.bot}<div><b>The Solana engine isn't installed yet</b>This tab shows the meme-coin scanner, the rug filter, the models' debate and your paper or live trades. It lights up by itself once the backend (<code>/api/sol/*</code>) is in; Chat A has the full spec.</div></div>`);
-    return;
-  }
-  renderSolCtl(); renderSolFeed(); renderSolBrain(); renderSolPort();
-}
-
-/* top bar: scanner, mode, auto-trade, dataset and training with one progress bar */
-function renderSolCtl() {
-  const st = sol.state || {}, sc = st.scanner || {}, m = st.model || {};
-  const ago = sc.last_scan ? Math.max(0, Math.round(Date.now() / 1000 - sc.last_scan)) : null;
-  $("#sol-status").textContent = sc.error ? `Scanner stopped: ${sc.error}` : `${sc.running ? "Scanning" : "Scanner off"} · ${(sc.scanned ?? 0).toLocaleString()} checked · ${(sc.passed ?? 0).toLocaleString()} passed the rug filter · ${(sc.blocked ?? 0).toLocaleString()} blocked${ago != null ? ` · last scan ${ago < 90 ? ago + " s" : Math.round(ago / 60) + " min"} ago` : ""}`;
-  // one plain sentence: is this real data, and is the AI allowed to trade with it?
-  const realN = (st.dataset || {}).real ?? 0, dl = $("#sol-dataline");
-  const dline = !m.loaded ? [`Real coins and live prices from GeckoTerminal. The AI hasn't been trained yet: ${realN.toLocaleString()} real coin moments collected so far. It won't trade until it has learned from real coins.`, true]
-    : m.real_only ? [`Real coins and live prices from GeckoTerminal. The AI learned only from ${(m.n_samples ?? realN).toLocaleString()} real coin moments, no practice data.${st.mode === "live" ? "" : " Paper trades pay 2% swap costs in and out, like a real Jupiter swap."}`, false]
-    : [`Real coins and live prices, but the AI was trained partly on practice data, so it won't trade yet. Once it has 300 real coin moments (${realN.toLocaleString()} so far) it retrains on real coins only and starts.`, true];
-  dl.textContent = dline[0]; dl.classList.toggle("warn", dline[1]);
-  const scan = $("#sol-scan"); scan.textContent = sc.running ? "Stop scanner" : "Start scanner"; scan.classList.toggle("primary", !sc.running); scan.classList.toggle("danger-outline", !!sc.running);
-  $$("#sol-mode .seg-opt").forEach(b => { const on = b.dataset.mode === (st.mode || "paper"); b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); });
-  $("#tab-sol").classList.toggle("is-live", st.mode === "live");
-  if (!sol.autoHeld || Date.now() - sol.autoHeld > 3000) $("#sol-auto").checked = !!st.auto_trade;
-  const tr = st.training || {}, ds = st.dataset || {}, job = tr.running ? { ...tr, what: "Training" } : ds.running ? { ...ds, what: "Pulling fresh data" } : null;
-  $("#sol-train").disabled = !!tr.running; $("#sol-dataset").disabled = !!ds.running;
-  $("#sol-train").textContent = tr.running ? "Training…" : "Train now";
-  const pr = $("#sol-progress"), err = tr.error || ds.error;
-  pr.hidden = !job && !err;
-  if (job) { $("#sol-prog-bar").style.width = `${Math.round((job.progress || 0) * 100)}%`; $("#sol-prog-txt").textContent = `${job.what}: ${job.stage || ""} · ${Math.round((job.progress || 0) * 100)}%${job.what === "Pulling fresh data" && ds.pools_checked != null ? ` · ${ds.pools_checked} pools checked, ${ds.new_samples ?? 0} new labelled moments` : ""}`; pr.classList.remove("err"); }
-  else if (err) { $("#sol-prog-bar").style.width = "0"; $("#sol-prog-txt").textContent = err; pr.classList.add("err"); }
-  const apis = st.apis || {}, dot = (k, label) => `<span class="sol-api ${apis[k] === true ? "ok" : apis[k] === false ? "bad" : ""}" title="${label}: ${apis[k] === true ? "reachable" : apis[k] === false ? "not reachable" : "not checked yet"}"><i></i>${label}</span>`;
-  const met = m.metrics || {};
-  const model = m.loaded ? `<span class="sol-chip${m.synthetic ? " warn" : ""}" title="${m.synthetic ? "Trained on synthetic demo data: live mode stays locked" : "The saved ensemble (models/super_ensemble.joblib)"}">Model ${m.method === "voting" ? "soft vote" : "stacked"} · ${m.n_samples?.toLocaleString() ?? "?"} trades${met.auc != null ? ` · AUC ${(+met.auc).toFixed(2)}` : ""}${m.device ? ` · ${m.device === "cuda" ? "GPU" : "CPU"}` : ""}${m.trained_at ? ` · ${String(m.trained_at).slice(0, 16).replace("T", " ")}` : ""}${m.synthetic ? " · demo data" : ""}</span>`
-    : `<span class="sol-chip warn">No model yet: data and training happen by themselves, or open Data &amp; training below</span>`;
-  const w = st.wallet || {}, money = st.mode === "live" ? (w.key_loaded ? `<span class="sol-chip" title="${esc(w.pubkey || "")}">Wallet ${solShort(w.pubkey)} · ${w.sol_balance != null ? (+w.sol_balance).toFixed(3) + " SOL" : "balance —"}</span>` : `<span class="sol-chip warn">No wallet key in .env</span>`)
-    : `<span class="sol-chip">Paper balance ${st.paper?.balance_sol != null ? (+st.paper.balance_sol).toFixed(3) : "—"} SOL</span>`;
-  const c = st.config || {};
-  setHTML($("#sol-chips"), `${m.loaded ? model : ""}${money}<span class="sol-chip" title="Exits: take profit, trailing stop, timeout">TP +${c.tp_pct ?? 30}% · trail −${c.trail_pct ?? 10}% · ${c.timeout_min ?? 20} min · ${c.trade_size_sol ?? "?"} SOL a trade</span><span class="sol-apis">${dot("dexscreener", "DexScreener")}${dot("rugcheck", "RugCheck")}${dot("helius", "Helius")}${dot("jupiter", "Jupiter")}</span>`);
-}
-$("#sol-scan").onclick = async () => {
-  const run = !sol.state?.scanner?.running;
-  try { await api("/api/sol/scanner", { method: "POST", body: { run } }); toast(run ? "Scanner started: every new coin goes through the rug filter first." : "Scanner stopped. Open trades keep their exits."); } catch (e) { toast(e.message, true); }
-  loadSol();
-};
-$("#sol-mode").addEventListener("click", async e => {
-  const b = e.target.closest("[data-mode]"); if (!b || b.classList.contains("on")) return;
-  if (b.dataset.mode === "live") {
-    const dlg = $("#sol-live-dlg"), inp = $("#sol-live-input"); inp.value = ""; $("#sol-live-ok").disabled = true; dlg.showModal(); inp.focus();
-    const ok = await new Promise(res => { dlg.onclose = () => res(dlg.returnValue === "ok"); });
-    if (!ok) return;
-    try { await api("/api/sol/mode", { method: "POST", body: { mode: "live", confirm: "LIVE" } }); toast("Live wallet mode: BUY verdicts now spend real SOL."); } catch (err) { toast(err.message, true); }
-  } else {
-    try { await api("/api/sol/mode", { method: "POST", body: { mode: "paper" } }); toast("Paper mode: trades are simulated with live Jupiter quotes."); } catch (err) { toast(err.message, true); }
-  }
-  loadSol();
-});
-$("#sol-live-input").addEventListener("input", e => $("#sol-live-ok").disabled = e.target.value.trim().toUpperCase() !== "LIVE");
-$("#sol-live-input").addEventListener("keydown", e => { if (e.key !== "Enter") return; e.preventDefault(); if (!$("#sol-live-ok").disabled) $("#sol-live-dlg").close("ok"); });
-$("#sol-auto").onchange = async e => {
-  const on = e.target.checked; sol.autoHeld = Date.now();
-  try { await api("/api/sol/autotrade", { method: "POST", body: { on } }); toast(on ? "Auto-trade on: a BUY verdict from the debate opens a trade." : "Auto-trade off: the scanner and the debate still run; nothing is bought."); } catch (err) { toast(err.message, true); e.target.checked = !on; }
-};
-$("#sol-train").onclick = async () => {
-  try { await api("/api/sol/train", { method: "POST", body: {} }); toast("Training: the crew splits into its models, then merges back into one bot. Normally this now happens by itself as real data comes in."); } catch (e) { toast(e.message, true); }
-  loadSol();
-};
-$("#sol-dataset").onclick = async () => {
-  try { await api("/api/sol/dataset", { method: "POST", body: {} }); toast("Pulling fresh Solana pool data from GeckoTerminal and labelling new moments. This also happens by itself in the background."); } catch (e) { toast(e.message, true); }
-  loadSol();
-};
-
-/* live scanner & rug blocker feed */
-function renderSolFeed() {
-  const rows = sol.feed.filter(r => sol.filter === "all" || r.status === sol.filter), tb = $("#sol-feed tbody");
-  const p = sol.feed.filter(r => r.status === "passed").length;
-  $("#sol-feed-meta").textContent = sol.feed.length ? `${sol.feed.length} newest · ${p} passed · ${sol.feed.length - p} blocked` : "";
-  setHTML(tb, rows.map(r => {
-    const gate = r.status === "passed" ? `<span class="sol-gate ok">✓ Passed</span>` : r.status === "blocked" ? `<span class="sol-gate bad">✕ Blocked</span>` : `<span class="sol-gate">! Error</span>`;
-    const why = r.status === "passed" ? (r.debate ? `<span class="sol-verdict ${r.debate.verdict === "BUY" ? "buy" : ""}">${r.debate.verdict === "BUY" ? "BUY" : "PASS"} after debate · ${Math.round((r.debate.consensus ?? 0) * 100)}%</span>` : r.ensemble ? `<span class="sol-verdict ${r.ensemble.signal === "BUY" ? "buy" : ""}">${r.ensemble.signal} · ${Math.round(r.ensemble.ensemble_score * 100)}%</span>` : `<span class="muted">waiting for the model</span>`)
-      : (r.reasons || []).length ? `<span title="${esc(r.reasons.join("\n"))}">${esc(r.reasons[0])}${r.reasons.length > 1 ? ` <span class="muted">+${r.reasons.length - 1} more</span>` : ""}</span>` : "—";
-    return `<tr data-mint="${esc(r.mint)}" class="${r.mint === sol.sel ? "sel" : ""}${r.status === "passed" ? " pick" : ""}"><td>${solTime(r.seen)}</td><td class="sol-tok" title="${esc(r.name || "")} ${esc(r.mint)}"><b>${esc(r.symbol || "?")}</b><span class="muted">${solShort(r.mint)}</span></td>
-      <td>${solUsd(r.liquidity_usd)}</td><td>${solAge(r.age_min)}</td><td>${r.buys_5m ?? "—"}/${r.sells_5m ?? "—"}</td><td>${gate}</td><td class="sol-why">${why}</td></tr>`;
-  }).join("") || `<tr><td colspan="7" class="muted sol-empty">${sol.feed.length ? "Nothing in this filter." : "Start the scanner: every new Solana coin shows up here, and only the ones that pass all six rug rules reach the models."}</td></tr>`);
-}
-$("#sol-feed").addEventListener("click", e => {
-  const tr = e.target.closest("tr[data-mint]"); if (!tr) return;
-  const r = sol.feed.find(x => x.mint === tr.dataset.mint);
-  if (r?.status !== "passed") { toast(`${r?.symbol || "This coin"} was blocked by the rug filter, so the models never saw it.`); return; }
-  sol.sel = r.mint; renderSolFeed(); renderSolBrain();
-});
-$("#sol-filter").addEventListener("click", e => {
-  const b = e.target.closest("[data-f]"); if (!b) return;
-  sol.filter = b.dataset.f; $$("#sol-filter .seg-opt").forEach(x => x.classList.toggle("on", x === b)); renderSolFeed();
-});
-
-/* ensemble brain: each model's probability, the combined verdict, then the debate */
-function renderSolBrain() {
-  const passed = sol.feed.filter(r => r.status === "passed" && r.ensemble);
-  const r = passed.find(x => x.mint === sol.sel) || passed[0];
-  if (r && r.mint !== sol.sel) sol.sel = r.mint;
-  const c = sol.state?.config || {}, floor = c.model_floor ?? 0.65, need = c.buy_threshold ?? 0.78;
-  if (!r) {
-    $("#sol-brain-tok").textContent = "";
-    setHTML($("#sol-bars"), `<p class="muted small sol-empty">Pick a coin that passed the rug filter to see what each model thinks.</p>`);
-    setHTML($("#sol-debate"), ""); $("#sol-debate-meta").textContent = ""; return;
-  }
-  const e = r.ensemble;
-  $("#sol-brain-tok").innerHTML = `<b>${esc(r.symbol)}</b> · ${solShort(r.mint)}${e.latency_ms != null ? ` · ${(+e.latency_ms).toFixed(1)} ms` : ""}`;
-  const bar = (label, col, p, tick, dash) => `<div class="sol-bar"><span class="sol-bar-name"><i style="background:${col}"${dash ? ' class="dash"' : ""}></i>${label}</span>
-      <div class="sol-track" title="${label}: ${(p * 100).toFixed(1)}%"><b style="width:${Math.max(0, Math.min(100, p * 100))}%;background:${col}"></b><u style="left:${tick * 100}%" title="${tick === need ? "BUY needs the combined score here" : "every model must be at least here"}"></u></div>
-      <span class="sol-bar-val num">${(p * 100).toFixed(1)}%</span></div>`;
-  const buy = e.signal === "BUY";
-  setHTML($("#sol-bars"), solModels(e).map(k => bar(SOL_MODEL[k].name, SOL_MODEL[k].col, e[`${k}_prob`], floor, SOL_MODEL[k].dash)).join("")
-    + `<div class="sol-bar sol-bar-total">${bar("Combined ensemble", "var(--gold)", e.ensemble_score, need).replace('<div class="sol-bar">', "").replace(/<\/div>$/, "")}</div>
-    <div class="sol-verdict-row"><span class="sol-verdict big ${buy ? "buy" : ""}">${buy ? "✓ BUY" : "– PASS"}</span><span class="muted small">${buy ? `Combined ${Math.round(e.ensemble_score * 100)}% ≥ ${Math.round(need * 100)}% and every model ≥ ${Math.round(floor * 100)}%` : `BUY needs the combined score ≥ ${Math.round(need * 100)}% and every model ≥ ${Math.round(floor * 100)}%`}</span></div>`);
-  const key = `${r.mint}|${r.debate?.rounds ?? ""}|${r.debate?.verdict ?? ""}`;
-  if (key !== sol.debateKey) { sol.debateKey = key; loadSolDebate(r.mint); }
-}
-async function loadSolDebate(mint) {
-  try { const d = await api(`/api/sol/debate/${encodeURIComponent(mint)}`); if (mint !== sol.sel) return; sol.debate = d; }
-  catch (e) { sol.debate = e.status === 404 ? null : { error: e.message }; }
-  renderSolDebate();
-}
-function renderSolDebate() {
-  const d = sol.debate, box = $("#sol-debate");
-  if (!d || d.error || !d.rounds?.length) {
-    $("#sol-debate-meta").textContent = "";
-    setHTML(box, `<p class="muted small sol-empty">${d?.error ? esc(d.error) : "No debate for this coin yet. Every coin that passes the rug filter gets one: the models state their case, move toward each other round by round, and only trade if they agree."}</p>`);
-    return;
-  }
-  const k = d.consensus || {}, rs = d.rounds, models = [...new Set(rs.flatMap(r => r.stances.map(s => s.model)))].filter(m => SOL_MODEL[m]);
-  $("#sol-debate-meta").textContent = `${rs.length - 1} round${rs.length === 2 ? "" : "s"} · ${k.agreed ? "they agreed" : "no deal"}${d.ms != null ? ` · decided in ${d.ms < 1 ? d.ms.toFixed(2) : Math.round(d.ms)} ms` : ""}${d.time ? ` · ${solTime(d.time)}` : ""}`;
-  const c = sol.state?.config || {}, floor = c.model_floor ?? 0.65, need = c.buy_threshold ?? 0.78;
-  const series = models.map(m => ({ key: m, name: SOL_MODEL[m].name, col: SOL_MODEL[m].col, dash: SOL_MODEL[m].dash, pts: rs.map(r => ({ x: r.n, y: r.stances.find(s => s.model === m)?.prob })) }));
-  const said = (r, i) => `<div class="sol-round${i === 0 || i === rs.length - 1 ? "" : " mid"}"><span class="sol-round-n">${i === 0 ? "Opening" : i === rs.length - 1 ? "Final" : `Round ${r.n}`}</span>
-      ${r.stances.filter(s => SOL_MODEL[s.model]).map(s => `<div class="sol-say"><span class="sol-who"><i style="background:${SOL_MODEL[s.model].col}"></i>${SOL_MODEL[s.model].name}${i === 0 && d.weights?.[s.model] != null ? ` <em class="sol-w" title="its vote weight, from its rank">×${d.weights[s.model]}</em>` : ""}</span><span class="sol-stance ${s.stance === "BUY" ? "buy" : ""}">${s.stance === "BUY" ? "BUY" : "PASS"} ${(s.prob * 100).toFixed(0)}%</span><span class="sol-says">${esc(s.says || "")}${s.moved ? ` <em class="muted">(${s.moved > 0 ? "+" : "−"}${Math.abs(s.moved * 100).toFixed(1)} pts)</em>` : ""}</span></div>`).join("")}</div>`;
-  const cp = k.compromise;
-  setHTML(box, `<div class="sol-conv" id="sol-conv"></div>
-    <div class="sol-deal ${k.verdict === "BUY" ? "buy" : ""}"><b>${k.verdict === "BUY" ? "✓ Deal: BUY" : k.agreed ? "– Agreed: PASS" : "✕ No deal: PASS"}</b>
-      <span>Consensus ${Math.round((k.score ?? 0) * 100)}% · spread ${((k.spread ?? 0) * 100).toFixed(1)} pts</span>
-      ${cp ? `<span class="sol-comp">Compromise: ${cp.size_sol != null ? `${cp.size_sol} SOL` : ""}${cp.size_pct != null ? ` (${Math.round(cp.size_pct)}% of a normal trade)` : ""}${cp.tp_pct != null ? ` · TP +${cp.tp_pct}%` : ""}${cp.trail_pct != null ? ` · trail −${cp.trail_pct}%` : ""}${cp.note ? `. ${esc(cp.note)}` : ""}</span>` : ""}</div>
-    ${d.review ? `<div class="sol-check ${d.review.final === "BUY" ? "ok" : ""}"><div class="sol-check-head"><b>Main agent: ${d.review.final === "BUY" ? "BUY" : "PASS"}</b><span class="muted small">${esc(d.review.says || "")}</span></div>
-      <ul>${(d.review.subagents || []).map(x => `<li class="${x.verdict === "approve" ? "ok" : "no"}"><span class="sol-sub">${x.verdict === "approve" ? "✓" : "✕"} ${esc(x.role)}</span><span class="muted">${esc(x.says || "")}</span></li>`).join("")}</ul></div>` : ""}
-    <div class="sol-transcript">${rs.map(said).join("")}${rs.length > 2 ? `<button class="btn xs sol-more" type="button">Show all ${rs.length - 2} middle rounds</button>` : ""}</div>`);
-  const lo = Math.min(0.4, ...series.flatMap(s => s.pts.map(p => p.y ?? 1))) - 0.03;
-  solChart($("#sol-conv"), series, { xLabel: n => n === 0 ? "open" : `R${n}`, yMin: Math.max(0, lo), yMax: 1, yFmt: v => `${Math.round(v * 100)}%`, refs: [{ y: need, label: `BUY ${Math.round(need * 100)}%` }, { y: floor, label: `floor ${Math.round(floor * 100)}%` }], endLabels: true, height: 150 });
-}
-$("#sol-debate").addEventListener("click", e => { if (!e.target.closest(".sol-more")) return; $("#sol-debate .sol-transcript").classList.add("all"); e.target.remove(); });
-
-/* portfolio: stats, the P/L chart, open trades with panic sell, closed trades */
-function renderSolPort() {
-  const p = sol.pnl || {}, st = sol.state || {};
-  const openSol = sol.pos.reduce((s, x) => s + (x.pnl_sol || 0), 0);
-  $("#sol-port-meta").textContent = `${sol.pos.length} open${st.config?.max_open ? ` of ${st.config.max_open}` : ""}`;
-  const tile = (k, v, cls2 = "", sub = "") => `<div class="sol-stat"><span>${k}</span><b class="num ${cls2}">${v}</b>${sub ? `<small class="muted">${sub}</small>` : ""}</div>`;
-  const wr = p.win_rate != null ? p.win_rate : (p.wins + p.losses ? p.wins / (p.wins + p.losses) : null);
-  setHTML($("#sol-stats"), tile("Realized P/L", `${solSol(p.realized_sol)} SOL`, cls(p.realized_sol))
-    + tile("Win rate", wr == null ? "—" : `${Math.round((wr > 1 ? wr / 100 : wr) * 100)}%`, "", `${p.wins ?? 0} won · ${p.losses ?? 0} lost`)
-    + tile("Open P/L", `${solSol(p.open_sol ?? openSol)} SOL`, cls(p.open_sol ?? openSol), `${sol.pos.length} open`)
-    + tile(st.mode === "live" ? "Wallet" : "Paper balance", `${(st.mode === "live" ? st.wallet?.sol_balance : st.paper?.balance_sol) != null ? (+(st.mode === "live" ? st.wallet.sol_balance : st.paper.balance_sol)).toFixed(3) : "—"} SOL`));
-  const pts = (p.points || []).map(q => ({ x: q.t, y: q.cum_sol }));
-  if (pts.length > 1) solChart($("#sol-pnl"), [{ key: "pnl", name: "Realized P/L", col: "var(--gold)", pts }], { time: true, zero: true, yFmt: v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`, xLabel: t => new Date(t * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }), height: 150, unit: " SOL", noDots: true });
-  else setHTML($("#sol-pnl"), `<p class="muted small sol-empty">The P/L line starts with the first closed trade.</p>`);
-  const now = Date.now() / 1000;
-  setHTML($("#sol-pos tbody"), sol.pos.map(x => `<tr data-id="${x.id}"><td class="sol-tok"><b>${esc(x.symbol)}</b><span class="muted">${solShort(x.mint)}</span></td><td><span class="tag ${x.mode === "live" ? "real" : ""}">${x.mode}</span></td>
-      <td>${x.size_sol} SOL</td><td>${solPx(x.entry_price)}</td><td>${solPx(x.last_price)}</td><td class="${cls(x.pnl_pct)}"><b>${solPct(x.pnl_pct)}</b> <span class="muted">${solSol(x.pnl_sol, 4)}</span></td>
-      <td title="Trailing stop, from the entry">${x.stop_pct != null ? solPct(x.stop_pct) : "—"}</td><td>${x.timeout_at ? `${Math.max(0, Math.floor((x.timeout_at - now) / 60))}:${String(Math.max(0, Math.floor((x.timeout_at - now) % 60))).padStart(2, "0")}` : "—"}</td>
-      <td><button class="btn xs danger-outline" data-close="${x.id}" type="button">Panic sell</button></td></tr>`).join("")
-    || `<tr><td colspan="9" class="muted sol-empty">No open trades. A BUY verdict from the debate opens one (in ${st.mode === "live" ? "your wallet" : "paper"}); it closes at +${st.config?.tp_pct ?? 30}%, on the trailing stop or after ${st.config?.timeout_min ?? 20} minutes.</td></tr>`);
-  $("#sol-trades-meta").textContent = sol.trades.length ? `(${sol.trades.length})` : "";
-  setHTML($("#sol-trades tbody"), sol.trades.map(t => `<tr><td>${solTime(t.closed_at)}</td><td class="sol-tok"><b>${esc(t.symbol)}</b></td><td>${t.mode}</td><td>${t.size_sol} SOL</td><td>${solPx(t.entry_price)}</td><td>${solPx(t.exit_price)}</td>
-      <td class="${cls(t.pnl_pct)}">${solPct(t.pnl_pct)} <span class="muted">${solSol(t.pnl_sol, 4)}</span></td><td>${SOL_EXIT[t.exit_reason] || esc(t.exit_reason || "")}</td></tr>`).join("") || `<tr><td colspan="8" class="muted sol-empty">No closed trades yet.</td></tr>`);
-}
-$("#sol-pos").addEventListener("click", async e => {
-  const b = e.target.closest("[data-close]"); if (!b) return;
-  if (sol.state?.mode === "live" && !(await realCheck())) return;
-  b.disabled = true; b.textContent = "Selling…";
-  try { const r = await api(`/api/sol/positions/${b.dataset.close}/close`, { method: "POST", body: {} }); toast(`Closed at ${solPx(r.exit_price)} · ${solPct(r.pnl_pct)}`, (r.pnl_pct ?? 0) < 0); }
-  catch (err) { toast(err.message, true); b.disabled = false; b.textContent = "Panic sell"; }
-  loadSol(true);
-});
-
-/* one small line chart for the debate (rounds) and the P/L (time): recessive grid, 2 px lines, a crosshair tooltip */
-function solChart(el, series, o) {
-  const W = Math.max(260, el.clientWidth || 400), H = o.height || 150, L = 44, R = o.endLabels ? 96 : 12, T = 10, B = 22;
-  const xs = series.flatMap(s => s.pts.map(p => p.x)), ys = series.flatMap(s => s.pts.map(p => p.y)).filter(v => v != null);
-  if (!xs.length || !ys.length) { setHTML(el, ""); return; }
-  const x0 = Math.min(...xs), x1 = Math.max(...xs) || x0 + 1;
-  let y0 = o.yMin ?? Math.min(...ys), y1 = o.yMax ?? Math.max(...ys);
-  if (o.zero) { y0 = Math.min(y0, 0); y1 = Math.max(y1, 0); }
-  if (y1 - y0 < 1e-9) { y0 -= 0.5; y1 += 0.5; }
-  const pad = o.yMax != null ? 0 : (y1 - y0) * 0.08; y0 -= o.yMin != null ? 0 : pad; y1 += pad;
-  const X = v => L + (x1 === x0 ? 0.5 : (v - x0) / (x1 - x0)) * (W - L - R), Y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
-  // with reference lines (the debate's BUY and floor levels) those are the axis ticks, so no label sits on the lines
-  const gv = o.refs?.length ? [y1, ...o.refs.map(r => r.y)] : [0, 0.5, 1].map(f => y0 + (y1 - y0) * f);
-  const grid = gv.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="g"/><text x="${L - 6}" y="${Y(v) + 3}" class="yl">${o.yFmt(v)}</text>`).join("");
-  const refs = (o.refs || []).map(r => `<line x1="${L}" x2="${W - R}" y1="${Y(r.y)}" y2="${Y(r.y)}" class="ref"><title>${r.label}</title></line><text x="${L - 6}" y="${Y(r.y) + 13}" class="rl yl">${r.label.split(" ")[0]}</text>`).join("");
-  const zero = o.zero ? `<line x1="${L}" x2="${W - R}" y1="${Y(0)}" y2="${Y(0)}" class="z"/>` : "";
-  const ticks = [...new Set(o.time ? [x0, (x0 + x1) / 2, x1] : xs)].map(v => `<text x="${X(v)}" y="${H - 6}" class="xl">${o.xLabel(v)}</text>`).join("");
-  const lines = series.map(s => {
-    const pts = s.pts.filter(p => p.y != null), d = pts.map((p, i) => `${i ? "L" : "M"}${X(p.x).toFixed(1)},${Y(p.y).toFixed(1)}`).join("");
-    const last = pts[pts.length - 1];
-    return `<path d="${d}" fill="none" stroke="${s.col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${s.dash ? ' stroke-dasharray="5 4"' : ""}/>`
-      + (o.noDots ? "" : pts.map(p => `<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="4" fill="${s.col}" stroke="var(--surface)" stroke-width="2"/>`).join(""))
-      + (o.endLabels && last ? `<text x="${X(last.x) + 8}" y="${Y(last.y) + 3}" class="el" data-y="${Y(last.y)}">${s.name}</text>` : "");
-  }).join("");
-  setHTML(el, `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="${esc(series.map(s => s.name).join(", "))}">${grid}${zero}${refs}${ticks}${lines}<line class="xh" y1="${T}" y2="${H - B}" x1="-10" x2="-10"/><rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}"/></svg><div class="sol-tip" hidden></div>`);
-  const svg = el.querySelector("svg"), tip = el.querySelector(".sol-tip"), xh = svg.querySelector(".xh");
-  // end labels: nudge apart so they never overlap
-  const labs = [...svg.querySelectorAll(".el")].sort((a, b) => a.dataset.y - b.dataset.y); let prev = -99;
-  labs.forEach(t => { const y = Math.max(+t.dataset.y + 3, prev + 12); t.setAttribute("y", y); prev = y; });
-  const uniq = [...new Set(xs)].sort((a, b) => a - b);
-  svg.querySelector(".hit").addEventListener("mousemove", ev => {
-    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width);
-    const xv = uniq.reduce((best, v) => Math.abs(X(v) - px) < Math.abs(X(best) - px) ? v : best, uniq[0]);
-    xh.setAttribute("x1", X(xv)); xh.setAttribute("x2", X(xv));
-    setHTML(tip, `<b>${o.time ? new Date(xv * 1000).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" }) : o.xLabel(xv) === "open" ? "Opening statements" : `Round ${xv}`}</b>`
-      + series.map(s => { const p = s.pts.find(q => q.x === xv); return p?.y == null ? "" : `<span><i style="background:${s.col}"></i>${s.name}<em>${o.yFmt(p.y)}${o.unit || ""}</em></span>`; }).join(""));
-    tip.hidden = false; const left = X(xv) / W * r.width; tip.style.left = `${Math.min(r.width - tip.offsetWidth - 4, Math.max(4, left + 12))}px`;
-  });
-  svg.querySelector(".hit").addEventListener("mouseleave", () => { tip.hidden = true; xh.setAttribute("x1", -10); xh.setAttribute("x2", -10); });
-}
-setInterval(() => {                               // 2 s while the tab is open; 10 s elsewhere (trade notifications); 60 s without an engine
-  sol.t++;
-  const on = state.tab === "sol" && !document.hidden;
-  if (sol.missing ? sol.t % 60 === 0 : on ? sol.t % 2 === 0 : sol.t % 10 === 0) loadSol();
-  if (on && sol.pos.length) renderSolPort();       // the timeout countdown ticks every second
-}, 1000);
 
 /* ---------- boot ---------- */
 initChart();
@@ -3986,8 +3170,8 @@ moveRailInd(); document.fonts?.ready.then(moveRailInd);
    (bot trades, account, positions, events); screens nobody can see wait and catch up the moment you come back */
 const seen = () => !document.hidden;
 let bgTick = 0;
-pollStatus().then(() => { pollAccount(); loadPositions(); brainStatus(); pollBot(); });
-openBot(); showTab("sol"); requestAnimationFrame(placeNotes); addEventListener("resize", placeNotes);   // the app opens on the Solana dashboard
+pollStatus().then(() => { pollAccount(); loadPositions(); pollBot(); });
+openBot(); showTab("bot"); requestAnimationFrame(placeNotes); addEventListener("resize", placeNotes);
 setInterval(() => { bgTick++; if (seen() || bgTick % 2 === 0) pollBot(); }, 2000);            // hidden: every 4 s
 loadProgress(); setInterval(() => { if (seen() || bgTick % 6 === 0) loadProgress(); }, 5000);   // hidden: stage moves still get noticed
 setInterval(() => seen() && pollStatus(), 2000);
@@ -3998,10 +3182,9 @@ setInterval(() => seen() && state.tab === "agent" && (pollAgentLog(), loadJourna
 setInterval(() => seen() && state.tab === "agent" && loadPlan(), 10000);
 setInterval(() => seen() && state.tab === "train" && pollTrainLog(), 1500);
 setInterval(() => seen() && state.tab === "quiz" && loadQuiz(), 400);
-setInterval(() => seen() && brainStatus(), 15000);
 document.addEventListener("visibilitychange", () => {   // back in front: everything catches up at once
   if (document.hidden) return;
-  pollStatus(); pollAccount(); loadPositions(); pollBot(); loadProgress(); brainStatus(); renderSessions(); renderMute();
+  pollStatus(); pollAccount(); loadPositions(); pollBot(); loadProgress(); renderSessions(); renderMute();
   if (state.tab === "bot" && !state.replay.view) loadBars();
   if (state.tab === "manual") openManual();
   if (state.tab === "bot") loadBotLive();
@@ -4136,104 +3319,6 @@ function drawCurve(vals, max) {
   g.fillStyle = "#c9a24a"; g.beginPath(); g.arc(X(vals.length - 1), Y(vals[vals.length - 1]), 3, 0, 7); g.fill();
 }
 
-/* Quiz school picker (Stocks / Trenching / Combined) and the Trenching school panel */
-const trench = { st: null, q: null, busy: false };
-function applyQuizMode(mode) {
-  $$("#quiz-modes .qm-opt").forEach(b => { const on = b.dataset.mode === mode; b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); });
-  $("#quiz-trench").hidden = mode === "stocks";
-  $("#tab-quiz .quiz-grid").hidden = mode === "trenching";
-  $("#qm-note").textContent = { stocks: "Stocks: the MT5 quiz below.", trenching: "Trenching: the Solana crew's quiz.", combined: "Both: trenching first, stocks below." }[mode] || "";
-}
-async function loadTrench(withQ = false) {
-  if (trench.busy) return; trench.busy = true;
-  try {
-    const st = await api("/api/trench/state"); trench.st = st; $("#quiz-modes").hidden = false; applyQuizMode(st.mode);
-    if (st.mode !== "stocks") { renderTrench(); if (withQ || !trench.q) loadTrenchQ(); }
-  } catch (e) { if (e.status === 404) { $("#quiz-modes").hidden = true; applyQuizMode("stocks"); } }
-  trench.busy = false;
-}
-async function loadTrenchQ() {
-  try { trench.q = await api("/api/trench/question"); } catch (e) { trench.q = null; }
-  renderTrenchQ();
-}
-const qtAgo = t => { const s = Date.now() / 1000 - t; return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} days ago`; };
-function renderTrench() {
-  const st = trench.st, m = st.model || {}, dl = st.download || {}, tr = st.train || {}, cr = st.creators || {};
-  const training = m.training || tr.running, busy = training || dl.running;
-  $("#qt-status").textContent = training ? `Training: split into ${Object.keys(m.members || {}).length || "its"} models` : m.merged && m.loaded ? "Merged into one bot" : "Not trained yet";
-  const tile = (k, v, sub = "", live = false) => `<div class="qt-stat"><span>${k}</span><b class="num">${live ? '<i class="live-dot"></i>' : ""}${v}</b>${sub ? `<small class="muted">${sub}</small>` : ""}</div>`;
-  setHTML($("#qt-stats"), tile("Questions on disk", (st.questions ?? 0).toLocaleString(), "read line by line, not kept in memory")
-    + tile("Labelled moments", (st.samples ?? 0).toLocaleString(), `${(st.real ?? 0).toLocaleString()} real · ${(st.starter ?? 0).toLocaleString()} starter`)
-    + tile("Good buys", st.good_share != null ? `${Math.round(st.good_share * 100)}%` : "–", "most fresh coins are a PASS")
-    + tile("Question creators", `${cr.running ?? 0} running`, `at least ${cr.wanted ?? 2} while the app is open`, (cr.running ?? 0) > 0));
-  $("#qt-train").disabled = busy || !(st.questions > 0); $("#qt-train").textContent = training ? "Training…" : "Train the crew now";
-  $("#qt-download").disabled = !!dl.running; $("#qt-download").textContent = dl.running ? "Downloading…" : "Download fresh trenching data";
-  const miss = Object.entries(m.problems || {}).filter(([k]) => k !== "cat").map(([k, why]) => `${SOL_MODEL[k]?.name || k} ${why}`);
-  $("#qt-hint").textContent = miss.length ? miss.join(" · ") : dl.error ? `Download: ${dl.error}` : !st.real ? "The starter set is preloaded so you can train now; real data replaces it as it downloads." : "";
-  const prog = $("#qt-prog"); prog.hidden = !busy;
-  if (busy) {
-    const pct = training ? (m.progress || 0) : (dl.progress || 0);
-    $("#qt-stage").textContent = training ? (m.stage || tr.stage || "training") : dl.stage || "downloading";
-    $("#qt-pct").textContent = `${Math.round(pct * 100)}%`; $("#qt-bar").style.width = `${Math.round(pct * 100)}%`;
-  }
-  const met = m.metrics || {}, aucs = met.members || {}, bots = Object.fromEntries((st.bots || []).map(b => [b.model, b]));
-  const names = Object.keys(aucs).length ? Object.keys(aucs) : Object.keys(m.members || {});
-  const bar = (label, col, auc, pts, live) => `<div class="qt-grade"><span class="qt-g-name"><i style="background:${col}"></i>${label}</span>
-      <div class="qt-g-track" title="How well it tells good buys from bad on questions it never saw (0.5 = guessing, 1 = perfect)"><b style="width:${auc == null ? 0 : Math.max(0, Math.min(100, (auc - 0.5) * 200))}%;background:${col}"></b></div>
-      <span class="num small">${live ? esc(live) : auc == null ? "–" : `AUC ${auc.toFixed(3)}`}</span><span class="num small ${pts > 0 ? "up" : pts < 0 ? "down" : "muted"}">${pts == null ? "" : `${pts > 0 ? "+" : ""}${Math.round(pts)} pts`}</span></div>`;
-  setHTML($("#qt-crew"), names.length ? names.map(k => bar(SOL_MODEL[k]?.name || k, SOL_MODEL[k]?.col || "var(--muted)", aucs[k] ?? m.members?.[k]?.auc ?? null, bots[k]?.quiz_score ?? null,
-      training && m.members?.[k]?.stage !== "done" ? (m.members?.[k]?.stage || "") : "")).join("")
-    + (met.auc != null && !training ? bar("Merged bot", "var(--gold)", met.auc, null) + `<p class="muted small qt-foot">Graded on ${(met.n_test ?? 0).toLocaleString()} questions none of them saw while learning.</p>` : "")
-    : `<p class="muted small">Not trained yet. Press <b>Train the crew now</b>: it takes about a minute on the starter set.</p>`);
-  renderTrenchHistory(st);
-}
-function renderTrenchHistory(st) {
-  const sec = $("#qt-hist-sec"), hist = st.history || [];
-  sec.hidden = hist.length < 1;
-  if (!hist.length) return;
-  const members = [...new Set(hist.flatMap(h => Object.keys(h.members || {})))];
-  const series = members.map(m => ({ key: m, name: SOL_MODEL[m]?.name || m, col: SOL_MODEL[m]?.col || "var(--muted)",
-      dash: !!SOL_MODEL[m]?.dash, pts: hist.map(h => ({ x: h.t, y: h.members?.[m] ?? null })) }))
-    .concat([{ key: "bot", name: "Merged bot", col: "var(--gold)", pts: hist.map(h => ({ x: h.t, y: h.auc })) }]);
-  if (hist.length > 1) {
-    solChart($("#qt-hist-chart"), series, { time: true, yMin: 0.45, yMax: 1, yFmt: v => v.toFixed(2),
-      refs: [{ y: 0.5, label: "0.5 guessing" }], xLabel: t => new Date(t * 1000).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
-      height: 170, unit: "", endLabels: true });
-  } else {
-    setHTML($("#qt-hist-chart"), `<p class="muted small">One training so far. Train again as more real data comes in - each run adds a point here.</p>`);
-  }
-  $("#qt-hist-meta").textContent = `${hist.length} training${hist.length === 1 ? "" : "s"} kept`;
-  const first = hist[0], last = hist[hist.length - 1], moreReal = (last.real_samples ?? 0) - (first.real_samples ?? 0);
-  const aucDelta = last.auc != null && first.auc != null ? last.auc - first.auc : null;
-  $("#qt-hist-note").textContent = hist.length < 2 ? ""
-    : `Merged bot: AUC ${first.auc?.toFixed(3) ?? "–"} → ${last.auc?.toFixed(3) ?? "–"}` +
-      (aucDelta != null ? ` (${aucDelta >= 0 ? "+" : ""}${aucDelta.toFixed(3)})` : "") +
-      ` across ${hist.length} trainings` + (moreReal > 0 ? `, ${moreReal.toLocaleString()} more real moments than the first one` : "") +
-      (last.auto ? " · last one ran by itself as new data came in" : "") + ".";
-}
-function renderTrenchQ() {
-  const q = trench.q, box = $("#qt-q");
-  if (!q) { setHTML(box, `<p class="muted small">The question creators are still writing the first questions.</p>`); return; }
-  const f = q.features || {}, liq = Math.pow(10, f.log_liq || 0) - 1, vol = Math.pow(10, f.log_vol_5m || 0) - 1;
-  const row = (k, v) => `<tr><td class="muted">${k}</td><td class="num">${v}</td></tr>`;
-  const crew = q.crew ? Object.entries(q.crew).filter(([k]) => k !== "bot").map(([k, p]) => `<span class="qt-ans" style="--c:${SOL_MODEL[k]?.col || "var(--muted)"}"><i></i>${SOL_MODEL[k]?.name || k} ${Math.round(p * 100)}%</span>`).join("") : "";
-  const botSays = q.crew?.bot != null ? (q.crew.bot >= (sol.state?.config?.buy_threshold ?? 0.78) ? "BUY" : "PASS") : null;
-  setHTML(box, `<div class="qt-q-head"><b>${esc(q.symbol || "?")}</b><span class="tag">${q.source === "starter" ? "starter set" : "real"}</span>
-      <span class="sol-verdict ${q.answer === "BUY" ? "buy" : ""}">Answer: ${q.answer}</span>${botSays ? `<span class="small ${botSays === q.answer ? "up" : "down"}">merged bot said ${botSays} ${botSays === q.answer ? "✓" : "✕"}</span>` : ""}</div>
-    <table class="qt-f"><tbody>${row("Liquidity", solUsd(liq))}${row("Age", solAge(f.age_min))}${row("Buys / sells, 5 min", `${Math.round(f.buys_5m ?? 0)} / ${Math.round(f.sells_5m ?? 0)}`)}
-      ${row("Buy share", `${Math.round((f.buy_ratio ?? 0) * 100)}%`)}${row("Volume, 5 min", solUsd(vol))}${row("Move, 5 min", solPct(f.chg_5m))}${row("Top 10 wallets hold", `${Math.round(f.top10_pct ?? 0)}%`)}</tbody></table>
-    ${q.hints?.length ? `<p class="small">Signs: ${q.hints.map(esc).join(" · ")}</p>` : ""}<p class="muted small">${esc(q.lesson || "")}</p>${crew ? `<div class="qt-answers">${crew}</div>` : ""}`);
-}
-$("#quiz-modes").addEventListener("click", async e => {
-  const b = e.target.closest(".qm-opt"); if (!b) return;
-  applyQuizMode(b.dataset.mode);
-  try { await api("/api/quiz/mode", { method: "POST", body: { mode: b.dataset.mode } }); } catch (err) { toast(err.message, true); }
-  loadTrench(true);
-});
-$("#qt-train").onclick = async () => { try { await api("/api/trench/train", { method: "POST", body: {} }); toast("Training: the crew splits into its models, then merges back into one bot."); } catch (e) { toast(e.message, true); } loadTrench(); };
-$("#qt-download").onclick = async () => { try { await api("/api/trench/download", { method: "POST", body: {} }); } catch (e) { toast(e.message, true); } loadTrench(); };
-$("#qt-next").onclick = () => loadTrenchQ();
-setInterval(() => seen() && state.tab === "quiz" && loadTrench(), 2000);
 async function loadQuiz() {
   let r; try { r = await api("/api/quiz/state"); } catch (e) { return; }
   const st = r.state || {}, qz = r.quiz, pol = r.policy;
