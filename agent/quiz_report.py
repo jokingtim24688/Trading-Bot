@@ -273,8 +273,16 @@ def make_report(verbose=False):
                         "than it learned the setups. A bigger quiz from more history helps more than more training.")
     summary["warnings"] = warnings
     summary["exam_history"] = hist[-10:]
+    edge = edge_check()
+    for g in weak:                                 # a setup that loses money on its own: its BUY/SELL is hindsight
+        e = edge.get(g["setup"])
+        if e and not g["trap"] and e["verdict"] == "loses on its own":
+            g["fix"].insert(0, f"Taken every time it appears in your history, this setup hits its 2R target only "
+                               f"{round(100 * e['hit'])}% of the time (break-even is 33%), about {e['r']:+.2f}R a trade. "
+                               "Its pro answer is hindsight: the agent's STAY OUT is the money-safe answer here. Don't "
+                               "trade it live on this setup alone (see claude-setups-without-edge).")
     report = {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "summary": summary,
-              "weak": weak, "groups": sorted(groups, key=lambda g: -g["practice"])}
+              "edge": edge, "weak": weak, "groups": sorted(groups, key=lambda g: -g["practice"])}
     md = _markdown(report)
     Q._write(REPORT_JSON, report)
     REPORT_MD.write_text(md, encoding="utf-8")
@@ -325,6 +333,45 @@ def _fixes(g):
     return out or ["No clear pattern yet: let it keep looping, or rebuild with more history."]
 
 
+EDGE_MIN = 100           # setups found before the edge check judges one
+
+
+def edge_check() -> dict:
+    """What each setup earns on its own: every time it appeared in the scanned history (the question creators' slice
+    cache), taken the quiz's way (its stop, 2R target, 4 hours). Hit rate, stop-first rate and roughly the R per trade
+    (+2 for a target, -1 for a stop, 0 for one still open after 4 hours). Break-even at 2R is a 33% hit rate."""
+    tot = {}
+    for f in sorted(Q.SLICE_DIR.glob("*.npz")):
+        if ".tmp" in f.name:
+            continue
+        try:
+            z = np.load(f)
+        except (OSError, ValueError):
+            continue
+        for name in z.files:
+            if not name.endswith("__won"):
+                continue
+            kind = name[:-5]
+            if kind not in Q.PRO_SETUPS or f"{kind}__mins" not in z.files:
+                continue
+            won, mins = z[name].astype(bool), z[f"{kind}__mins"].astype(int)
+            mae = z[f"{kind}__mae"] if f"{kind}__mae" in z.files else np.zeros(len(won))
+            t = tot.setdefault(kind, np.zeros(5))
+            t += [len(won), won.sum(), (~won & (mins < Q.HORIZON)).sum(),
+                  (won & (mins <= Q.CLEAN_MINUTES) & (mae <= Q.CLEAN_MAE)).sum(), (~won & (mins <= Q.TRAP_MINUTES)).sum()]
+    out = {}
+    for kind, (n, w, l, clean, trap) in tot.items():
+        if not n:
+            continue
+        r = (2 * w - l) / n
+        se = 1.4 / np.sqrt(n)                      # a 2R/-1R trade's spread of results, per trade
+        verdict = ("too few to judge" if n < EDGE_MIN else "loses on its own" if r + 2 * se < 0
+                   else "pays on its own" if r - 2 * se > 0 else "can't tell yet (near break-even)")
+        out[kind] = {"name": Q.setup_name(kind), "n": int(n), "hit": float(w / n), "stopped": float(l / n), "clean": int(clean),
+                     "trap": int(trap), "r": round(float(r), 3), "verdict": verdict}
+    return dict(sorted(out.items(), key=lambda kv: kv[1]["r"]))
+
+
 def _pct(v):
     return "–" if v is None else f"{round(100 * v)}%"
 
@@ -355,13 +402,25 @@ def _markdown(r):
         lines += ["", "Suggested:"] + [f"- {x}" for x in g["fix"]]
         lines += ["", "Examples (hardest): " + ", ".join(f"Q{e['id']} {e['time']} ({e['right']}/{e['asked']})"
                                                          for e in g["examples"]), ""]
+    edge = r.get("edge") or {}
+    if edge:
+        lines += ["## Do the setups pay on their own?", "",
+                  "Every time each setup appeared in the scanned history, taken the quiz's way (its stop, 2R target, "
+                  "4 hours). Break-even at 2R is a 33% hit rate. The quiz only keeps the clean winners and quick traps, "
+                  "so its questions make every setup look better than it is.", "",
+                  "| Setup | Found | Hit 2R | Stop first | Clean winners | Quick traps | ≈ R a trade | Verdict |",
+                  "|---|---|---|---|---|---|---|---|"]
+        lines += [f"| {e['name']} | {e['n']:,} | {_pct(e['hit'])} | {_pct(e['stopped'])} | {e['clean']:,} | {e['trap']:,} | "
+                  f"{e['r']:+.2f} | {e['verdict']} |" for e in edge.values()]
+        lines += [""]
     cant = [g["name"] for g in r["weak"] if (g.get("trap_check") or "").startswith("Nothing on the chart")]
     nothing = [g["name"] for g in r["weak"] if not g["patterns"]]
     lines += ["## For Claude", "",
               "Read the weak spots above and write skill pages for what you can figure out "
               "(.claude/skills/quiz-weak-spots/references/claude-<topic>.md), plus any builder or input changes they point to.",
               f"- Can't be told apart on the chart: {', '.join(cant) or 'none'}",
-              f"- Weak with no pattern found: {', '.join(nothing) or 'none'}", ""]
+              f"- Weak with no pattern found: {', '.join(nothing) or 'none'}",
+              f"- Setups that lose on their own: {', '.join(e['name'] for e in edge.values() if e['verdict'] == 'loses on its own') or 'none'}", ""]
     return "\n".join(lines)
 
 

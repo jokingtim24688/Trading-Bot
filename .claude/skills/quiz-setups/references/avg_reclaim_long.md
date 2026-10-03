@@ -18,6 +18,9 @@ In an uptrend, dips below the day's average price are where value buyers step in
 - It counts as a clean pro win only if the target is hit within 3 hours without first going more
   than 60% of the way to the stop. Messy winners are left out of the quiz.
 
+## Does it pay on its own?
+The 2026-10-03 report found its traps and winners indistinguishable, about 3.4 quick traps per clean winner, which is what a setup with no edge looks like. Check the report's "Do the setups pay on their own?" table before trusting it (quiz-weak-spots/references/claude-setups-without-edge.md).
+
 ## When it turns into a trap
 - The average is flat and price has crossed it many times today: chop, not a trend.
 - The H1 uptrend is weak (only just turned up).

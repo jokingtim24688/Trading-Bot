@@ -1390,6 +1390,18 @@ Each chat writes only in its own section below, and adds new entries just above 
   not in your record). Live card and Hub follow it. Tests 65 -> 67. Checked on a copy: today (Sat) it rewound to
   Fri 2026-09-25 07:10 and the bot is trading it.
 
+### 2026-10-03: quiz weak-spot report (73,667 questions): edge check + two Claude pages
+- Report: real setups' usual mistake is now STAY OUT; session-average setups 50%, can't be told apart on the chart;
+  misses share "RSI already leaning the trade's way" and (breakouts, bullish FVG) the London morning.
+- Checked every setup with the quiz's own finder/outcome code on the stand-in history (synthetic, 2021-2024): every
+  setup 28-31% at 2R = random entries (29-30%), -0.04..-0.17R a trade; the quiz still finds thousands of "clean
+  winners" each (hindsight). The points (+10 / -5 / -3) make trading pay only above 54% sure vs 33% in money.
+- `quiz_report.edge_check()`: new report section "Do the setups pay on their own?" from the slice cache (your real
+  2009-2026 history on your PC), verdict with a 2-standard-error test; weak spots on losing setups get a first fix
+  line. Test tests/test_quiz_edge.py (68 pass).
+- Skill pages: quiz-weak-spots/references/claude-setups-without-edge.md, claude-stay-out-bias.md; note on
+  quiz-setups avg_reclaim_long/short. No change to the points (explained in the page).
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)
