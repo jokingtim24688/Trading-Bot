@@ -182,6 +182,19 @@ def telegram_detect():
     return telegram.detect()
 
 
+@app.post("/api/telegram/maker")
+def telegram_maker(body: dict = Body(default={})):
+    """Settings > Phone alerts: read what you asked for and show what it understood, with a preview. Nothing saved."""
+    from . import telegram_maker as tm
+    return tm.parse(body.get("text", ""))
+
+
+@app.post("/api/telegram/maker/apply")
+def telegram_maker_apply(body: dict = Body(default={})):
+    from . import telegram_maker as tm
+    return tm.apply(body.get("changes") or [])
+
+
 @app.post("/api/telegram/test")
 def telegram_test():
     return telegram.test()

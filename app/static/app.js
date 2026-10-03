@@ -2683,6 +2683,7 @@ async function loadTelegram() {
   el.textContent = s.error ? `Last try failed: ${s.error}` : !s.token_set ? "No token saved yet." : !s.chat_set ? "Token saved. Message your bot, then press Find my chat."
     : `Connected${s.enabled ? "" : " (switched off above)"}.${s.sent ? ` ${s.sent} alert${s.sent === 1 ? "" : "s"} sent.` : ""}`;
   const c = s.commands, cs = $("#tg-cmd-status");
+  renderTgMine(c);
   if (cs) cs.textContent = !c ? "" : !c.on ? "Commands are off." : !s.token_set || !s.chat_set ? "Commands start once the token and your chat are saved."
     : `${c.listening ? "Listening for commands" : "Starting…"}${c.answered ? ` · ${c.answered} answered` : ""}${c.error ? ` · last error: ${c.error}` : ""}`;
 }
@@ -2698,6 +2699,39 @@ $("#tg-test").onclick = async () => {
   catch (e) { toast(e.message, true); }
   b.disabled = false; setTimeout(loadTelegram, 400);
 };
+/* the Telegram command maker (backend: /api/telegram/maker, /maker/apply; it understands plain words offline) */
+const tgm = { changes: null };
+async function tgmUnderstand() {
+  const text = $("#tgm-text").value.trim(); if (!text) return;
+  const res = $("#tgm-result");
+  try {
+    const r = await api("/api/telegram/maker", { method: "POST", body: { text } });
+    tgm.changes = r.ok ? r.changes : null;
+    setHTML($("#tgm-said"), (r.said || []).map(x => `<li>${esc(x)}</li>`).join("") || (r.error ? `<li class="tg-err">${esc(r.error)}</li>` : ""));
+    if (!r.ok && r.error && !(r.said || []).length) setHTML($("#tgm-said"), `<li class="tg-err">${esc(r.error)}</li>`);
+    $("#tgm-preview").textContent = r.preview || ""; $("#tgm-preview").hidden = !r.preview;
+    $("#tgm-save").hidden = !r.ok; res.hidden = false;
+  } catch (e) { toast(e.message, true); }
+}
+function renderTgMine(c) {
+  const mine = c?.custom || [], kb = c?.keyboard || [], acts = c?.actions || {};
+  setHTML($("#tgm-mine"), (mine.length ? `<h5>Your commands</h5><ul class="tg-cmd-list">${mine.map(m => `<li><code>${esc(m.cmd)}</code><span>${esc(m.reply ? `replies "${m.reply}"` : acts[m.action] || m.action)}</span><button class="btn xs ghost" type="button" data-tgm-del="${esc(m.cmd)}" title="Delete ${esc(m.cmd)}">Delete</button></li>`).join("")}</ul>` : "")
+    + (kb.length ? `<h5>Buttons in the chat</h5><div class="chips">${kb.map(b => `<span class="chip tgm-btn">${esc(b)}<button type="button" data-tgm-unbtn="${esc(b)}" aria-label="Remove the ${esc(b)} button">×</button></span>`).join("")}</div>` : ""));
+}
+async function tgmApply(changes, msg) {
+  try { const st = await api("/api/telegram/maker/apply", { method: "POST", body: { changes } }); renderTgMine(st); toast(msg); }
+  catch (e) { toast(e.message, true); }
+}
+$("#tgm-go").onclick = tgmUnderstand;
+$("#tgm-text").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); tgmUnderstand(); } });
+$("#tgm-examples").addEventListener("click", e => { const b = e.target.closest(".chip"); if (!b) return; $("#tgm-text").value = b.textContent; tgmUnderstand(); });
+$("#tgm-save").onclick = async () => { if (!tgm.changes) return; await tgmApply(tgm.changes, "Saved. Your Telegram chat uses it from the next message."); $("#tgm-result").hidden = true; $("#tgm-text").value = ""; tgm.changes = null; };
+$("#tgm-cancel").onclick = () => { $("#tgm-result").hidden = true; tgm.changes = null; };
+$("#tgm-mine").addEventListener("click", e => {
+  const d = e.target.closest("[data-tgm-del]"), u = e.target.closest("[data-tgm-unbtn]");
+  if (d) tgmApply([{ type: "remove_command", cmd: d.dataset.tgmDel }], `${d.dataset.tgmDel} deleted.`);
+  if (u) tgmApply([{ type: "button_remove", cmd: u.dataset.tgmUnbtn }], `${u.dataset.tgmUnbtn} button removed.`);
+});
 function onSettingsOpen() {                        // everything on the Settings page that comes from the server
   loadBackups(); loadDataBackups(); loadTelegram(); renderNews();
   if (!$("#quiz-verdict").textContent) api("/api/stats/quiz?days=0&mode=all").then(q => { $("#quiz-verdict").textContent = q.verdict ? `So far: ${q.verdict}` : ""; }).catch(() => {});

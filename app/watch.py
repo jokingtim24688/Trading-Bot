@@ -211,14 +211,16 @@ def _snapshot(p) -> dict:
 def _close_events(m, ticket: int, info: dict):
     """TP / SL / close events for the position's closing deals we haven't reported yet."""
     reasons = {m.DEAL_REASON_TP: "tp", m.DEAL_REASON_SL: "sl"}
-    for d in m.history_deals_get(position=ticket) or []:
+    deals = m.history_deals_get(position=ticket) or []
+    entry = next((d.price for d in deals if d.entry == getattr(m, "DEAL_ENTRY_IN", 0)), None)   # where it started
+    for d in deals:
         dt = getattr(d, "ticket", None)
         if d.entry not in (m.DEAL_ENTRY_OUT, m.DEAL_ENTRY_OUT_BY) or dt in _seen_deals:
             continue
         _seen_deals.add(dt)
         add_event(reasons.get(d.reason, "close"), ticket=ticket, symbol=d.symbol, side=info["side"], volume=d.volume,
                   price=d.price, profit=round(d.profit + d.commission + d.swap + getattr(d, "fee", 0.0), 2),
-                  owner=_owner(info["magic"]))
+                  owner=_owner(info["magic"]), entry=entry)
 
 
 def tick():

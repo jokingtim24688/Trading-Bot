@@ -72,6 +72,12 @@ DEFAULTS = {
     "telegram_chat_id": "",                # filled in by "Find my chat" after you message your bot
     "telegram_events": ["tp", "sl", "open", "close", "watchdog"],   # also possible: "be", "trail"
     "telegram_commands": True,
+    # Made with Settings > Phone alerts > "Make or change a command" (app/telegram_maker.py)
+    "telegram_custom_commands": [],        # [{"cmd": "/pnl", "action": "total", "about": "..."} or {"cmd": "/hi", "reply": "..."}]
+    "telegram_keyboard": [],               # buttons under the chat's text box, e.g. ["/status", "/today", "/total"]
+    "telegram_layouts": {},                # rewritten alert texts per kind (tp, sl, close, open, be, trail)
+    "telegram_batch_over": 3,              # more than this many trades closing together -> one summary card
+    "telegram_batch_wait_s": 3,            # seconds to wait for other trades closing with the first one
     # MT5 from a Mac / Linux: the bridge running next to MT5 on a Windows PC or VM (agent/mt5_remote.py)
     "mt5_bridge_url": "",                  # e.g. http://192.168.1.20:18812 ("" = none; Windows uses MT5 directly)
     "mt5_bridge_token": "",             # answer /prof /loss /total (only from your saved chat)

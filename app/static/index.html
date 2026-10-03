@@ -702,6 +702,26 @@
             <span class="help">Only your own chat (the one Find my chat saved) gets answers. Counts closed trades: MT5 paper, demo and real, in account money.</span>
             <span id="tg-cmd-status" class="muted small"></span>
           </div>
+          <label class="span-all">When more than this many trades close together, send one summary card instead of a message each<span class="u" data-u="trades"><input name="telegram_batch_over" type="number" min="1" max="50"></span></label>
+          <div class="span-all tg-maker" id="tg-maker">
+            <h4 class="set-sub">Make or change a command</h4>
+            <p class="help">Say it in plain words. It shows what it understood and how your chat will look before anything is saved.</p>
+            <div class="tg-maker-row"><textarea id="tgm-text" rows="2" spellcheck="false" placeholder="e.g. make /pnl show my total and add buttons for /pnl and /today"></textarea>
+              <button class="btn primary" type="button" id="tgm-go">Understand</button></div>
+            <div class="chips tgm-examples" id="tgm-examples">
+              <button class="chip" type="button">make /pnl show my total and add it as a button</button>
+              <button class="chip" type="button">add buttons for /status /today /open</button>
+              <button class="chip" type="button">make /off stop the bot</button>
+              <button class="chip" type="button">change the take profit message to '🎉 [profit] on [symbol], started at [starting price]'</button>
+              <button class="chip" type="button">send one summary when more than 5 trades close</button>
+            </div>
+            <div class="tgm-result" id="tgm-result" hidden>
+              <ul id="tgm-said" class="tgm-said"></ul>
+              <pre id="tgm-preview" class="tgm-preview"></pre>
+              <div class="row gap"><button class="btn primary" type="button" id="tgm-save">Save to my Telegram</button><button class="btn" type="button" id="tgm-cancel">Cancel</button></div>
+            </div>
+            <div class="tgm-mine" id="tgm-mine"></div>
+          </div>
         </fieldset>
         <fieldset class="panel" id="set-display"><legend>Display<small>this PC only</small></legend>
           <label class="check"><input type="checkbox" id="pref-motion"> Reduce animations</label>
@@ -712,8 +732,8 @@
           <div class="span-all bk-actions"><button class="btn" type="button" id="bk-now">Back up now</button><button class="btn" type="button" id="bk-file-btn">Restore from a file…</button><input type="file" id="bk-file" accept=".json,application/json" hidden><button class="btn ghost" type="button" id="bk-copy">Copy settings as text</button></div>
           <div class="span-all bk-preview" id="bk-preview" hidden></div>
           <div class="span-all bk-list" id="bk-list"></div>
-          <span class="help span-all">Backups go to data/backups/ on this PC. Restoring backs up your current settings first, so you can always go back. The Hermes API key is left out of copied text.</span>
-          <h4 class="span-all set-sub">Everything else: trades, memory, lessons, notes, reviews, sounds and models</h4>
+          <span class="help span-all">Backups go to data/backups/ on this PC. Restoring backs up your current settings first, so you can always go back.</span>
+          <h4 class="span-all set-sub">Everything else: trades, lessons, notes, reviews, sounds and models</h4>
           <label class="check"><input type="checkbox" name="backup_daily"> Back it all up once a day</label>
           <label>Keep the newest<span class="u" data-u="backups"><input name="backup_keep" type="number" min="1" max="365"></span></label>
           <label class="span-all">Backup folder (blank = data/backups/full; a OneDrive or USB folder survives a dead disk)<input name="backup_dir" spellcheck="false"></label>

@@ -1829,3 +1829,19 @@ body.on-bot .notes { top: var(--notes-top, 170px); }
 .hub-chart { height: 380px; }
 .hub-trades .table-wrap { max-height: 380px; }
 @media (max-width: 1250px) { .hub-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } .hub-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- Telegram command maker (Chat A, 2026-10-03) ---------- */
+.tg-maker { display: grid; gap: 8px; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.tg-maker .set-sub { margin: 0; }
+.tg-maker-row { display: flex; gap: 8px; align-items: stretch; }
+.tg-maker-row textarea { flex: 1; resize: vertical; min-height: 44px; }
+.tgm-examples .chip { font-size: 12px; text-align: left; }
+.tgm-result { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+.tgm-said { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; }
+.tgm-preview { margin: 0; padding: 10px 12px; border-radius: var(--r-sm); background: #0f1216; border: 1px solid var(--line-soft);
+  font: 12px/1.5 var(--mono); white-space: pre-wrap; max-height: 320px; overflow: auto; }
+.tgm-mine h5 { margin: 8px 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.tgm-mine .tg-cmd-list li { align-items: center; }
+.tgm-btn { display: inline-flex; align-items: center; gap: 6px; }
+.tgm-btn button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 2px; }
+.tgm-btn button:hover { color: var(--down); }
