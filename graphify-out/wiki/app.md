@@ -310,3 +310,27 @@
 - Bot tab top switch `Live | Agent details` (`.subtabs`, `data-goto="bot"|"agent"`); Settings top switch
   `General | Keybinds | Sounds`. The `agent`, `keys`, `sounds` sections are unchanged; `RAIL_PARENT` in `showTab()`
   lights the parent rail button and `.subtabs [data-goto]` gets `.on`. `#tab-bot.active` is now a flex column.
+
+
+## Bot tab Hub + Sim, Telegram command maker; Solana and Hermes gone (2026-10-03, Chat A on the user's request)
+- Removed: `sol/`, `hermes/`, `app/brain.py`, `app/memory.py`, `app/tools.py`, the Solana / Ranks / Hermes tabs, the
+  trenching quiz panel, Hermes settings + setup step, `sol_*` / `x_*` / `trench_*` / `quiz_mode` / assistant settings.
+  `agent/desk.py` (was `sol/agents.py`, MT5 part only) keeps the main agent + checkers; `GET /api/agents` -> `{mt5: [...]}`.
+- Rail: Bot, Manual, Settings, More (Review, Train, Quiz). Bot switch: Live | Agent details | Hub (`RAIL_PARENT.hub`).
+- **Hub** (`#tab-hub`, `openHub`/`loadHub` every 2 s on the tab): cats = `HUB_CREW` (The bot + Confidence, Reward/risk,
+  Momentum, Quiz agent; `catBox`/`catProfit` kept from the Solana tab), each with what it last said (`/api/agents`);
+  typing pauses when the bot is stopped (`.hub-cats.idle`); a new winning close runs the profit sequence on all of
+  them. Tiles: Market, Balance, Gain, Loss, Subtotal, Open now. Chart: last 240 M1 candles + entry arrows. Recent
+  trades: closed, trade, started at, ended at, gain/loss. While the Sim view is on it reads the Sim instead.
+- **Sim** (`#sim-toggle` next to Replay; the replay bar drives either, `state.replay.src`, `rpApi()`): `POST /api/sim/start`
+  = `_replay_args` + `--fresh --db data/sim.db --state data/sim_state.json --control data/sim_control.json`, speed 1/s
+  by default; `GET /api/sim/state` adds `trades_open` / `trades_closed` (read from sim.db directly). `simAsLive()`
+  makes the Live card show the Sim as running (headline, points, floating).
+- **Telegram** (`app/telegram.py`): `LAYOUTS` per alert kind (overrides in `telegram_layouts`, `{money} {who} {symbol}
+  {side} {lots} {at} {price} {entry} {profit}`, broken ones fall back); close events carry `entry` (from the IN deal,
+  `app/watch.py`); `_worker` gathers closes for `telegram_batch_wait_s` (3 s, +1 s while more arrive) and sends
+  `summary_card()` (HTML: count, gained, lost, total, a row per trade with start and gain/loss) when more than
+  `telegram_batch_over` (3). `ACTIONS` (prof, loss, total, status, open, today, start_bot, stop_bot, flatten-with-yes),
+  `telegram_custom_commands`, `keyboard()` from `telegram_keyboard` on every message.
+- **Command maker** (`app/telegram_maker.py`, Settings > Phone alerts): `parse(text)` -> changes + plain sentences +
+  preview, `apply(changes)`; routes `POST /api/telegram/maker`, `/api/telegram/maker/apply`. Rule-based, offline.

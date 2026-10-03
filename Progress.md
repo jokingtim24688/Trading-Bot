@@ -1367,6 +1367,19 @@ Each chat writes only in its own section below, and adds new entries just above 
 - Screenshot made against GeckoTerminal answers captured live (this sandbox can't reach it directly); the fake
   MT5 has no candles, so the Bot chart is empty only here. 85 tests pass.
 
+### 2026-10-03: Solana and Hermes out; Bot tab Hub + Sim; Telegram command maker and summary card
+- User: remove the Solana tab and everything Solana and Hermes; a Telegram command maker in Settings that can also
+  change the chat's look; one summary when more than 3 trades close (how many, each one's start value and gain/loss,
+  total gained/lost); a Sim next to Replay (chose: real history played live, the bot trading it as if active); a Hub
+  next to Live and Agent details with all the cats, the market, recent trades, balance, subtotal, loss, gain, chart.
+- Removed `sol/`, `hermes/`, brain/memory/tools, their tabs/settings/tests (tests 85 -> 58, then +new ones = 64).
+  MT5 main agent + checkers moved to `agent/desk.py`; requirements drop lightgbm/sklearn/joblib/solders.
+- Hub: 5 cats (the bot + its 4 checkers) with what each last said, typing while it runs, profit animation on a
+  winning close; tiles and chart; follows the Sim. Sim: replay engine on its own files and `data/sim.db`, 1
+  candle/s, Live card shows it as running. Screenshot made on a copy trained on real 2026 gold M1.
+- Telegram: alert layouts, start price on close alerts, batching -> HTML card, your own commands from 9 actions
+  (flatten asks for yes), chat buttons; command maker understands plain words offline with a preview.
+
 <!-- Chat A: add new entries above this line -->
 
 ## Chat B log (UI & Polish)

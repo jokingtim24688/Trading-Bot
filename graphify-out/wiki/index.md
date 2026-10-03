@@ -10,20 +10,18 @@
 ## Communities (subsystems)
 | Community | Page | Core nodes | Lane |
 |---|---|---|---|
-| Desktop app (tabs Market, Manual, Agent, Review, Train, Quiz, Hermes, Keys, Sounds, Settings) | [app.md](app.md) | `app/main.py`, `app/server.py`, `app/static/*` | B: static + window · A: server, jobs, settings |
-| Hermes assistant + memory | [hermes.md](hermes.md) | `app/brain.py`, `app/memory.py`, `app/tools.py`, `hermes/` | A |
+| Desktop app (rail: Bot [Live / Agent details / Hub], Manual, Settings [General / Keybinds / Sounds], More: Review, Train, Quiz) | [app.md](app.md) | `app/main.py`, `app/server.py`, `app/static/*` | B: static + window · A: server, jobs, settings |
 | M1 trading agent | [agent.md](agent.md) | `agent/run.py`, `agent/features.py`, `agent/model.py`, `agent/risk.py`, `agent/broker.py` | A |
-| Solana trenching bot (rug filter, model crew split/merge, instant debate, main agents + subagents, trenching quiz) | [sol.md](sol.md) | `sol/engine.py`, `sol/debate.py`, `sol/model.py`, `sol/agents.py`, `sol/trench.py` | B built it (2026-09-30, user asked) |
 | Mac / Linux support (installer, MT5 bridge, Mac pop-ups) | [mac.md](mac.md) | `Trading Bot.command`, `agent/mt5_remote.py`, `MT5 Bridge.bat`, `app/platform_info.py` | B (2026-09-30) |
 | MT5 MCP bridge | [mcp.md](mcp.md) | `mcp_server/mt5_mcp.py` | A |
 | mt5-trading skill + Claude subagent | [skill.md](skill.md) | `.claude/skills/mt5-trading/`, `.claude/agents/mt5-m1-trader.md` | A |
 
 ## God nodes (most connected)
 1. **MetaTrader5 terminal** (external): used by `app/mt5_service.py`, `agent/broker.py`, `mcp_server/mt5_mcp.py`, `scripts/fetch_m1.py`, `scripts/position_size.py`
-2. **`app/settings.py` → `data/settings.json`**: read by server, jobs, brain, tools, mt5_service
-3. **`agent/ledger.py`**: bot trade ledger read/written by agent brokers, app server, Hermes tool
+2. **`app/settings.py` → `data/settings.json`**: read by server, jobs, telegram, mt5_service
+3. **`agent/ledger.py`**: bot trade ledger read/written by agent brokers and the app server (the Sim keeps its own `data/sim.db`)
 4. **`agent/features.py`**: `build_features`/`triple_barrier`/`atr` used by train and run
-5. **`app/jobs.py` JobManager**: runs agent, train, fetch, and mcp subprocesses for the UI and the Hermes tools
+5. **`app/jobs.py` JobManager**: runs agent, train, fetch, replay, sim, backtest, quiz and mcp subprocesses for the UI
 6. **M1 lock**: `TIMEFRAME = "M1"` (agent/config.py), `TF = mt5.TIMEFRAME_M1` (mcp), `PERIOD_M1` (MQL5 docs)
 
 ## Key flows
@@ -31,7 +29,7 @@
 - **Launch**: `Trading Bot.bat` (git pull, pip only if requirements changed, pythonw, window closes) → `.venv` → `app.main` → uvicorn (127.0.0.1:8420) + pywebview window → auto-start MCP bridge (:8765).
 - **Train**: Train tab → `/api/fetch` → `fetch_m1.py` → `data/SYMBOL_M1.parquet` → `/api/train` → `agent.train` → `models/SYMBOL_M1.json`.
 - **Trade**: Agent tab → `/api/agent/start` → `agent.run` → closed-bar poll → features → XGBoost proba → `RiskGate` → Paper/LiveBroker → `logs/journal_*.csv`.
-- **Chat**: Hermes tab → `/api/chat` → `brain.chat` → Hermes Agent (:8642) *or* Ollama `llama3.2:3b` (CPU) + `tools.py` → `data/hermes_memory.json`.
+- **Telegram**: alerts from `app/watch.py` events → `telegram.for_event` (layouts, `telegram_layouts`) → closes within a few seconds batched; more than `telegram_batch_over` (3) → one HTML summary card. Commands: built-ins + your own (`telegram_custom_commands`, from `app/telegram_maker.py`) + chat buttons (`telegram_keyboard`).
 - **Follow the bot**: `agent.run` → `ledger` (`data/trades.db`) ← `sync_ledger` (agent every 1s, app every refresh) → `/api/bot/trades` → Market *Bot trade* card, chart lines/markers, alerts; Agent *Bot trades* table; Hermes `get_bot_trades`.
 - **Kill = reset**: hold button → `/api/kill` → STOP file → agent flattens → `close_all(magic 260923)`, then leftover paper trades are closed (reason `kill`) and `data/agent_status.json` is cleared. Stage, history and lessons stay.
 - **Bot tab / Co-pilot**: `agent/run.py` reads `bot_mode` every candle. In copilot mode `propose()` writes `data/copilot.json`, and `check_proposal()` polls `data/copilot_decision.json` every 1 s (approve / skip / timeout → `copilot_auto_execute`). `app/botlive.py` backs `GET /api/bot/live` (headline, confluence, confidence rank, heartbeat, points, positions, proposal; **no SL**), `POST /api/copilot/decide`, `/api/bot/mode`, `/api/bot/symbol` (restarts the agent) and `/api/bot/symbols`. `agent/livecard.py` holds the plain-word texts.
@@ -129,3 +127,5 @@ Each chat adds lines only to its own list, just above its marker line.
   `training_log` table with a real "AUC over time" chart + plain-English improvement sentence in the Quiz tab. See
   sol.md "Trenching data & training that actually shows improvement". 85 tests passing.
 <!-- Chat B: add new lines above this marker -->
+
+- 2026-10-03: Solana and Hermes removed (sol/, hermes/, brain/memory/tools, their tabs, settings and tests); the MT5 main agent + checkers moved to `agent/desk.py` (`GET /api/agents`). Bot tab: Live | Agent details | **Hub** (cats for the bot and its checkers, market, balance, gain/loss/subtotal, chart, recent trades) and **Sim** next to Replay (`/api/sim/*`, replay engine on its own files + `data/sim.db`, 1 candle/s). Telegram: command maker (`app/telegram_maker.py`, `/api/telegram/maker[/apply]`), layouts, chat buttons, one summary card when more than 3 trades close. See app.md.

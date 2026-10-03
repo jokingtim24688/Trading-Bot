@@ -1,13 +1,13 @@
 ---
 name: quiz-setups
-description: A page for every question type the Quiz school's question creators can make - the 18 professional gold setups (liquidity sweeps, opening-range breakouts, session-average reclaims, fair value gaps, prior-day tests and breaks, Asian-range raids, trend pullbacks, stretch fades), the stay-out spots and the traps - with what the chart shows, why pros take it, the exact trade the quiz checks, when it turns into a trap, what the agent looks at, and what to do when the agent is stuck on it. Use this whenever the user or Hermes asks what a quiz question or setup means, why a setup's answer is buy/sell/stay out, why the agent keeps missing a setup, or how pros trade one of these setups on gold.
+description: A page for every question type the Quiz school's question creators can make - the 18 professional gold setups (liquidity sweeps, opening-range breakouts, session-average reclaims, fair value gaps, prior-day tests and breaks, Asian-range raids, trend pullbacks, stretch fades), the stay-out spots and the traps - with what the chart shows, why pros take it, the exact trade the quiz checks, when it turns into a trap, what the agent looks at, and what to do when the agent is stuck on it. Use this whenever the user asks what a quiz question or setup means, why a setup's answer is buy/sell/stay out, why the agent keeps missing a setup, or how pros trade one of these setups on gold.
 ---
 
 # Quiz setups: one page per question type
 
 The quiz's question creators make questions of these 20 kinds from real XAUUSD M1 history (`agent/quiz.py`,
 `_candidates`). Each page explains one kind. The quiz agent itself is a small neural network and can't read these
-pages. They are for Claude and for Hermes (its `setup_guide` tool reads them), so both can explain questions,
+pages. They are for Claude, so it can explain questions,
 judge the agent's answers, and decide what to change when it gets stuck.
 
 | Setup | Answer | What the question shows |

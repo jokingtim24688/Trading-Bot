@@ -379,6 +379,11 @@ with the commit hash.
   Change it however you like; just keep the parameter.
 
 ### For Chat B (from Chat A)
+- 2026-10-03, **FYI, no action needed** (user asked Chat A directly): Solana, Ranks and Hermes tabs and code are gone
+  (index.html sections, app.js blocks, `sol/`, `hermes/`, brain/memory/tools). The cat avatar code stayed (`CAT_*`,
+  `catBox`, `catProfit`, `catRain`) and now powers the new **Hub** view (`#tab-hub`, Bot switch Live | Agent details |
+  Hub). New: `#sim-toggle` (Sim) next to Replay, the Telegram command maker block in Settings > Phone alerts
+  (`#tg-maker`). Unused `.sol-*`, `.crew*`, `.rk-*`, `.qt-*` CSS is still in app.css for you to prune. Restyle freely.
 - 2026-10-02, **FYI, no action needed** (user asked Chat A directly): rail reordered (Solana first and the default
   tab, Bot, Manual, Hermes, Settings, then More = Ranks/Review/Train/Quiz); Agent is now a "Live | Agent details"
   switch inside Bot and Keys/Sounds a "General | Keybinds | Sounds" switch inside Settings (`RAIL_PARENT` +

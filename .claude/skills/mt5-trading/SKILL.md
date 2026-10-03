@@ -29,7 +29,7 @@ stands on its own.
 | Run or tune the local trading agent on the RTX 4060 + Ryzen 5 7600 | `references/hardware_agent.md` |
 | Gold / XAUUSD specifics | `references/instruments.md` |
 | What professional traders do (prep, levels, sessions, sweeps, ORB, VWAP, FVG) and how the bot's inputs encode it | `references/pro_playbook.md` |
-| Use the desktop app (chart, agent, training, Hermes assistant) or set up Hermes memory | `references/app_and_hermes.md` |
+| Use the desktop app (Bot tab Live / Agent details / Hub, Sim, training, Telegram commands) | `references/app_and_hermes.md` |
 
 Scripts in `scripts/` do deterministic work, so run them instead of redoing the math by hand:
 - `scripts/position_size.py`: lot size from account risk %, stop distance, and symbol specs.
@@ -83,6 +83,6 @@ check session hours, size with `position_size.py`, and watch for earnings and di
 **"Set up / tune the agent"**: Follow `hardware_agent.md`, which covers the repo's `agent/`
 package, hardware settings, and the recommended model stack.
 
-**"Use the app / Hermes"**: The user runs everything from the desktop app (`Trading Bot.bat`), not the
+**"Use the app"**: The user runs everything from the desktop app (`Trading Bot.bat`), not the
 command line. Point them to the tab and button (see `app_and_hermes.md`) rather than CLI commands, unless
 they ask for the command.
